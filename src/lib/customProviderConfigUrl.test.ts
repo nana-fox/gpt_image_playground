@@ -52,6 +52,7 @@ describe('custom provider config URL', () => {
     expect(loadEmbeddedDefaultConfig(`embedded-config:${base64}`)).toEqual({
       customProviders: [],
       profiles: [],
+      presetProfileFields: {},
     })
   })
 
