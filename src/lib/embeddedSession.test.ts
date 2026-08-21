@@ -124,6 +124,7 @@ describe('embedded session', () => {
     const request = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(page([key(1), key(2)], 1, 1))
       .mockResolvedValueOnce(page([key(1, { status: 'inactive' }), key(2, { status: 'expired' })], 1, 1))
+      .mockResolvedValueOnce(page([key(2)], 1, 1))
 
     await expect(loadEmbeddedKeys('deleted-key', request)).resolves.toMatchObject({
       status: 'selection-required',
@@ -131,6 +132,10 @@ describe('embedded session', () => {
     })
     await expect(loadEmbeddedKeys('1', request)).resolves.toMatchObject({
       status: 'no-eligible-key',
+      selectedKeyId: null,
+    })
+    await expect(loadEmbeddedKeys('1', request)).resolves.toMatchObject({
+      status: 'selection-required',
       selectedKeyId: null,
     })
   })
