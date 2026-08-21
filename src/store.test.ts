@@ -137,7 +137,7 @@ import { callImageApi } from './lib/api'
 import { callAgentResponsesApi, callBatchImageSingle } from './lib/agentApi'
 import { getFalQueuedImageResult } from './lib/falAiImageApi'
 import { removeKeyedBackgroundFromDataUrl } from './lib/transparentImage'
-import { clearData, clearFailedTasks, deleteFavoriteCollection, editOutputs, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, regenerateAgentAssistantMessage, removeMultipleTasks, removeTask, restoreExplicitPresetConfig, reuseConfig, stopAgentResponse, submitAgentMessage, submitTask, taskMatchesFilterStatus, taskMatchesSearchQuery, useStore } from './store'
+import { clearData, clearFailedTasks, createInputImageFromFile, deleteFavoriteCollection, editOutputs, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, regenerateAgentAssistantMessage, removeMultipleTasks, removeTask, restoreExplicitPresetConfig, retryTask, reuseConfig, stopAgentResponse, submitAgentMessage, submitTask, taskMatchesFilterStatus, taskMatchesSearchQuery, useStore } from './store'
 
 const commitTaskDeletionImplementation = vi.mocked(commitTaskDeletion).getMockImplementation()!
 const deleteDbImageImplementation = vi.mocked(deleteDbImage).getMockImplementation()!
@@ -681,6 +681,75 @@ describe('embedded gallery credential resolution', () => {
     expect(callImageApi).not.toHaveBeenCalled()
     expect(useStore.getState().showToast).toHaveBeenCalledWith('请选择一个可用的 Sub2API API Key', 'error')
     expect(useStore.getState().tasks).toEqual([])
+  })
+
+  it('keeps uploaded references in memory with a stable ID and no IndexedDB image row', async () => {
+    await clearImages()
+    const file = {
+      type: 'image/png',
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    } as File
+
+    const first = await createInputImageFromFile(file)
+    const second = await createInputImageFromFile(file)
+
+    expect(first).toEqual(second)
+    expect(first?.dataUrl).toBe('data:image/png;base64,AQID')
+    expect(await getAllImageIds()).toEqual([])
+  })
+
+  it('submits an in-memory reference without persisting the original', async () => {
+    await clearImages()
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))))
+    const file = {
+      type: 'image/png',
+      arrayBuffer: async () => new Uint8Array([4, 5, 6]).buffer,
+    } as File
+    const image = await createInputImageFromFile(file)
+    useStore.setState({ inputImages: image ? [image] : [] })
+
+    await submitTask()
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+
+    expect(vi.mocked(callImageApi).mock.calls[0][0].inputImageDataUrls).toEqual(['data:image/png;base64,BAUG'])
+    expect(useStore.getState().tasks[0]).toMatchObject({
+      ephemeralInputImageIds: [image?.id],
+    })
+    expect(await getAllImageIds()).toEqual([])
+  })
+
+  it('blocks retry and reuse when an ephemeral reference is unavailable after reload', async () => {
+    const unavailableTask = task(Object.assign({
+      id: 'missing-reference-task',
+      inputImageIds: ['missing-ephemeral-reference'],
+      status: 'error' as const,
+      error: 'failed',
+    }, {
+      ephemeralInputImageIds: ['missing-ephemeral-reference'],
+    }) as Partial<TaskRecord>)
+    useStore.setState({
+      prompt: 'keep-current-prompt',
+      tasks: [unavailableTask],
+      showToast: vi.fn(),
+    })
+
+    await retryTask(unavailableTask)
+    await reuseConfig(unavailableTask)
+
+    expect(useStore.getState().tasks).toEqual([unavailableTask])
+    expect(useStore.getState().prompt).toBe('keep-current-prompt')
+    expect(useStore.getState().showToast).toHaveBeenCalledTimes(2)
+    expect(useStore.getState().showToast).toHaveBeenCalledWith('原参考图仅在创建任务的页面会话中可用，刷新后无法重试或复用。', 'error')
   })
 })
 

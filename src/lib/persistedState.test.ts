@@ -94,6 +94,38 @@ describe('persisted state codec', () => {
     expect(encoded).not.toContain(PRESET_SECRET)
   })
 
+  it('does not persist embedded reference drafts that cannot survive reload', () => {
+    initializeEmbeddedContext(
+      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      vi.fn(),
+      { lang: '', classList: { toggle: vi.fn() } },
+      true,
+    )
+
+    const persisted = createPersistedState({
+      ...source({ ...DEFAULT_SETTINGS, persistInputOnRestart: true }),
+      previousPresetConfig: null,
+      galleryInputDraft: {
+        prompt: 'reference draft',
+        inputImages: [imageA],
+        maskDraft: null,
+        maskEditorImageId: null,
+      },
+      agentInputDrafts: {
+        'conversation-a': {
+          prompt: 'agent reference draft',
+          inputImages: [imageA],
+          maskDraft: null,
+          maskEditorImageId: null,
+        },
+      },
+    })
+
+    expect(persisted.inputImages).toBeUndefined()
+    expect(persisted.galleryInputDraft).toBeNull()
+    expect(persisted.agentInputDrafts).toEqual({})
+  })
+
   it('rejects non-record unknown data and falls back field-by-field for an invalid record', () => {
     class ExternalState {}
 

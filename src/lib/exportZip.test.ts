@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppSettings, StoredImage, StoredImageThumbnail, TaskParams, TaskRecord } from '../types'
 import { buildExportZip, getExportImageEstimatedBytes, getExportZipPlan, readExportZip, readExportZipFileAsDataUrl } from './exportZip'
 
 describe('exportZip', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it('builds and reads backup zip entries without changing manifest shape', async () => {
     const task: TaskRecord = {
       id: 'task-1',
@@ -74,6 +76,55 @@ describe('exportZip', () => {
     expect(readExportZipFileAsDataUrl(parsed.files, 'images/task-task-1.png')).toBe(images[1].dataUrl)
     expect(readExportZipFileAsDataUrl(parsed.files, 'images/task-task-1-partial.png')).toBe(images[2].dataUrl)
     expect(readExportZipFileAsDataUrl(parsed.files, 'thumbnails/task-task-1-input.jpeg')).toBe(thumbnail.thumbnailDataUrl)
+  })
+
+  it('omits embedded uploads, masks, credentials, and raw bearer payloads', async () => {
+    vi.stubEnv('VITE_DEPLOYMENT_FLAVOR', 'nanafox-embedded')
+    const keySentinel = ['export', 'key', 'sentinel'].join('-')
+    const bearer = 'Bearer export-sentinel'
+    const task: TaskRecord = {
+      id: 'embedded-task',
+      prompt: '提示词',
+      params: {} as TaskParams,
+      inputImageIds: ['upload'],
+      maskImageId: 'mask',
+      outputImages: ['generated'],
+      rawResponsePayload: bearer,
+      status: 'done',
+      error: null,
+      createdAt: 1700000000000,
+      finishedAt: 1700000000001,
+      elapsed: 1,
+    }
+    const images: StoredImage[] = [
+      { id: 'upload', dataUrl: 'data:image/png;base64,dXBsb2Fk', source: 'upload' },
+      { id: 'mask', dataUrl: 'data:image/png;base64,bWFzaw==', source: 'mask' },
+      { id: 'generated', dataUrl: 'data:image/png;base64,Z2VuZXJhdGVk', source: 'generated' },
+    ]
+    const settings = {
+      apiKey: keySentinel,
+      profiles: [{ apiKey: keySentinel }],
+    } as unknown as AppSettings
+
+    const result = await buildExportZip({
+      options: { exportConfig: true, exportTasks: true },
+      exportedAt: 1700000001000,
+      settings,
+      tasks: [task],
+      images,
+      thumbnailsByImageId: new Map(),
+      favoriteCollections: [],
+      defaultFavoriteCollectionId: null,
+      agentConversations: [],
+    })
+    const parsed = await readExportZip(result.bytes)
+    const serialized = JSON.stringify(parsed.manifest)
+
+    expect(Object.keys(parsed.manifest.imageFiles ?? {})).toEqual(['generated'])
+    expect(serialized).not.toContain(keySentinel)
+    expect(serialized).not.toContain(bearer)
+    expect(Object.keys(parsed.files)).toEqual(expect.arrayContaining(['images/task-embedded-task.png', 'manifest.json']))
+    expect(Object.keys(parsed.files)).not.toEqual(expect.arrayContaining(['images/task-embedded-task-input.png']))
   })
 
   it('splits all stored images without dropping images that are not referenced by tasks', async () => {
