@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getDeploymentBase,
+  getDeploymentSurface,
   getDeploymentStorageName,
   isEmbeddedFeatureEnabled,
   isNanafoxEmbedded,
@@ -19,6 +20,13 @@ describe('deployment flavor', () => {
     expect(isNanafoxEmbedded('nanafox-embedded')).toBe(true)
     expect(getDeploymentBase('nanafox-embedded')).toBe('/tools/image-playground/')
     expect(getDeploymentStorageName('nanafox-embedded')).toBe('gpt-image-playground-nanafox-embedded')
+  })
+
+  it('distinguishes the embedded iframe from a standalone new tab', () => {
+    expect(getDeploymentSurface(false, false)).toBe('default')
+    expect(getDeploymentSurface(false, true)).toBe('default')
+    expect(getDeploymentSurface(true, true)).toBe('embedded-frame')
+    expect(getDeploymentSurface(true, false)).toBe('embedded-standalone')
   })
 
   it('disables unsupported UI capabilities and PWA behavior only in embedded builds', () => {
