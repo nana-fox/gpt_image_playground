@@ -87,6 +87,28 @@ describe('callImageApi', () => {
     expect(body.n ?? 1).toBe(1)
   })
 
+  it.each([401, 403])('preserves Images API HTTP %s for session recovery', async (status) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'selected key rejected' },
+    }), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const request = callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: ['rejected', 'key'].join('-') },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    await expect(request).rejects.toMatchObject({
+      message: 'selected key rejected',
+      status,
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it.each([false, true])(
     'adds the prompt rewrite guard on Responses API when Codex CLI mode is %s',
     async (codexCli) => {

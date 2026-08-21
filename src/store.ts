@@ -49,7 +49,7 @@ import { callAgentConversationTitleApi, callAgentResponsesApi, callBatchImageSin
 import { buildAgentApiInput, buildAgentContinuationInput } from './lib/agentInputBuilder'
 import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCurrentReferenceId, getAgentGeneratedImageReferenceId } from './lib/agentImageReferences'
 import { showBrowserNotification } from './lib/browserNotification'
-import { IMAGE_FETCH_CORS_HINT, type CallApiResult } from './lib/imageApiShared'
+import { getApiErrorStatus, IMAGE_FETCH_CORS_HINT, type CallApiResult } from './lib/imageApiShared'
 import { getFalErrorMessage } from './lib/falError'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
@@ -66,7 +66,7 @@ import { canonicalizeBatchFunctionCallArguments, countResponseToolCalls, createR
 import { cleanStaleAgentInputDrafts, clearInputDraftState, isEmptyAgentInputDraft, normalizeAgentInputDrafts, remapAgentInputDraftMentionsForPathChange, restoreAgentInputDraftState, restoreGalleryInputDraftState, saveActiveAgentInputDrafts, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
 import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './lib/persistedState'
-import { isEmbeddedSessionActive, resolveEmbeddedApiProfile } from './lib/embeddedSession'
+import { invalidateEmbeddedSelectedKey, isEmbeddedSessionActive, loadEmbeddedKeys, resolveEmbeddedApiProfile } from './lib/embeddedSession'
 import { assertEmbeddedImageRequest } from './lib/embeddedPolicy'
 import { getDeploymentStorageName, isNanafoxEmbedded } from './lib/deploymentFlavor'
 import { clearEphemeralImages, deleteEphemeralImage, EPHEMERAL_INPUT_UNAVAILABLE_MESSAGE, hasUnavailableEphemeralInputs, isEphemeralImage, resolveRetainedImage, retainInputImage } from './lib/imageRetention'
@@ -3692,6 +3692,12 @@ async function executeTask(taskId: string) {
     const latestTask = useStore.getState().tasks.find((t) => t.id === taskId)
     if (!latestTask || latestTask.status !== 'running') return
     useStore.getState().setTaskStreamPreview(taskId)
+    const status = getApiErrorStatus(err)
+    if (isEmbeddedSessionActive() && (status === 401 || status === 403)) {
+      useStore.getState().setSettings({ selectedKeyId: null })
+      invalidateEmbeddedSelectedKey()
+      await loadEmbeddedKeys(null)
+    }
     const latestFalRequestInfo = falRequestInfo ?? (latestTask.falRequestId && latestTask.falEndpoint
       ? { requestId: latestTask.falRequestId, endpoint: latestTask.falEndpoint }
       : null)

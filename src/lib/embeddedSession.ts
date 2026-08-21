@@ -43,6 +43,7 @@ interface RootElement {
 
 let context: EmbeddedContext | null = null
 let rawKeys = new Map<string, EmbeddedRawKey>()
+let rejectedKeyIds = new Set<string>()
 let state: EmbeddedSessionState = { status: 'inactive', keys: [], selectedKeyId: null }
 const listeners = new Set<() => void>()
 
@@ -94,6 +95,7 @@ export function initializeEmbeddedContext(
     origin: url.origin,
   }
   rawKeys = new Map()
+  rejectedKeyIds = new Set()
   publish({ status: 'inactive', keys: [], selectedKeyId: null })
 
   if (context.theme === 'dark' || context.theme === 'light') {
@@ -144,6 +146,7 @@ export function subscribeEmbeddedSession(listener: () => void) {
 export function clearEmbeddedSession() {
   context = null
   rawKeys = new Map()
+  rejectedKeyIds = new Set()
   publish({ status: 'inactive', keys: [], selectedKeyId: null })
 }
 
@@ -205,6 +208,7 @@ export async function loadEmbeddedKeys(selectedKeyId: string | null | undefined,
         const id = typeof key.id === 'number' || typeof key.id === 'string' ? String(key.id).trim() : ''
         const value = typeof key.key === 'string' ? key.key.trim() : ''
         if (!id || !value || loaded.some((entry) => entry.id === id)) throw new Error('API Key 记录格式无效')
+        if (rejectedKeyIds.has(id)) continue
         loaded.push({
           id,
           name: typeof key.name === 'string' && key.name.trim() ? key.name.trim() : `API Key ${id}`,
@@ -237,6 +241,18 @@ export async function loadEmbeddedKeys(selectedKeyId: string | null | undefined,
 export function selectEmbeddedKey(id: string) {
   if (!rawKeys.has(id)) return false
   publish({ status: 'ready', keys: state.keys, selectedKeyId: id })
+  return true
+}
+
+export function invalidateEmbeddedSelectedKey() {
+  if (!state.selectedKeyId) return false
+  rejectedKeyIds.add(state.selectedKeyId)
+  rawKeys.delete(state.selectedKeyId)
+  publish({
+    status: 'selection-required',
+    keys: state.keys.filter((key) => key.id !== state.selectedKeyId),
+    selectedKeyId: null,
+  })
   return true
 }
 

@@ -2,6 +2,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefi
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import {
+  ApiHttpError,
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
   appendStreamingFormatHint,
@@ -598,7 +599,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
 
     if (!response.ok) {
       const errorMessage = await getApiErrorMessage(response)
-      throw new Error(maybeAppendStreamingHint(errorMessage, response.status, profile.streamImages))
+      throw new ApiHttpError(maybeAppendStreamingHint(errorMessage, response.status, profile.streamImages), response.status)
     }
 
     if (profile.streamImages && isEventStreamResponse(response)) {
