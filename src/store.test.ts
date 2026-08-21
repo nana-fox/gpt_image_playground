@@ -634,6 +634,32 @@ describe('embedded gallery credential resolution', () => {
     expect(JSON.stringify(getPersistedState(useStore.getState()))).not.toContain(EMBEDDED_RUNTIME_KEY)
   })
 
+  it('rejects a persisted unsupported profile before creating an embedded task', async () => {
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))))
+    useStore.setState((state) => ({
+      settings: {
+        ...state.settings,
+        profiles: state.settings.profiles.map((profile) => ({ ...profile, provider: 'fal' })),
+      },
+    }))
+
+    await submitTask()
+
+    expect(callImageApi).not.toHaveBeenCalled()
+    expect(useStore.getState().showToast).toHaveBeenCalledWith(expect.stringContaining('嵌入模式'), 'error')
+    expect(useStore.getState().tasks).toEqual([])
+  })
+
   it('blocks submission before fetch when multiple keys require a choice', async () => {
     await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       code: 0,
