@@ -2,12 +2,88 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { callImageApi } from './api'
+import { clearEmbeddedSession, initializeEmbeddedContext, loadEmbeddedKeys } from './embeddedSession'
 
 describe('callImageApi', () => {
   afterEach(() => {
+    clearEmbeddedSession()
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
     vi.useRealTimers()
+  })
+
+  it.each([
+    ['provider', { provider: 'fal' }, { n: 1 }],
+    ['API mode', { apiMode: 'responses' }, { n: 1 }],
+    ['model', { model: 'gpt-image-1' }, { n: 1 }],
+    ['Codex CLI', { codexCli: true }, { n: 1 }],
+    ['output count', {}, { n: 2 }],
+  ])('rejects embedded %s injection before fetch', async (_label, profilePatch, paramsPatch) => {
+    initializeEmbeddedContext(
+      'https://router-test.nanafox.com/tools/image-playground/?token=iframe-jwt',
+      () => {},
+      { lang: '', classList: { toggle: () => false } },
+      true,
+    )
+    await loadEmbeddedKeys(null, vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      data: {
+        items: [{ id: 7, name: '测试 Key', key: 'sk-selected', status: 'active' }],
+        page: 1,
+        pages: 1,
+      },
+    }), { status: 200 })))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200 }))
+    const profiles = DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, ...profilePatch }))
+
+    await expect(callImageApi({
+      settings: { ...DEFAULT_SETTINGS, profiles },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, ...paramsPatch },
+      inputImageDataUrls: [],
+    })).rejects.toThrow('嵌入模式')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('sends the approved embedded request to the same-origin Images endpoint with n=1', async () => {
+    initializeEmbeddedContext(
+      'https://router-test.nanafox.com/tools/image-playground/?token=iframe-jwt',
+      () => {},
+      { lang: '', classList: { toggle: () => false } },
+      true,
+    )
+    await loadEmbeddedKeys(null, vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      data: {
+        items: [{ id: 7, name: '测试 Key', key: 'sk-selected', status: 'active' }],
+        page: 1,
+        pages: 1,
+      },
+    }), { status: 200 })))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200 }))
+
+    await callImageApi({
+      settings: DEFAULT_SETTINGS,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 1 },
+      inputImageDataUrls: [],
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://router-test.nanafox.com/v1/images/generations',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer sk-selected' }),
+      }),
+    )
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.model).toBe('gpt-image-2')
+    expect(body.n ?? 1).toBe(1)
   })
 
   it.each([false, true])(

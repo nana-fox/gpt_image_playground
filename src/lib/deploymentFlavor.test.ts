@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getDeploymentBase, getDeploymentStorageName, isNanafoxEmbedded } from './deploymentFlavor'
+import {
+  getDeploymentBase,
+  getDeploymentStorageName,
+  isEmbeddedFeatureEnabled,
+  isNanafoxEmbedded,
+  shouldRegisterServiceWorker,
+} from './deploymentFlavor'
 
 describe('deployment flavor', () => {
   it('keeps the upstream relative base by default', () => {
@@ -12,5 +18,15 @@ describe('deployment flavor', () => {
     expect(isNanafoxEmbedded('nanafox-embedded')).toBe(true)
     expect(getDeploymentBase('nanafox-embedded')).toBe('/tools/image-playground/')
     expect(getDeploymentStorageName('nanafox-embedded')).toBe('gpt-image-playground-nanafox-embedded')
+  })
+
+  it('disables unsupported UI capabilities and PWA behavior only in embedded builds', () => {
+    expect(isEmbeddedFeatureEnabled('agent', true)).toBe(false)
+    expect(isEmbeddedFeatureEnabled('settings', true)).toBe(false)
+    expect(isEmbeddedFeatureEnabled('support-prompt', true)).toBe(false)
+    expect(isEmbeddedFeatureEnabled('config-transfer', true)).toBe(false)
+    expect(isEmbeddedFeatureEnabled('agent', false)).toBe(true)
+    expect(shouldRegisterServiceWorker(true)).toBe(false)
+    expect(shouldRegisterServiceWorker(false)).toBe(true)
   })
 })
