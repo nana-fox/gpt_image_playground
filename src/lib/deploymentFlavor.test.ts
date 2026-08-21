@@ -5,6 +5,7 @@ import {
   isEmbeddedFeatureEnabled,
   isNanafoxEmbedded,
   shouldRegisterServiceWorker,
+  stripEmbeddedRemoteCssImports,
 } from './deploymentFlavor'
 
 describe('deployment flavor', () => {
@@ -25,8 +26,16 @@ describe('deployment flavor', () => {
     expect(isEmbeddedFeatureEnabled('settings', true)).toBe(false)
     expect(isEmbeddedFeatureEnabled('support-prompt', true)).toBe(false)
     expect(isEmbeddedFeatureEnabled('config-transfer', true)).toBe(false)
+    expect(isEmbeddedFeatureEnabled('version-check', true)).toBe(false)
     expect(isEmbeddedFeatureEnabled('agent', false)).toBe(true)
     expect(shouldRegisterServiceWorker(true)).toBe(false)
     expect(shouldRegisterServiceWorker(false)).toBe(true)
+  })
+
+  it('removes remote font imports only from embedded CSS', () => {
+    const css = "@import url('https://fonts.example/a.css');\n@import './local.css';\nbody { color: black; }\n"
+
+    expect(stripEmbeddedRemoteCssImports(css, true)).toBe("@import './local.css';\nbody { color: black; }\n")
+    expect(stripEmbeddedRemoteCssImports(css, false)).toBe(css)
   })
 })
