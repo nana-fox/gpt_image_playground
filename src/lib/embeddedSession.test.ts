@@ -3,6 +3,7 @@ import { createDefaultOpenAIProfile } from './apiProfiles'
 import {
   clearEmbeddedSession,
   getEmbeddedSessionState,
+  hasEmbeddedRuntimeKey,
   initializeEmbeddedContext,
   loadEmbeddedKeys,
   resolveEmbeddedApiProfile,
@@ -117,6 +118,18 @@ describe('embedded session', () => {
 
     request.mockResolvedValueOnce(page([key(1), key(2)]))
     await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'selection-required', selectedKeyId: null })
+  })
+
+  it('reports runtime credential readiness without exposing the raw key', async () => {
+    boot()
+    expect(hasEmbeddedRuntimeKey()).toBe(false)
+
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(page([key(1)])))
+
+    expect(hasEmbeddedRuntimeKey()).toBe(true)
+    expect(JSON.stringify(getEmbeddedSessionState())).not.toContain('sk-key-1')
+    clearEmbeddedSession()
+    expect(hasEmbeddedRuntimeKey()).toBe(false)
   })
 
   it('does not reuse a deleted or disabled saved key', async () => {
