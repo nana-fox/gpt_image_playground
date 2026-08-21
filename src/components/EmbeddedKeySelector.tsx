@@ -23,28 +23,28 @@ export default function EmbeddedKeySelector() {
   if (session.status === 'inactive') return null
 
   if (session.status === 'loading') {
-    return <span className="hidden text-xs text-gray-500 sm:inline">正在加载 API Key…</span>
+    return <span className="block truncate text-xs text-gray-500">正在加载 API Key…</span>
   }
 
   if (session.status === 'no-eligible-key') {
     const url = getEmbeddedKeysUrl()
     return url ? (
-      <a className="text-xs font-medium text-amber-600 hover:underline" href={url} target="_top">创建 API Key</a>
-    ) : <span className="text-xs text-amber-600">没有可用的 API Key</span>
+      <a className="block truncate text-xs font-medium text-amber-600 hover:underline" href={url} target="_top">创建 API Key</a>
+    ) : <span className="block truncate text-xs text-amber-600">没有可用的 API Key</span>
   }
 
   if (session.status === 'auth-error') {
     const url = getEmbeddedReopenUrl()
     return url ? (
-      <a className="text-xs font-medium text-red-600 hover:underline" href={url} target="_top">重新打开菜单</a>
-    ) : <span className="text-xs text-red-600">嵌入会话已失效</span>
+      <a className="block truncate text-xs font-medium text-red-600 hover:underline" href={url} target="_top">重新打开菜单</a>
+    ) : <span className="block truncate text-xs text-red-600">嵌入会话已失效</span>
   }
 
   if (session.status === 'load-error') {
     return (
       <button
         type="button"
-        className="text-xs font-medium text-red-600 hover:underline"
+        className="block max-w-full truncate text-xs font-medium text-red-600 hover:underline"
         onClick={() => void loadEmbeddedKeys(selectedKeyId)}
       >
         API Key 加载失败，重试
@@ -53,13 +53,13 @@ export default function EmbeddedKeySelector() {
   }
 
   if (session.keys.length === 1) {
-    return <span className="hidden max-w-40 truncate text-xs text-gray-500 sm:inline" title={session.keys[0].name}>{session.keys[0].name}</span>
+    return <span className="block truncate text-xs text-gray-500" title={session.keys[0].name}>{session.keys[0].name}</span>
   }
 
   return (
     <select
       aria-label="Sub2API API Key"
-      className="max-w-40 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200"
+      className="block w-full min-w-0 max-w-40 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200"
       value={session.selectedKeyId ?? ''}
       onChange={(event) => {
         if (!selectEmbeddedKey(event.target.value)) return

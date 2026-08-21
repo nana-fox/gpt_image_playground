@@ -398,6 +398,11 @@ input[type="number"] {
   min-height: 3.5rem;
 }
 
+.nanafox-embedded-frame-header {
+  /* 右上角由 Sub2API 宿主的新窗口按钮占用。 */
+  padding-right: max(11rem, var(--safe-area-right));
+}
+
 @media (max-width: 640px) {
   input,
   textarea,

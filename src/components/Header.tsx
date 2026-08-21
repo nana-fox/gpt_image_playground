@@ -9,7 +9,7 @@ import HistoryModal from './HistoryModal'
 import { useFavoriteCollectionTitle } from './FavoriteCollections'
 import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
 import EmbeddedKeySelector from './EmbeddedKeySelector'
-import { isEmbeddedFeatureEnabled } from '../lib/deploymentFlavor'
+import { getDeploymentSurface, isEmbeddedFeatureEnabled } from '../lib/deploymentFlavor'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -46,6 +46,9 @@ export default function Header() {
   const agentEnabled = isEmbeddedFeatureEnabled('agent')
   const settingsEnabled = isEmbeddedFeatureEnabled('settings')
   const pwaEnabled = isEmbeddedFeatureEnabled('pwa')
+  const deploymentSurface = getDeploymentSurface()
+  const embedded = deploymentSurface !== 'default'
+  const embeddedFrame = deploymentSurface === 'embedded-frame'
 
   useEffect(() => {
     if (appMode === 'agent') {
@@ -152,10 +155,19 @@ export default function Header() {
 
   return (
     <>
-      <header data-no-drag-select className={`safe-area-top fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-white/[0.08] transition-transform duration-300 ease-in-out ${appMode === 'agent' && !agentMobileHeaderVisible ? '-translate-y-full sm:translate-y-0' : 'translate-y-0'}`}>
-        <div className="safe-area-x safe-header-inner max-w-7xl mx-auto flex items-center justify-between relative">
+      <header data-no-drag-select data-deployment-surface={deploymentSurface} className={`safe-area-top fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-white/[0.08] transition-transform duration-300 ease-in-out ${appMode === 'agent' && !agentMobileHeaderVisible ? '-translate-y-full sm:translate-y-0' : 'translate-y-0'}`}>
+        <div className={`safe-area-x safe-header-inner max-w-7xl mx-auto flex items-center justify-between relative ${embeddedFrame ? 'nanafox-embedded-frame-header' : ''}`}>
           <div className="flex-1 min-w-0 pr-2 flex items-center gap-2">
-            <h1 className="inline-flex min-w-0 items-start relative mr-2">
+            {embedded ? (
+              <>
+                <h1 className={embeddedFrame ? 'sr-only' : 'shrink-0 text-[17px] font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:text-lg'}>
+                  图像创作
+                </h1>
+                <div className="min-w-0 flex-1 sm:max-w-40">
+                  <EmbeddedKeySelector />
+                </div>
+              </>
+            ) : <h1 className="inline-flex min-w-0 items-start relative mr-2">
               {showFavoriteCollectionTitle ? (
                 <>
                   <span className="min-w-0 truncate text-[17px] font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:hidden" title={favoriteCollectionTitle}>{favoriteCollectionTitle}</span>
@@ -190,7 +202,7 @@ export default function Header() {
                   NEW
                 </a>
               )}
-            </h1>
+            </h1>}
             {appMode === 'agent' && <div className="hidden sm:flex items-center gap-1 relative">
               <button
                 ref={historyButtonRef}
@@ -241,7 +253,6 @@ export default function Header() {
               </div>
             </div>
           )}
-          <EmbeddedKeySelector />
           {agentEnabled && <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
             <button
               type="button"
@@ -280,7 +291,7 @@ export default function Header() {
               </div>
             )}
             <div
-              className="relative"
+              className={embeddedFrame ? 'relative hidden sm:block' : 'relative'}
               {...helpTooltip.handlers}
             >
               <button
