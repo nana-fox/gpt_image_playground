@@ -7,6 +7,7 @@ import { getSelectedImageMentionLabel } from './lib/promptImageMentions'
 import { hasActiveDataOperations } from './lib/dataOperations'
 import { deleteAgentRoundFromConversation, getActiveAgentRounds, getAgentConversationTaskIds, getAgentRoundTaskIds, remapAgentRoundMentionsForPathChange } from './lib/agentConversationState'
 import { cleanStaleAgentInputDrafts } from './lib/inputDraftState'
+import { clearEmbeddedSession, initializeEmbeddedContext, loadEmbeddedKeys } from './lib/embeddedSession'
 import { normalizePersistedState } from './lib/persistedState'
 import { setPresetConfig } from './lib/presetConfig'
 vi.mock('./lib/db', () => {
@@ -145,6 +146,7 @@ const callBatchImageSingleImplementation = vi.mocked(callBatchImageSingle).getMo
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
 const imageB = { id: 'image-b', dataUrl: 'data:image/png;base64,b' }
+const EMBEDDED_RUNTIME_KEY = ['runtime', 'sentinel'].join('-')
 
 describe('error toast messages', () => {
   it('drops long error detail after the failure title', () => {
@@ -574,6 +576,85 @@ describe('mask draft lifecycle in store actions', () => {
     const state = useStore.getState()
     expect(state.inputImages.map((img) => img.id)).toEqual([replacement.id, imageB.id])
     expect(state.prompt).toBe(prompt)
+  })
+})
+
+describe('embedded gallery credential resolution', () => {
+  beforeEach(async () => {
+    vi.mocked(callImageApi).mockReset().mockResolvedValue({ images: [], actualParams: {}, actualParamsList: [], revisedPrompts: [] })
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        selectedKeyId: '12',
+        profiles: [createDefaultOpenAIProfile({ id: 'embedded-profile', apiKey: '' })],
+        activeProfileId: 'embedded-profile',
+      }),
+      appMode: 'gallery',
+      prompt: 'embedded prompt',
+      inputImages: [],
+      maskDraft: null,
+      params: { ...DEFAULT_PARAMS },
+      tasks: [],
+      showToast: vi.fn(),
+    })
+    initializeEmbeddedContext(
+      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      vi.fn(),
+      { lang: '', classList: { toggle: vi.fn() } },
+      true,
+    )
+  })
+
+  afterEach(() => clearEmbeddedSession())
+
+  it('injects the selected raw key only into submit and execution request settings', async () => {
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))))
+
+    await submitTask()
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+
+    const request = vi.mocked(callImageApi).mock.calls[0][0]
+    expect(request.settings).toMatchObject({
+      apiKey: EMBEDDED_RUNTIME_KEY,
+      baseUrl: 'https://app.example.com/v1',
+      model: 'gpt-image-2',
+      apiMode: 'images',
+    })
+    expect(JSON.stringify(useStore.getState().tasks)).not.toContain(EMBEDDED_RUNTIME_KEY)
+    expect(JSON.stringify(getPersistedState(useStore.getState()))).not.toContain(EMBEDDED_RUNTIME_KEY)
+  })
+
+  it('blocks submission before fetch when multiple keys require a choice', async () => {
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [
+          { id: 12, key: 'runtime-secret-a', name: 'Runtime Key A', status: 'active' },
+          { id: 13, key: 'runtime-secret-b', name: 'Runtime Key B', status: 'active' },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))))
+
+    await submitTask()
+
+    expect(callImageApi).not.toHaveBeenCalled()
+    expect(useStore.getState().showToast).toHaveBeenCalledWith('请选择一个可用的 Sub2API API Key', 'error')
+    expect(useStore.getState().tasks).toEqual([])
   })
 })
 

@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentConversation, AppSettings, FavoriteCollection } from '../types'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { DEFAULT_FAVORITE_COLLECTION_ID } from './favoriteState'
+import { clearEmbeddedSession, initializeEmbeddedContext } from './embeddedSession'
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './persistedState'
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,image-a' }
 const collectionA: FavoriteCollection = { id: 'collection-a', name: '收藏夹 A', createdAt: 1, updatedAt: 1 }
+const LEGACY_SECRET = ['legacy', 'sentinel'].join('-')
+const PROFILE_SECRET = ['profile', 'sentinel'].join('-')
+const PRESET_SECRET = ['preset', 'sentinel'].join('-')
 
 function conversation(patch: Partial<AgentConversation> = {}): AgentConversation {
   return {
@@ -58,6 +62,38 @@ function fallback() {
 }
 
 describe('persisted state codec', () => {
+  afterEach(() => clearEmbeddedSession())
+
+  it('persists only the selected key ID in an embedded session', () => {
+    initializeEmbeddedContext(
+      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      vi.fn(),
+      { lang: '', classList: { toggle: vi.fn() } },
+      true,
+    )
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: LEGACY_SECRET,
+      selectedKeyId: 'key-id-7',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, apiKey: PROFILE_SECRET })),
+    }
+
+    const persisted = createPersistedState({
+      ...source(settings),
+      previousPresetConfig: {
+        customProviders: [],
+        profiles: [{ ...settings.profiles[0], apiKey: PRESET_SECRET }],
+      },
+    })
+    const restored = normalizePersistedState({ settings }, fallback())!
+    const encoded = JSON.stringify({ persisted, restored: restored.state.settings })
+
+    expect(encoded).toContain('key-id-7')
+    expect(encoded).not.toContain(LEGACY_SECRET)
+    expect(encoded).not.toContain(PROFILE_SECRET)
+    expect(encoded).not.toContain(PRESET_SECRET)
+  })
+
   it('rejects non-record unknown data and falls back field-by-field for an invalid record', () => {
     class ExternalState {}
 
