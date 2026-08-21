@@ -27,13 +27,14 @@ export interface LatestRelease {
  * - 用户点击后调用 dismiss()，本次浏览期间不再提示（sessionStorage）。
  * - 刷新页面后重新检查。
  */
-export function useVersionCheck() {
+export function useVersionCheck(enabled = true) {
   const [latestRelease, setLatestRelease] = useState<LatestRelease | null>(null)
   const [dismissed, setDismissed] = useState(() =>
     sessionStorage.getItem('version-dismissed') === 'true',
   )
 
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
 
     fetch(API_URL, { headers: { Accept: 'application/vnd.github.v3+json' } })
@@ -59,7 +60,7 @@ export function useVersionCheck() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [enabled])
 
   const dismiss = () => {
     setDismissed(true)

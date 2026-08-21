@@ -4,8 +4,7 @@ import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
-import { getDeploymentBase } from './src/lib/deploymentFlavor'
-import { isNanafoxEmbedded } from './src/lib/deploymentFlavor'
+import { getDeploymentBase, isNanafoxEmbedded, stripEmbeddedRemoteCssImports } from './src/lib/deploymentFlavor'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -61,6 +60,13 @@ export default defineConfig(async ({ command, mode }) => {
             .replace(/\s*<link rel="manifest"[^>]*>/g, '')
             .replace(/\s*<link rel="apple-touch-icon"[^>]*>/g, '')
             .replace(/\s*<link rel="icon" href="\.\/pwa-icon\.svg"[^>]*>/g, '')
+        },
+      }, {
+        name: 'nanafox-embedded-css',
+        enforce: 'pre' as const,
+        transform(code: string, id: string) {
+          if (!id.split('?')[0].endsWith('/src/index.css')) return null
+          return stripEmbeddedRemoteCssImports(code, true)
         },
       }] : []),
     ],
