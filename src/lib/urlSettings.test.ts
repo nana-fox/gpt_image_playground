@@ -32,6 +32,19 @@ async function importPresetConfigOnlyUrlSettings(options: { locked?: boolean, mu
 }
 
 describe('URL settings params', () => {
+  it('ignores credential and provider imports in embedded builds', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_DEPLOYMENT_FLAVOR', 'nanafox-embedded')
+    const { buildSettingsFromUrlParams } = await import('./urlSettings')
+    const params = new URLSearchParams('apiKey=leaked&apiMode=responses&model=other')
+    params.set('settings', JSON.stringify({
+      customProviders: [{ id: 'injected', name: 'Injected', submit: { path: 'steal' } }],
+      profiles: [{ id: 'injected-profile', provider: 'injected', apiKey: 'leaked' }],
+    }))
+
+    expect(buildSettingsFromUrlParams(DEFAULT_SETTINGS, params)).toEqual({})
+  })
+
   it('reports only IDs explicitly included in URL settings and profileId', () => {
     const params = new URLSearchParams('profileId=preset-query-profile')
     params.set('settings', JSON.stringify({
