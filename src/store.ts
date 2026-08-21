@@ -49,8 +49,8 @@ import { callAgentConversationTitleApi, callAgentResponsesApi, callBatchImageSin
 import { buildAgentApiInput, buildAgentContinuationInput } from './lib/agentInputBuilder'
 import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCurrentReferenceId, getAgentGeneratedImageReferenceId } from './lib/agentImageReferences'
 import { showBrowserNotification } from './lib/browserNotification'
-import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
-import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
+import { IMAGE_FETCH_CORS_HINT, type CallApiResult } from './lib/imageApiShared'
+import { getFalErrorMessage } from './lib/falError'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
@@ -66,7 +66,8 @@ import { canonicalizeBatchFunctionCallArguments, countResponseToolCalls, createR
 import { cleanStaleAgentInputDrafts, clearInputDraftState, isEmptyAgentInputDraft, normalizeAgentInputDrafts, remapAgentInputDraftMentionsForPathChange, restoreAgentInputDraftState, restoreGalleryInputDraftState, saveActiveAgentInputDrafts, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
 import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './lib/persistedState'
-import { resolveEmbeddedApiProfile } from './lib/embeddedSession'
+import { isEmbeddedSessionActive, resolveEmbeddedApiProfile } from './lib/embeddedSession'
+import { assertEmbeddedImageRequest } from './lib/embeddedPolicy'
 import { getDeploymentStorageName } from './lib/deploymentFlavor'
 import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveAgentImageActualParams, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
@@ -1376,7 +1377,7 @@ async function resolveImageSizeParamsList(
   })
 }
 
-async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<ReturnType<typeof getFalQueuedImageResult>>) {
+async function completeRecoveredFalTask(task: TaskRecord, result: CallApiResult) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latest || latest.status === 'done' || latest.error === AGENT_STOPPED_MESSAGE) return
   if (latest.status !== 'running' && !latest.falRecoverable) return
@@ -1404,6 +1405,7 @@ async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<Return
 }
 
 async function recoverFalTask(taskId: string) {
+  if (import.meta.env.VITE_DEPLOYMENT_FLAVOR === 'nanafox-embedded') return
   const { settings, tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
   if (!task || task.apiProvider !== 'fal' || !task.falRequestId || !task.falEndpoint || task.status === 'done') return
@@ -1415,6 +1417,7 @@ async function recoverFalTask(taskId: string) {
   }
 
   try {
+    const { getFalQueuedImageResult } = await import('./lib/falAiImageApi')
     const result = await getFalQueuedImageResult(profile, task.falEndpoint, task.falRequestId, task.params)
     clearFalRecoveryTimer(taskId)
     await completeRecoveredFalTask(task, result)
@@ -1666,6 +1669,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   }
 
   try {
+    assertEmbeddedImageRequest(activeProfile, params, isEmbeddedSessionActive())
     activeProfile = resolveEmbeddedApiProfile(activeProfile)
   } catch (error) {
     showToast(error instanceof Error ? error.message : String(error), 'error')
@@ -2731,7 +2735,7 @@ async function executeAgentRound(
       if (latestTask.apiProvider === 'fal' && latestTask.falRequestId && latestTask.falEndpoint) {
         useStore.getState().setTaskStreamPreview(taskId)
         updateTaskInStore(taskId, {
-          ...createTaskErrorPatch(latestTask, '与 fal.ai 的连接已断开，之后会继续查询任务结果。', Date.now()),
+          ...createTaskErrorPatch(latestTask, '与当前服务商的连接已断开，之后会继续查询任务结果。', Date.now()),
           falRecoverable: true,
         })
         scheduleFalRecovery(taskId)
@@ -3529,6 +3533,7 @@ async function executeTask(taskId: string) {
   }
   let activeProfile = taskProfile ?? getActiveApiProfile(settings)
   try {
+    assertEmbeddedImageRequest(activeProfile, task.params, isEmbeddedSessionActive())
     activeProfile = resolveEmbeddedApiProfile(activeProfile)
   } catch (error) {
     updateTaskInStore(taskId, {
@@ -3685,7 +3690,7 @@ async function executeTask(taskId: string) {
     const latestCustomTaskInfo = customTaskInfo ?? (latestTask.customTaskId ? { taskId: latestTask.customTaskId } : null)
     if (latestTask.apiProvider === 'fal' && latestFalRequestInfo && isNetworkRecoverableError(err)) {
       updateTaskInStore(taskId, {
-        ...createTaskErrorPatch(task, '与 fal.ai 的连接已断开，之后会继续查询任务结果。', Date.now()),
+        ...createTaskErrorPatch(task, '与当前服务商的连接已断开，之后会继续查询任务结果。', Date.now()),
         falRequestId: latestFalRequestInfo.requestId,
         falEndpoint: latestFalRequestInfo.endpoint,
         falRecoverable: true,
@@ -4276,6 +4281,7 @@ async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<Ret
 }
 
 async function recoverCustomTask(taskId: string) {
+  if (import.meta.env.VITE_DEPLOYMENT_FLAVOR === 'nanafox-embedded') return
   const { settings, tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
   if (!task || !task.customTaskId || task.status === 'done') return

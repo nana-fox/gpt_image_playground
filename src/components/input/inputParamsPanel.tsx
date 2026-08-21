@@ -114,7 +114,7 @@ export default function InputParamsPanel({
         <ButtonTooltip
           visible={(isFalTextToImage || activeProfile.codexCli) && sizeHint.visible}
           text={isFalTextToImage
-            ? <>fal.ai 的文生图模式不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 参数</>
+            ? <>当前服务商的文生图模式不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 参数</>
             : 'Codex CLI 不支持尺寸参数，此处设置仅基于提示词工程'}
         />
       </label>
@@ -142,7 +142,7 @@ export default function InputParamsPanel({
         />
         <ButtonTooltip
           visible={(activeProfile.codexCli || isFalProvider) && qualityHint.visible}
-          text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
+          text={isFalProvider ? <>当前服务商不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
         />
       </label>
       <label className="flex flex-col gap-0.5">
@@ -222,7 +222,7 @@ export default function InputParamsPanel({
           />
           <ButtonTooltip
             visible={compressionHint.visible}
-            text={isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
+            text={isFalProvider ? '当前服务商不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
           />
         </label>
       )}
@@ -253,7 +253,7 @@ export default function InputParamsPanel({
         />
         <ButtonTooltip
           visible={moderationDisabled && moderationHint.visible}
-          text="fal.ai 不支持审核参数"
+          text="当前服务商不支持审核参数"
         />
       </label>
       <label

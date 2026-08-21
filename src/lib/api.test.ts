@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PARAMS } from '../types'
+import { DEFAULT_PARAMS, type ApiProfile, type TaskParams } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { callImageApi } from './api'
 import { clearEmbeddedSession, initializeEmbeddedContext, loadEmbeddedKeys } from './embeddedSession'
@@ -12,11 +12,12 @@ describe('callImageApi', () => {
     vi.useRealTimers()
   })
 
-  it.each([
+  it.each<[string, Partial<ApiProfile>, Partial<TaskParams>]>([
     ['provider', { provider: 'fal' }, { n: 1 }],
     ['API mode', { apiMode: 'responses' }, { n: 1 }],
     ['model', { model: 'gpt-image-1' }, { n: 1 }],
     ['Codex CLI', { codexCli: true }, { n: 1 }],
+    ['API proxy', { apiProxy: true }, { n: 1 }],
     ['output count', {}, { n: 2 }],
   ])('rejects embedded %s injection before fetch', async (_label, profilePatch, paramsPatch) => {
     initializeEmbeddedContext(
@@ -39,7 +40,7 @@ describe('callImageApi', () => {
     const profiles = DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, ...profilePatch }))
 
     await expect(callImageApi({
-      settings: { ...DEFAULT_SETTINGS, profiles },
+      settings: { ...DEFAULT_SETTINGS, ...profilePatch, profiles },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS, ...paramsPatch },
       inputImageDataUrls: [],

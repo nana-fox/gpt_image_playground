@@ -7,12 +7,13 @@ import 'katex/dist/katex.min.css'
 import './index.css'
 import { installMobileViewportGuards } from './lib/viewport'
 import { initializeEmbeddedContext } from './lib/embeddedSession'
+import { shouldRegisterServiceWorker } from './lib/deploymentFlavor'
 
 initializeEmbeddedContext()
 installMobileViewportGuards()
 
 if ('serviceWorker' in navigator) {
-  if (import.meta.env.PROD) {
+  if (import.meta.env.PROD && shouldRegisterServiceWorker()) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((error) => {
         console.error('Service worker registration failed:', error)
@@ -20,7 +21,9 @@ if ('serviceWorker' in navigator) {
     })
   } else {
     navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => registration.unregister())
+      registrations
+        .filter((registration) => !import.meta.env.PROD || new URL(registration.scope).pathname.startsWith(import.meta.env.BASE_URL))
+        .forEach((registration) => registration.unregister())
     })
   }
 }

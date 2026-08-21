@@ -11,6 +11,7 @@ import {
   normalizeStreamPartialImages,
 } from './apiProfiles'
 import { isPresetConfigOnlyEnabled, isPresetConfigParamsLocked, isPresetProfile } from './presetConfig'
+import { isNanafoxEmbedded } from './deploymentFlavor'
 
 const URL_SETTING_KEYS = ['settings', 'profileId', 'apiUrl', 'apiKey', 'codexCli', 'apiMode', 'model', 'profileName', 'reasoningEffort', 'streamImages', 'streamPartialImages']
 
@@ -330,6 +331,7 @@ function buildRegularSettingsFromUrlParams(currentSettings: Partial<AppSettings>
 }
 
 export function buildSettingsFromUrlParams(currentSettings: Partial<AppSettings> | unknown, searchParams: URLSearchParams): Partial<AppSettings> {
+  if (isNanafoxEmbedded()) return {}
   const result = isPresetConfigOnlyEnabled()
     ? buildPresetConfigOnlySettingsFromUrlParams(currentSettings, searchParams, isPresetConfigParamsLocked())
     : buildRegularSettingsFromUrlParams(currentSettings, searchParams)

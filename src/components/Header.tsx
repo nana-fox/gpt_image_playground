@@ -9,6 +9,7 @@ import HistoryModal from './HistoryModal'
 import { useFavoriteCollectionTitle } from './FavoriteCollections'
 import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
 import EmbeddedKeySelector from './EmbeddedKeySelector'
+import { isEmbeddedFeatureEnabled } from '../lib/deploymentFlavor'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -42,6 +43,9 @@ export default function Header() {
   const [showHistoryModal, setShowHistoryModal] = useState(false)
   const historyButtonRef = useRef<HTMLButtonElement>(null)
   const createConversation = useStore((s) => s.createAgentConversation)
+  const agentEnabled = isEmbeddedFeatureEnabled('agent')
+  const settingsEnabled = isEmbeddedFeatureEnabled('settings')
+  const pwaEnabled = isEmbeddedFeatureEnabled('pwa')
 
   useEffect(() => {
     if (appMode === 'agent') {
@@ -89,6 +93,7 @@ export default function Header() {
   const settingsTooltip = useTooltip()
 
   useEffect(() => {
+    if (!pwaEnabled) return
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault()
       setInstallPrompt(event as BeforeInstallPromptEvent)
@@ -107,7 +112,7 @@ export default function Header() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
     }
-  }, [])
+  }, [pwaEnabled])
 
   const handleInstallClick = async () => {
     if (installPrompt) {
@@ -237,7 +242,7 @@ export default function Header() {
             </div>
           )}
           <EmbeddedKeySelector />
-          <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
+          {agentEnabled && <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
             <button
               type="button"
               onClick={() => setAppMode('gallery')}
@@ -252,9 +257,9 @@ export default function Header() {
             >
               Agent
             </button>
-          </div>
+          </div>}
           <div className="flex items-center gap-1 shrink-0">
-            {!isPwaInstalled && (
+            {pwaEnabled && !isPwaInstalled && (
               <div
                 className="relative"
                 {...installTooltip.handlers}
@@ -292,7 +297,7 @@ export default function Header() {
                 操作指南
               </ViewportTooltip>
             </div>
-            <div
+            {settingsEnabled && <div
               className="relative"
               {...settingsTooltip.handlers}
             >
@@ -306,10 +311,10 @@ export default function Header() {
               <ViewportTooltip visible={settingsTooltip.visible} className="whitespace-nowrap">
                 设置
               </ViewportTooltip>
-            </div>
+            </div>}
           </div>
         </div>
-        <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 opacity-0 pb-0' : 'max-h-20 opacity-100 pb-2'}`}>
+        {agentEnabled && <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 opacity-0 pb-0' : 'max-h-20 opacity-100 pb-2'}`}>
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mx-2">
             <button
               type="button"
@@ -326,7 +331,7 @@ export default function Header() {
               Agent
             </button>
           </div>
-        </div>
+        </div>}
       </header>
       
       {/* Hint for sliding down */}

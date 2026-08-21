@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { initStore, restoreExplicitPresetConfig, useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, getExplicitUrlSettingsIds, hasUrlSettingParams } from './lib/urlSettings'
 import { createDefaultOpenAIProfile, hasDefaultPresetConfig, isAgentTextApiProfile, normalizeSettings } from './lib/apiProfiles'
@@ -9,26 +9,32 @@ import type { AppSettings } from './types'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
-import AgentWorkspace from './components/AgentWorkspace'
 import InputBar from './components/InputBar'
 import DetailModal from './components/DetailModal'
 import Lightbox from './components/Lightbox'
-import SettingsModal from './components/SettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
 import Toast from './components/Toast'
 import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
-import SupportPromptModal from './components/SupportPromptModal'
 import { FavoriteCollectionPickerModal, FavoriteCollectionsView, ManageCollectionsModal } from './components/FavoriteCollections'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 import { loadEmbeddedKeys } from './lib/embeddedSession'
+import { isEmbeddedFeatureEnabled } from './lib/deploymentFlavor'
 
 let defaultConfigImportStarted = false
+const EMBEDDED_BUILD = import.meta.env.VITE_DEPLOYMENT_FLAVOR === 'nanafox-embedded'
+const AgentWorkspace = EMBEDDED_BUILD ? null : lazy(() => import('./components/AgentWorkspace'))
+const SettingsModal = EMBEDDED_BUILD ? null : lazy(() => import('./components/SettingsModal'))
+const SupportPromptModal = EMBEDDED_BUILD ? null : lazy(() => import('./components/SupportPromptModal'))
 
 export default function App() {
   const appMode = useStore((s) => s.appMode)
   const filterFavorite = useStore((s) => s.filterFavorite)
   const activeFavoriteCollectionId = useStore((s) => s.activeFavoriteCollectionId)
+  const agentEnabled = isEmbeddedFeatureEnabled('agent')
+  const settingsEnabled = isEmbeddedFeatureEnabled('settings')
+  const supportPromptEnabled = isEmbeddedFeatureEnabled('support-prompt')
+  const configTransferEnabled = isEmbeddedFeatureEnabled('config-transfer')
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
 
@@ -37,15 +43,17 @@ export default function App() {
     defaultConfigImportStarted = true
 
     const searchParams = new URLSearchParams(window.location.search)
-    const customProviderConfigUrl = getCustomProviderConfigUrl()
-    const embeddedDefaultConfig = hasEmbeddedDefaultConfig()
+    const customProviderConfigUrl = configTransferEnabled ? getCustomProviderConfigUrl() : null
+    const embeddedDefaultConfig = configTransferEnabled && hasEmbeddedDefaultConfig()
     const loadDefaultConfig = () => embeddedDefaultConfig
       ? Promise.resolve().then(() => loadEmbeddedDefaultConfig())
-      : loadCustomProviderSettingsFromUrl(customProviderConfigUrl)
+      : customProviderConfigUrl
+        ? loadCustomProviderSettingsFromUrl(customProviderConfigUrl)
+        : Promise.resolve(null)
 
     const applyUrlSettings = async (baseSettings: Partial<AppSettings>) => {
-      const ids = getExplicitUrlSettingsIds(searchParams)
-      const restored = await restoreExplicitPresetConfig(ids)
+      const ids = configTransferEnabled ? getExplicitUrlSettingsIds(searchParams) : { providerIds: [], profileIds: [] }
+      const restored = configTransferEnabled && await restoreExplicitPresetConfig(ids)
       const restoredSettings = useStore.getState().settings
       const sourceSettings = restored
         ? { ...restoredSettings, ...baseSettings, customProviders: restoredSettings.customProviders, profiles: restoredSettings.profiles }
@@ -68,7 +76,7 @@ export default function App() {
       .then(async () => {
         const importedSettings = embeddedDefaultConfig || customProviderConfigUrl
           ? await loadDefaultConfig()
-          : hasDefaultPresetConfig()
+          : configTransferEnabled && hasDefaultPresetConfig()
             ? {
                 customProviders: [],
                 profiles: [{ ...createDefaultOpenAIProfile(), isDefault: true }],
@@ -132,7 +140,11 @@ export default function App() {
           }
         })
       })
-  }, [])
+  }, [configTransferEnabled])
+
+  useEffect(() => {
+    if (!agentEnabled && appMode !== 'gallery') useStore.getState().setAppMode('gallery')
+  }, [agentEnabled, appMode])
 
   useEffect(() => {
     const preventPageImageDrag = (e: DragEvent) => {
@@ -148,8 +160,8 @@ export default function App() {
   return (
     <>
       <Header />
-      {appMode === 'agent' ? (
-        <AgentWorkspace />
+      {agentEnabled && AgentWorkspace && appMode === 'agent' ? (
+        <Suspense fallback={null}><AgentWorkspace /></Suspense>
       ) : (
         <main data-home-main data-drag-select-surface className="pb-48">
           <div className="safe-area-x max-w-7xl mx-auto">
@@ -161,9 +173,9 @@ export default function App() {
       <InputBar />
       <DetailModal />
       <Lightbox />
-      <SettingsModal />
+      {settingsEnabled && SettingsModal && <Suspense fallback={null}><SettingsModal /></Suspense>}
       <ConfirmDialog />
-      <SupportPromptModal />
+      {supportPromptEnabled && SupportPromptModal && <Suspense fallback={null}><SupportPromptModal /></Suspense>}
       <FavoriteCollectionPickerModal />
       <ManageCollectionsModal />
       <Toast />

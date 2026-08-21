@@ -132,6 +132,10 @@ export function getEmbeddedSessionState() {
   return state
 }
 
+export function hasEmbeddedRuntimeKey() {
+  return state.status === 'ready' && Boolean(state.selectedKeyId && rawKeys.has(state.selectedKeyId))
+}
+
 export function subscribeEmbeddedSession(listener: () => void) {
   listeners.add(listener)
   return () => listeners.delete(listener)

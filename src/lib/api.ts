@@ -1,7 +1,7 @@
 import { getActiveApiProfile, getCustomProviderDefinition } from './apiProfiles'
-import { callFalAiImageApi } from './falAiImageApi'
 import { callOpenAICompatibleImageApi } from './openaiCompatibleImageApi'
-import { resolveEmbeddedApiProfile } from './embeddedSession'
+import { getEmbeddedContext, isEmbeddedSessionActive, resolveEmbeddedApiProfile } from './embeddedSession'
+import { assertEmbeddedImageEndpoint, assertEmbeddedImageRequest } from './embeddedPolicy'
 import type { CallApiOptions, CallApiResult } from './imageApiShared'
 
 export type { CallApiOptions, CallApiResult } from './imageApiShared'
@@ -9,6 +9,8 @@ export { normalizeBaseUrl } from './devProxy'
 
 export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult> {
   const sourceProfile = getActiveApiProfile(opts.settings)
+  const embedded = isEmbeddedSessionActive()
+  assertEmbeddedImageRequest(sourceProfile, opts.params, embedded)
   const profile = resolveEmbeddedApiProfile(sourceProfile)
   const settings = profile === sourceProfile
     ? opts.settings
@@ -25,7 +27,14 @@ export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult>
         activeProfileId: profile.id,
       }
   const request = settings === opts.settings ? opts : { ...opts, settings }
-  if (profile.provider === 'fal') return callFalAiImageApi(request, profile)
+  const endpoint = request.inputImageDataUrls.length > 0 ? 'images/edits' : 'images/generations'
+  const context = getEmbeddedContext()
+  if (context) assertEmbeddedImageEndpoint(`${profile.baseUrl}/${endpoint}`, context.origin, embedded)
+  if (profile.provider === 'fal') {
+    if (import.meta.env.VITE_DEPLOYMENT_FLAVOR === 'nanafox-embedded') throw new Error('嵌入模式仅支持 OpenAI Images')
+    const { callFalAiImageApi } = await import('./falAiImageApi')
+    return callFalAiImageApi(request, profile)
+  }
 
   return callOpenAICompatibleImageApi(request, profile, getCustomProviderDefinition(settings, profile.provider))
 }

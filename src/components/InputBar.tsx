@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { deleteFavoriteCollection, useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, removeMultipleTasks, taskMatchesFilterStatus, taskMatchesSearchQuery } from '../store'
 import { DEFAULT_PARAMS, type TaskRecord } from '../types'
@@ -12,6 +12,8 @@ import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { getSafeBoundingClientRect } from '../lib/domRect'
 import { collectAgentRoundOutputImageSlots } from '../lib/agentImageReferences'
 import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds } from '../lib/favoriteState'
+import { getEmbeddedSessionState, hasEmbeddedRuntimeKey, subscribeEmbeddedSession } from '../lib/embeddedSession'
+import { isNanafoxEmbedded } from '../lib/deploymentFlavor'
 import { getContentEditableCursor, getContentEditablePlainText, getContentEditableSelection, getMentionTagHtml, setContentEditableCursor, setContentEditableSelection, syncMentionTagSelection } from '../lib/contentEditableMentions'
 import { useHintTooltip } from '../hooks/useHintTooltip'
 import { downloadImageEntriesAsZip, downloadImageIds, formatExportFileTime, getTaskOutputImageZipEntries } from '../lib/downloadImages'
@@ -83,6 +85,7 @@ function AtImageOptionThumb({ option }: { option: AtImageOption }) {
 }
 
 export default function InputBar() {
+  useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
   const prompt = useStore((s) => s.prompt)
   const appMode = useStore((s) => s.appMode)
   const setPrompt = useStore((s) => s.setPrompt)
@@ -429,7 +432,7 @@ export default function InputBar() {
       ? settings
       : normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
   ), [activeProfile.id, settingsActiveProfile.id, settings])
-  const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
+  const hasSubmitApiConfig = Boolean(activeProfile.apiKey) || hasEmbeddedRuntimeKey()
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
   const submitButtonAriaLabel = activeAgentIsRunning
     ? '停止生成'
@@ -465,7 +468,7 @@ export default function InputBar() {
   const showTransparentOutputControl = transparentOutputAvailable && params.output_format === 'png'
   const transparentOutputEnabled = transparentOutputAvailable && showTransparentOutputControl && params.transparent_output
   const compressionDisabled = params.output_format === 'png' || isFalProvider
-  const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
+  const outputImageLimit = isNanafoxEmbedded() ? 1 : getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const nDraftValue = Number(nInput)
   const effectiveNValue = Number.isNaN(nDraftValue) ? params.n : nDraftValue
@@ -473,7 +476,7 @@ export default function InputBar() {
   const nLimitHintText = agentAutoImageCount
     ? 'Agent 模式下数量由模型根据提示词自动决定'
     : isFalProvider
-    ? `fal.ai 最大请求数量为 ${outputImageLimit}`
+    ? `当前服务商最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
   const displaySize = isFalTextToImage && params.size === 'auto'
     ? DEFAULT_FAL_IMAGE_SIZE

@@ -5,6 +5,7 @@ import { resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
 import { getDeploymentBase } from './src/lib/deploymentFlavor'
+import { isNanafoxEmbedded } from './src/lib/deploymentFlavor'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -44,12 +45,26 @@ async function embedDefaultConfig(value: string) {
 
 export default defineConfig(async ({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const embedded = isNanafoxEmbedded(env.VITE_DEPLOYMENT_FLAVOR)
   const defaultApiUrl = await embedDefaultConfig(process.env.VITE_DEFAULT_API_URL ?? env.VITE_DEFAULT_API_URL ?? '')
   if (defaultApiUrl.startsWith('embedded-config:')) process.env.VITE_DEFAULT_API_URL = defaultApiUrl
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      ...(embedded ? [{
+        name: 'nanafox-embedded-index',
+        transformIndexHtml(html: string) {
+          return html
+            .replace(/\s*<meta name="apple-mobile-web-app-[^"]+"[^>]*>/g, '')
+            .replace(/\s*<link rel="manifest"[^>]*>/g, '')
+            .replace(/\s*<link rel="apple-touch-icon"[^>]*>/g, '')
+            .replace(/\s*<link rel="icon" href="\.\/pwa-icon\.svg"[^>]*>/g, '')
+        },
+      }] : []),
+    ],
+    publicDir: embedded ? false : 'public',
     base: getDeploymentBase(env.VITE_DEPLOYMENT_FLAVOR),
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
