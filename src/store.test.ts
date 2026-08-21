@@ -7,7 +7,7 @@ import { getSelectedImageMentionLabel } from './lib/promptImageMentions'
 import { hasActiveDataOperations } from './lib/dataOperations'
 import { deleteAgentRoundFromConversation, getActiveAgentRounds, getAgentConversationTaskIds, getAgentRoundTaskIds, remapAgentRoundMentionsForPathChange } from './lib/agentConversationState'
 import { cleanStaleAgentInputDrafts } from './lib/inputDraftState'
-import { clearEmbeddedSession, initializeEmbeddedContext, loadEmbeddedKeys } from './lib/embeddedSession'
+import { clearEmbeddedSession, getEmbeddedSessionState, initializeEmbeddedContext, loadEmbeddedKeys } from './lib/embeddedSession'
 import { normalizePersistedState } from './lib/persistedState'
 import { setPresetConfig } from './lib/presetConfig'
 import { clearEphemeralImages, isEphemeralImage, retainInputImage } from './lib/imageRetention'
@@ -610,6 +610,7 @@ describe('embedded gallery credential resolution', () => {
   afterEach(() => {
     clearEmbeddedSession()
     clearEphemeralImages()
+    vi.unstubAllGlobals()
   })
 
   it('injects the selected raw key only into submit and execution request settings', async () => {
@@ -637,6 +638,40 @@ describe('embedded gallery credential resolution', () => {
     })
     expect(JSON.stringify(useStore.getState().tasks)).not.toContain(EMBEDDED_RUNTIME_KEY)
     expect(JSON.stringify(getPersistedState(useStore.getState()))).not.toContain(EMBEDDED_RUNTIME_KEY)
+  })
+
+  it.each([401, 403])('invalidates and refreshes the selected key after generation HTTP %s', async (status) => {
+    const keyResponse = new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [
+          { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Rejected Key', status: 'active' },
+          { id: 13, key: 'runtime-backup-key', name: 'Backup Key', status: 'active' },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(keyResponse.clone()))
+    const refresh = vi.fn<typeof fetch>().mockResolvedValue(keyResponse.clone())
+    vi.stubGlobal('fetch', refresh)
+    vi.mocked(callImageApi).mockRejectedValueOnce(Object.assign(new Error('selected key rejected'), { status }))
+
+    await submitTask()
+    await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('error'))
+
+    expect(refresh).toHaveBeenCalledWith('/api/v1/keys?page=1&page_size=100', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer iframe-jwt' }),
+    }))
+    expect(useStore.getState().settings.selectedKeyId).toBeNull()
+    expect(getEmbeddedSessionState()).toMatchObject({
+      status: 'ready',
+      selectedKeyId: '13',
+      keys: [{ id: '13', name: 'Backup Key' }],
+    })
   })
 
   it('rejects a persisted unsupported profile before creating an embedded task', async () => {
