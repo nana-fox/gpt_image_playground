@@ -6,6 +6,7 @@ import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { hasUnavailableEphemeralInputs } from '../lib/imageRetention'
 import { CodeIcon, TransparentBgIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -80,6 +81,7 @@ export default function TaskCard({
   const settings = useStore((s) => s.settings)
   const openFavoritePicker = useStore((s) => s.openFavoritePicker)
   const streamPreviewSrc = useStore((s) => s.streamPreviews[task.id] || '')
+  const referencesUnavailable = hasUnavailableEphemeralInputs(task)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const swipeResetTimerRef = useRef<number | null>(null)
   const suppressClickUntilRef = useRef(0)
@@ -595,6 +597,11 @@ export default function TaskCard({
                   局部重绘
                 </span>
               )}
+              {referencesUnavailable && (
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs flex-shrink-0">
+                  参考图已失效
+                </span>
+              )}
               {/* Transparent background */}
               {showTransparentOutput && (
                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs flex-shrink-0">
@@ -640,9 +647,10 @@ export default function TaskCard({
             >
               {((task.status === 'error' && !isFalReconnecting) || settings.alwaysShowRetryButton) && (
                 <TaskActionButton
-                  tooltip="重试任务"
+                  tooltip={referencesUnavailable ? '原参考图已不可用' : '重试任务'}
                   onClick={() => retryTask(task)}
                   className="p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-gray-400 hover:text-blue-500 transition"
+                  disabled={referencesUnavailable}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -673,9 +681,10 @@ export default function TaskCard({
                 </svg>
               </TaskActionButton>
               <TaskActionButton
-                tooltip="复用配置"
+                tooltip={referencesUnavailable ? '原参考图已不可用' : '复用配置'}
                 onClick={onReuse}
                 className="p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-gray-400 hover:text-blue-500 transition"
+                disabled={referencesUnavailable}
               >
                 <svg
                   className="w-4 h-4"

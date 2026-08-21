@@ -4,7 +4,8 @@ import { normalizeAgentConversations } from './agentConversationState'
 import { ensureDefaultFavoriteCollection, normalizeFavoriteCollections, resolveDefaultFavoriteCollectionId } from './favoriteState'
 import { cleanStaleAgentInputDrafts, getPersistableAgentInputDrafts, isEmptyAgentInputDraft, normalizeAgentInputDraft, normalizeAgentInputDrafts, normalizeAgentInputDraftsByKey, saveGalleryInputDraft } from './inputDraftState'
 import { getPersistableAgentConversations, stripPersistedAgentConversations } from './agentResponseState'
-import { sanitizeEmbeddedProfiles, sanitizeEmbeddedSettings } from './embeddedSession'
+import { isEmbeddedSessionActive, sanitizeEmbeddedProfiles, sanitizeEmbeddedSettings } from './embeddedSession'
+import { isNanafoxEmbedded } from './deploymentFlavor'
 
 export interface PersistedAppState {
   settings: AppSettings
@@ -90,6 +91,7 @@ function normalizeParams(value: unknown, fallback: TaskParams): TaskParams {
 
 export function createPersistedState(state: PersistedStateSource, includeLegacyAgentConversations = false): PersistedAppState {
   const settings = sanitizeEmbeddedSettings(normalizeSettings(state.settings))
+  const persistInputs = settings.persistInputOnRestart && !isNanafoxEmbedded() && !isEmbeddedSessionActive()
   const galleryInputDraft = saveGalleryInputDraft(state)
   return {
     settings,
@@ -102,7 +104,7 @@ export function createPersistedState(state: PersistedStateSource, includeLegacyA
     dismissedPresetProfileIds: state.dismissedPresetProfileIds ?? [],
     dismissedPresetProviderIds: state.dismissedPresetProviderIds ?? [],
     params: state.params,
-    ...(settings.persistInputOnRestart && (state.appMode === 'gallery' || galleryInputDraft)
+    ...(persistInputs && (state.appMode === 'gallery' || galleryInputDraft)
       ? {
           prompt: galleryInputDraft?.prompt ?? '',
           inputImages: galleryInputDraft?.inputImages.map((img) => ({ id: img.id, dataUrl: '' })) ?? [],
@@ -110,14 +112,14 @@ export function createPersistedState(state: PersistedStateSource, includeLegacyA
       : {}),
     dismissedCodexCliPrompts: state.dismissedCodexCliPrompts,
     appMode: state.appMode,
-    galleryInputDraft: settings.persistInputOnRestart && galleryInputDraft
+    galleryInputDraft: persistInputs && galleryInputDraft
       ? { ...galleryInputDraft, inputImages: galleryInputDraft.inputImages.map((img) => ({ id: img.id, dataUrl: '' })) }
       : null,
     ...(includeLegacyAgentConversations
       ? { agentConversations: getPersistableAgentConversations(state.agentConversations) }
       : {}),
     activeAgentConversationId: state.activeAgentConversationId,
-    agentInputDrafts: settings.persistInputOnRestart ? getPersistableAgentInputDrafts(state) : {},
+    agentInputDrafts: persistInputs ? getPersistableAgentInputDrafts(state) : {},
     agentSidebarCollapsed: state.agentSidebarCollapsed,
     agentAssetTab: state.agentAssetTab,
     agentAssetPanelCollapsed: state.agentAssetPanelCollapsed,

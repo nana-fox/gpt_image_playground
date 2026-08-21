@@ -11,6 +11,7 @@ import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { downloadImageEntriesAsZip, downloadImageIds, getImageZipEntries } from '../lib/downloadImages'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { hasUnavailableEphemeralInputs, resolveRetainedImage } from '../lib/imageRetention'
 import { replaceImageMentionsForApi } from '../lib/promptImageMentions'
 import { getApiProviderLabel } from '../lib/apiProfiles'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
@@ -136,7 +137,7 @@ export default function DetailModal() {
     setImageSrcs(initial)
     for (const id of ids) {
       if (initial[id]) continue
-      ensureImageCached(id).then((url) => {
+      resolveRetainedImage(id).then((url) => {
         if (!cancelled && url) setImageSrcs((prev) => ({ ...prev, [id]: url }))
       })
     }
@@ -235,6 +236,7 @@ export default function DetailModal() {
   const showPendingPrompt = isAgentTaskPromptPending(task)
   const isAgentEditTool = task.status === 'done' && String(task.agentToolAction ?? '').toLowerCase() === 'edit'
   const showReferenceSection = allInputImageIds.length > 0 || isAgentEditTool
+  const referencesUnavailable = hasUnavailableEphemeralInputs(task)
 
   const outputLen = outputSlots.length
   const currentImageRatio = currentOutputImageId ? imageRatios[currentOutputImageId] : ''
@@ -820,7 +822,8 @@ export default function DetailModal() {
                       retryTooltip.handlers.onClick()
                       handleRetry()
                     }}
-                    className="inline-flex items-center justify-center rounded-full border border-blue-200/80 bg-white/80 px-3 py-1.5 text-blue-500 transition hover:bg-blue-50 dark:border-blue-400/20 dark:bg-white/[0.04] dark:hover:bg-blue-500/10"
+                    disabled={referencesUnavailable}
+                    className="inline-flex items-center justify-center rounded-full border border-blue-200/80 bg-white/80 px-3 py-1.5 text-blue-500 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-blue-400/20 dark:bg-white/[0.04] dark:hover:bg-blue-500/10"
                     aria-label="重试任务"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -828,7 +831,7 @@ export default function DetailModal() {
                     </svg>
                   </button>
                   <ViewportTooltip visible={retryTooltip.visible} className="whitespace-nowrap">
-                    重试任务
+                    {referencesUnavailable ? '原参考图已不可用' : '重试任务'}
                   </ViewportTooltip>
                 </div>
               </div>
@@ -911,6 +914,11 @@ export default function DetailModal() {
                     </button>
                   )}
                 </div>
+                {referencesUnavailable && (
+                  <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                    原参考图只保留在创建任务的页面会话中，刷新后已不可用。
+                  </div>
+                )}
                 {allInputImageIds.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
                     {allInputImageIds.map((imgId) => {
@@ -1038,7 +1046,8 @@ export default function DetailModal() {
           <div className="grid grid-cols-4 sm:flex gap-2 pt-4 border-t border-gray-100 dark:border-white/[0.08]">
             <button
               onClick={handleReuse}
-              className="col-span-2 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium whitespace-nowrap"
+              disabled={referencesUnavailable}
+              className="col-span-2 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-blue-500/20 transition text-sm font-medium whitespace-nowrap"
             >
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />

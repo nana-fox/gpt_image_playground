@@ -4,6 +4,8 @@ import type { AgentConversation, AppSettings, ExportData, FavoriteCollection, St
 import { bytesToDataUrl, dataUrlToBytes } from './dataUrl'
 import { getNumberedFileNameBase, sanitizeFileNamePart } from './exportFileName'
 import { getDataUrlDecodedByteSize } from './imageApiShared'
+import { isNanafoxEmbedded } from './deploymentFlavor'
+import { sanitizeEmbeddedSettings } from './embeddedSession'
 
 type ZipFiles = Record<string, Uint8Array | [Uint8Array, { mtime: Date; level?: 0 }]>
 
@@ -51,8 +53,13 @@ export interface ExportZipPlanPart {
 }
 
 export async function buildExportZip(params: BuildExportZipParams) {
+  const embedded = isNanafoxEmbedded()
+  const images = embedded ? params.images.filter((image) => image.source === 'generated') : params.images
+  const tasks = embedded
+    ? params.tasks.map((task) => ({ ...task, rawImageUrls: undefined, rawResponsePayload: undefined }))
+    : params.tasks
   const exportedAtDate = new Date(params.exportedAt)
-  const imageTasks = params.options.exportTasks ? params.imageTasks ?? params.tasks : []
+  const imageTasks = params.options.exportTasks ? params.imageTasks ?? tasks : []
   const imageCreatedAtFallback = getImageCreatedAtFallback(imageTasks)
   const imageFileNameBases = getImageFileNameBases(imageTasks)
   const imageFiles: ExportData['imageFiles'] = {}
@@ -61,7 +68,7 @@ export async function buildExportZip(params: BuildExportZipParams) {
   const usedImagePaths = new Set<string>()
 
   if (params.options.exportTasks) {
-    for (const img of params.images) {
+    for (const img of images) {
       const { ext, bytes } = dataUrlToBytes(img.dataUrl)
       const path = getUniqueImagePath(imageFileNameBases.get(img.id) || `image-${img.id}`, ext, usedImagePaths)
       const pathBase = path.slice('images/'.length, -(ext.length + 1))
@@ -98,10 +105,12 @@ export async function buildExportZip(params: BuildExportZipParams) {
   }
 
   if (params.backupPart) manifest.backupPart = params.backupPart
-  if (params.options.exportConfig && params.includeManifestData !== false) manifest.settings = params.settings
+  if (params.options.exportConfig && params.includeManifestData !== false) {
+    manifest.settings = embedded ? sanitizeEmbeddedSettings(params.settings) : params.settings
+  }
   if (params.options.exportTasks) {
-    if (params.includeManifestData !== false || params.tasks.length) manifest.tasks = params.tasks
-    if (params.includeManifestData !== false || params.agentConversations.length) manifest.agentConversations = params.agentConversations
+    if (params.includeManifestData !== false || tasks.length) manifest.tasks = tasks
+    if (!embedded && (params.includeManifestData !== false || params.agentConversations.length)) manifest.agentConversations = params.agentConversations
     if (params.includeManifestData !== false) {
       manifest.favoriteCollections = params.favoriteCollections
       manifest.defaultFavoriteCollectionId = params.defaultFavoriteCollectionId

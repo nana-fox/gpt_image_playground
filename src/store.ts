@@ -68,7 +68,8 @@ import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefa
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './lib/persistedState'
 import { isEmbeddedSessionActive, resolveEmbeddedApiProfile } from './lib/embeddedSession'
 import { assertEmbeddedImageRequest } from './lib/embeddedPolicy'
-import { getDeploymentStorageName } from './lib/deploymentFlavor'
+import { getDeploymentStorageName, isNanafoxEmbedded } from './lib/deploymentFlavor'
+import { clearEphemeralImages, deleteEphemeralImage, EPHEMERAL_INPUT_UNAVAILABLE_MESSAGE, hasUnavailableEphemeralInputs, isEphemeralImage, resolveRetainedImage, retainInputImage } from './lib/imageRetention'
 import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveAgentImageActualParams, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
 
@@ -471,6 +472,7 @@ async function deleteStoredImageIfUnreferenced(imageId: string) {
 
   await deleteImage(imageId)
   if (!isImageReferencedByState(useStore.getState(), imageId)) {
+    deleteEphemeralImage(imageId)
     deleteImageCacheEntry(imageId)
     return
   }
@@ -1708,8 +1710,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         })
         return
       }
-      maskImageId = await storeImage(maskDraft.maskDataUrl, 'mask')
-      cacheImage(maskImageId, maskDraft.maskDataUrl)
+      const retainedMask = await retainInputImage(maskDraft.maskDataUrl, 'mask')
+      maskImageId = retainedMask.id
       maskTargetImageId = maskDraft.targetImageId
     } catch (err) {
       if (!inputImages.some((img) => img.id === maskDraft.targetImageId)) {
@@ -1720,9 +1722,11 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
   }
 
-  // 持久化输入图片到 IndexedDB（此前只在内存缓存中）
-  for (const img of orderedInputImages) {
-    await storeImage(img.dataUrl)
+  if (!isEmbeddedSessionActive() && !isNanafoxEmbedded()) {
+    // 普通构建继续持久化输入图片，嵌入构建只使用创建时登记的会话内图片。
+    for (const img of orderedInputImages) {
+      await storeImage(img.dataUrl)
+    }
   }
 
   const normalizedParams = normalizeParamsForSettings(params, requestSettings, { hasInputImages: orderedInputImages.length > 0 })
@@ -1739,6 +1743,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   }
 
   const taskId = genId()
+  const ephemeralInputImageIds = orderedInputImages.map((image) => image.id).filter(isEphemeralImage)
+  const ephemeralMaskImage = Boolean(maskImageId && isEphemeralImage(maskImageId))
   const task: TaskRecord = {
     id: taskId,
     prompt: prompt.trim(),
@@ -1749,8 +1755,10 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     apiMode: activeProfile.apiMode,
     apiModel: activeProfile.model,
     inputImageIds: orderedInputImages.map((i) => i.id),
+    ...(ephemeralInputImageIds.length ? { ephemeralInputImageIds } : {}),
     maskTargetImageId,
     maskImageId,
+    ...(ephemeralMaskImage ? { ephemeralMaskImage: true } : {}),
     transparentOutput: transparentMeta?.transparentOutput,
     transparentPrompt: transparentMeta?.effectivePrompt,
     outputImages: [],
@@ -3564,13 +3572,13 @@ async function executeTask(taskId: string) {
     // 获取输入图片 data URLs
     const inputDataUrls: string[] = []
     for (const imgId of task.inputImageIds) {
-      const dataUrl = await ensureImageCached(imgId)
+      const dataUrl = await resolveRetainedImage(imgId)
       if (!dataUrl) throw new Error('输入图片已不存在')
       inputDataUrls.push(dataUrl)
     }
     let maskDataUrl: string | undefined
     if (task.maskImageId) {
-      maskDataUrl = await ensureImageCached(task.maskImageId)
+      maskDataUrl = await resolveRetainedImage(task.maskImageId)
       if (!maskDataUrl) throw new Error('遮罩图片已不存在')
     }
 
@@ -3837,7 +3845,11 @@ export async function deleteFavoriteCollection(collectionId: string, deleteTasks
 
 /** 重试失败的任务：创建新任务并执行 */
 export async function retryTask(task: TaskRecord) {
-  const { settings } = useStore.getState()
+  const { settings, showToast } = useStore.getState()
+  if (hasUnavailableEphemeralInputs(task)) {
+    showToast(EPHEMERAL_INPUT_UNAVAILABLE_MESSAGE, 'error')
+    return
+  }
   const activeProfile = getActiveApiProfile(settings)
   const normalizedParams = normalizeParamsForSettings(task.params, settings, { hasInputImages: task.inputImageIds.length > 0 })
   const shouldUseTransparentOutput = normalizedParams.output_format === 'png' && normalizedParams.transparent_output
@@ -3858,8 +3870,10 @@ export async function retryTask(task: TaskRecord) {
     apiMode: activeProfile.apiMode,
     apiModel: activeProfile.model,
     inputImageIds: [...task.inputImageIds],
+    ...(task.ephemeralInputImageIds?.length ? { ephemeralInputImageIds: [...task.ephemeralInputImageIds] } : {}),
     maskTargetImageId: task.maskTargetImageId ?? null,
     maskImageId: task.maskImageId ?? null,
+    ...(task.ephemeralMaskImage ? { ephemeralMaskImage: true } : {}),
     transparentOutput: transparentMeta?.transparentOutput,
     transparentPrompt: transparentMeta?.effectivePrompt,
     outputImages: [],
@@ -3880,6 +3894,10 @@ export async function retryTask(task: TaskRecord) {
 /** 复用配置 */
 export async function reuseConfig(task: TaskRecord) {
   const { settings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
+  if (hasUnavailableEphemeralInputs(task)) {
+    showToast(EPHEMERAL_INPUT_UNAVAILABLE_MESSAGE, 'error')
+    return
+  }
   const normalizedSettings = normalizeSettings(settings)
   const currentProfile = getActiveApiProfile(settings)
   const taskProfile = normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
@@ -3900,7 +3918,7 @@ export async function reuseConfig(task: TaskRecord) {
   // 恢复输入图片
   const imgs: InputImage[] = []
   for (const imgId of task.inputImageIds) {
-    const dataUrl = await ensureImageCached(imgId)
+    const dataUrl = await resolveRetainedImage(imgId)
     if (dataUrl) {
       imgs.push({ id: imgId, dataUrl })
     }
@@ -3909,7 +3927,7 @@ export async function reuseConfig(task: TaskRecord) {
   setPrompt(task.prompt)
   const maskTargetImageId = task.maskTargetImageId ?? (task.maskImageId ? task.inputImageIds[0] : null)
   if (maskTargetImageId && task.maskImageId && imgs.some((img) => img.id === maskTargetImageId)) {
-    const maskDataUrl = await ensureImageCached(task.maskImageId)
+    const maskDataUrl = await resolveRetainedImage(task.maskImageId)
     if (maskDataUrl) {
       setMaskDraft({
         targetImageId: maskTargetImageId,
@@ -4222,6 +4240,7 @@ export async function clearData(options: ClearOptions = { clearConfig: true, cle
     await dbClearAgentConversations()
     await clearImages()
     clearImageCaches()
+    clearEphemeralImages()
     setTasks([])
     useStore.setState({
       agentConversations: [],
@@ -4579,9 +4598,7 @@ export async function addImageFromFile(file: File): Promise<void> {
 export async function createInputImageFromFile(file: File): Promise<InputImage | null> {
   if (!file.type.startsWith('image/')) return null
   const dataUrl = await fileToDataUrl(file)
-  const id = await storeImage(dataUrl, 'upload')
-  cacheImage(id, dataUrl)
-  return { id, dataUrl }
+  return retainInputImage(dataUrl)
 }
 
 /** 添加图片到输入（右键菜单）—— 支持 data/blob/http URL */
@@ -4590,7 +4607,5 @@ export async function addImageFromUrl(src: string): Promise<void> {
   const blob = await res.blob()
   if (!blob.type.startsWith('image/')) throw new Error('不是有效的图片')
   const dataUrl = await blobToDataUrl(blob)
-  const id = await storeImage(dataUrl, 'upload')
-  cacheImage(id, dataUrl)
-  useStore.getState().addInputImage({ id, dataUrl })
+  useStore.getState().addInputImage(await retainInputImage(dataUrl))
 }

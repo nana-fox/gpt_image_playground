@@ -10,6 +10,7 @@ import { cleanStaleAgentInputDrafts } from './lib/inputDraftState'
 import { clearEmbeddedSession, initializeEmbeddedContext, loadEmbeddedKeys } from './lib/embeddedSession'
 import { normalizePersistedState } from './lib/persistedState'
 import { setPresetConfig } from './lib/presetConfig'
+import { clearEphemeralImages, isEphemeralImage, retainInputImage } from './lib/imageRetention'
 vi.mock('./lib/db', () => {
   const tasks = new Map<string, TaskRecord>()
   const images = new Map<string, StoredImage>()
@@ -72,6 +73,7 @@ vi.mock('./lib/db', () => {
       images.clear()
       thumbnails.clear()
     },
+    hashDataUrl: async (dataUrl: string) => `ephemeral-${dataUrl}`,
     storeImage: async (dataUrl: string, source: StoredImage['source'] = 'upload') => {
       const id = `stored-image-${++imageSeq}`
       images.set(id, { id, dataUrl, source, createdAt: Date.now() })
@@ -605,7 +607,10 @@ describe('embedded gallery credential resolution', () => {
     )
   })
 
-  afterEach(() => clearEmbeddedSession())
+  afterEach(() => {
+    clearEmbeddedSession()
+    clearEphemeralImages()
+  })
 
   it('injects the selected raw key only into submit and execution request settings', async () => {
     await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
@@ -700,6 +705,12 @@ describe('embedded gallery credential resolution', () => {
 
   it('submits an in-memory reference without persisting the original', async () => {
     await clearImages()
+    vi.mocked(callImageApi).mockResolvedValueOnce({
+      images: ['data:image/png;base64,Z2VuZXJhdGVk'],
+      actualParams: {},
+      actualParamsList: [{}],
+      revisedPrompts: [],
+    })
     await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       code: 0,
       message: 'success',
@@ -720,11 +731,26 @@ describe('embedded gallery credential resolution', () => {
 
     await submitTask()
     await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('done'))
 
     expect(vi.mocked(callImageApi).mock.calls[0][0].inputImageDataUrls).toEqual(['data:image/png;base64,BAUG'])
     expect(useStore.getState().tasks[0]).toMatchObject({
       ephemeralInputImageIds: [image?.id],
     })
+    const storedIds = await getAllImageIds()
+    expect(storedIds).toHaveLength(1)
+    await expect(getImage(storedIds[0])).resolves.toMatchObject({
+      dataUrl: 'data:image/png;base64,Z2VuZXJhdGVk',
+      source: 'generated',
+    })
+  })
+
+  it('keeps masks in memory without creating an IndexedDB image row', async () => {
+    await clearImages()
+
+    const mask = await retainInputImage('data:image/png;base64,bWFzaw==', 'mask')
+
+    expect(isEphemeralImage(mask.id)).toBe(true)
     expect(await getAllImageIds()).toEqual([])
   })
 
@@ -750,6 +776,27 @@ describe('embedded gallery credential resolution', () => {
     expect(useStore.getState().prompt).toBe('keep-current-prompt')
     expect(useStore.getState().showToast).toHaveBeenCalledTimes(2)
     expect(useStore.getState().showToast).toHaveBeenCalledWith('原参考图仅在创建任务的页面会话中可用，刷新后无法重试或复用。', 'error')
+  })
+
+  it('still allows a pure text-to-image retry', async () => {
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      message: 'success',
+      data: {
+        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        pages: 1,
+      },
+    }))))
+    const textTask = task({ id: 'text-task', status: 'error', error: 'failed', inputImageIds: [] })
+    useStore.setState({ tasks: [textTask] })
+
+    await retryTask(textTask)
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+
+    expect(useStore.getState().tasks).toHaveLength(2)
   })
 })
 

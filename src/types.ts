@@ -211,8 +211,12 @@ export interface TaskRecord {
   transparentOriginalImages?: string[]
   /** 输入图片的 image store id 列表 */
   inputImageIds: string[]
+  /** 仅当前页面会话可用的输入图片 id */
+  ephemeralInputImageIds?: string[]
   maskTargetImageId?: string | null
   maskImageId?: string | null
+  /** 遮罩仅保存在当前页面会话内 */
+  ephemeralMaskImage?: boolean
   /** 输出图片的 image store id 列表 */
   outputImages: string[]
   /** 并发多图中失败的输出槽位，requestIndex 为从 0 开始的请求序号 */

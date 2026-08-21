@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppSettings, StoredImage, StoredImageThumbnail, TaskParams, TaskRecord } from '../types'
+import { DEFAULT_SETTINGS } from './apiProfiles'
 import { buildExportZip, getExportImageEstimatedBytes, getExportZipPlan, readExportZip, readExportZipFileAsDataUrl } from './exportZip'
 
 describe('exportZip', () => {
@@ -82,6 +83,8 @@ describe('exportZip', () => {
     vi.stubEnv('VITE_DEPLOYMENT_FLAVOR', 'nanafox-embedded')
     const keySentinel = ['export', 'key', 'sentinel'].join('-')
     const bearer = 'Bearer export-sentinel'
+    const uploadSentinel = 'uploaded-original-sentinel'
+    const maskSentinel = 'mask-original-sentinel'
     const task: TaskRecord = {
       id: 'embedded-task',
       prompt: '提示词',
@@ -97,14 +100,15 @@ describe('exportZip', () => {
       elapsed: 1,
     }
     const images: StoredImage[] = [
-      { id: 'upload', dataUrl: 'data:image/png;base64,dXBsb2Fk', source: 'upload' },
-      { id: 'mask', dataUrl: 'data:image/png;base64,bWFzaw==', source: 'mask' },
+      { id: 'upload', dataUrl: `data:image/png;base64,${btoa(uploadSentinel)}`, source: 'upload' },
+      { id: 'mask', dataUrl: `data:image/png;base64,${btoa(maskSentinel)}`, source: 'mask' },
       { id: 'generated', dataUrl: 'data:image/png;base64,Z2VuZXJhdGVk', source: 'generated' },
     ]
     const settings = {
+      ...DEFAULT_SETTINGS,
       apiKey: keySentinel,
-      profiles: [{ apiKey: keySentinel }],
-    } as unknown as AppSettings
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, apiKey: keySentinel })),
+    } as AppSettings
 
     const result = await buildExportZip({
       options: { exportConfig: true, exportTasks: true },
@@ -119,10 +123,15 @@ describe('exportZip', () => {
     })
     const parsed = await readExportZip(result.bytes)
     const serialized = JSON.stringify(parsed.manifest)
+    const extractedText = Object.values(parsed.files).map((bytes) => new TextDecoder().decode(bytes)).join('\n')
 
     expect(Object.keys(parsed.manifest.imageFiles ?? {})).toEqual(['generated'])
     expect(serialized).not.toContain(keySentinel)
     expect(serialized).not.toContain(bearer)
+    expect(extractedText).not.toContain(keySentinel)
+    expect(extractedText).not.toContain(bearer)
+    expect(extractedText).not.toContain(uploadSentinel)
+    expect(extractedText).not.toContain(maskSentinel)
     expect(Object.keys(parsed.files)).toEqual(expect.arrayContaining(['images/task-embedded-task.png', 'manifest.json']))
     expect(Object.keys(parsed.files)).not.toEqual(expect.arrayContaining(['images/task-embedded-task-input.png']))
   })
