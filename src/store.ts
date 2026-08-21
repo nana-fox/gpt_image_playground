@@ -66,6 +66,8 @@ import { canonicalizeBatchFunctionCallArguments, countResponseToolCalls, createR
 import { cleanStaleAgentInputDrafts, clearInputDraftState, isEmptyAgentInputDraft, normalizeAgentInputDrafts, remapAgentInputDraftMentionsForPathChange, restoreAgentInputDraftState, restoreGalleryInputDraftState, saveActiveAgentInputDrafts, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
 import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './lib/persistedState'
+import { resolveEmbeddedApiProfile } from './lib/embeddedSession'
+import { getDeploymentStorageName } from './lib/deploymentFlavor'
 import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveAgentImageActualParams, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
 
@@ -1012,7 +1014,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'gpt-image-playground',
+      name: getDeploymentStorageName(),
       version: 2,
       migrate: migratePersistedState,
       partialize: getPersistedState,
@@ -1641,7 +1643,6 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
 
   const normalizedSettings = normalizeSettings(settings)
   let activeProfile = getActiveApiProfile(settings)
-  let requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
   if (normalizedSettings.reuseTaskApiProfileTemporarily && (reusedTaskApiProfileId || reusedTaskApiProfileMissing)) {
     const reusedProfile = getReusedTaskApiProfile(normalizedSettings, reusedTaskApiProfileId)
     if (!reusedProfile) {
@@ -1661,9 +1662,16 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
       }
     } else {
       activeProfile = reusedProfile
-      requestSettings = createSettingsForApiProfile(normalizedSettings, reusedProfile)
     }
   }
+
+  try {
+    activeProfile = resolveEmbeddedApiProfile(activeProfile)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), 'error')
+    return
+  }
+  const requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
 
   if (validateApiProfile(activeProfile)) {
     showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
@@ -3519,7 +3527,17 @@ async function executeTask(taskId: string) {
     })
     return
   }
-  const activeProfile = taskProfile ?? getActiveApiProfile(settings)
+  let activeProfile = taskProfile ?? getActiveApiProfile(settings)
+  try {
+    activeProfile = resolveEmbeddedApiProfile(activeProfile)
+  } catch (error) {
+    updateTaskInStore(taskId, {
+      ...createTaskErrorPatch(task, error instanceof Error ? error.message : String(error), Date.now()),
+      falRecoverable: false,
+      customRecoverable: false,
+    })
+    return
+  }
   const requestSettings = createSettingsForApiProfile(settings, activeProfile)
   const taskProvider = taskProfile?.provider ?? task.apiProvider ?? activeProfile.provider
   let falRequestInfo: { requestId: string; endpoint: string } | null = task.falRequestId && task.falEndpoint
@@ -4570,4 +4588,3 @@ export async function addImageFromUrl(src: string): Promise<void> {
   cacheImage(id, dataUrl)
   useStore.getState().addInputImage({ id, dataUrl })
 }
-

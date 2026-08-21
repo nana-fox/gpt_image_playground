@@ -7,6 +7,7 @@
     "dev": "vite",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
+    "build:embedded": "tsc -b && vite build --mode nanafox-embedded",
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run",

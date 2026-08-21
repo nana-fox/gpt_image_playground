@@ -8,6 +8,7 @@ import HelpModal from './HelpModal'
 import HistoryModal from './HistoryModal'
 import { useFavoriteCollectionTitle } from './FavoriteCollections'
 import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
+import EmbeddedKeySelector from './EmbeddedKeySelector'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -235,6 +236,7 @@ export default function Header() {
               </div>
             </div>
           )}
+          <EmbeddedKeySelector />
           <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
             <button
               type="button"

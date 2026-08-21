@@ -120,6 +120,8 @@ export interface AppSettings {
   agentImageProfileId?: string | null
   profiles: ApiProfile[]
   activeProfileId: string
+  /** Nanafox 嵌入模式只持久化非敏感的 Sub2API Key ID。 */
+  selectedKeyId?: string | null
 }
 
 // ===== 任务参数 =====

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
+import { getDeploymentBase } from './src/lib/deploymentFlavor'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -49,7 +50,7 @@ export default defineConfig(async ({ command, mode }) => {
 
   return {
     plugins: [react()],
-    base: './',
+    base: getDeploymentBase(env.VITE_DEPLOYMENT_FLAVOR),
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),

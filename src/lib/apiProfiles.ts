@@ -676,6 +676,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     agentImageProfileId,
     profiles,
     activeProfileId,
+    selectedKeyId: typeof record.selectedKeyId === 'string' && record.selectedKeyId.trim() ? record.selectedKeyId.trim() : null,
   }
 }
 

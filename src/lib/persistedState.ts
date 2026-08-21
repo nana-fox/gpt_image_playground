@@ -4,6 +4,7 @@ import { normalizeAgentConversations } from './agentConversationState'
 import { ensureDefaultFavoriteCollection, normalizeFavoriteCollections, resolveDefaultFavoriteCollectionId } from './favoriteState'
 import { cleanStaleAgentInputDrafts, getPersistableAgentInputDrafts, isEmptyAgentInputDraft, normalizeAgentInputDraft, normalizeAgentInputDrafts, normalizeAgentInputDraftsByKey, saveGalleryInputDraft } from './inputDraftState'
 import { getPersistableAgentConversations, stripPersistedAgentConversations } from './agentResponseState'
+import { sanitizeEmbeddedProfiles, sanitizeEmbeddedSettings } from './embeddedSession'
 
 export interface PersistedAppState {
   settings: AppSettings
@@ -88,11 +89,16 @@ function normalizeParams(value: unknown, fallback: TaskParams): TaskParams {
 }
 
 export function createPersistedState(state: PersistedStateSource, includeLegacyAgentConversations = false): PersistedAppState {
-  const settings = normalizeSettings(state.settings)
+  const settings = sanitizeEmbeddedSettings(normalizeSettings(state.settings))
   const galleryInputDraft = saveGalleryInputDraft(state)
   return {
     settings,
-    previousPresetConfig: state.previousPresetConfig ?? null,
+    previousPresetConfig: state.previousPresetConfig
+      ? {
+          ...state.previousPresetConfig,
+          profiles: sanitizeEmbeddedProfiles(state.previousPresetConfig.profiles),
+        }
+      : null,
     dismissedPresetProfileIds: state.dismissedPresetProfileIds ?? [],
     dismissedPresetProviderIds: state.dismissedPresetProviderIds ?? [],
     params: state.params,
@@ -138,13 +144,13 @@ export function normalizePersistedState(
 ): PersistedStateMergePlan | null {
   if (!isRecord(persistedState)) return null
 
-  const settings = normalizeSettings(persistedState.settings ?? fallback.settings)
+  const settings = sanitizeEmbeddedSettings(normalizeSettings(persistedState.settings ?? fallback.settings))
   const previousPresetConfig = isRecord(persistedState.previousPresetConfig) && Array.isArray(persistedState.previousPresetConfig.profiles)
     ? (() => {
         const normalized = normalizeSettings(persistedState.previousPresetConfig)
         return {
           customProviders: normalized.customProviders,
-          profiles: persistedState.previousPresetConfig.profiles.length ? normalized.profiles : [],
+          profiles: persistedState.previousPresetConfig.profiles.length ? sanitizeEmbeddedProfiles(normalized.profiles) : [],
         }
       })()
     : null

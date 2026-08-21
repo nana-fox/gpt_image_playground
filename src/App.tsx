@@ -21,6 +21,7 @@ import ImageContextMenu from './components/ImageContextMenu'
 import SupportPromptModal from './components/SupportPromptModal'
 import { FavoriteCollectionPickerModal, FavoriteCollectionsView, ManageCollectionsModal } from './components/FavoriteCollections'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
+import { loadEmbeddedKeys } from './lib/embeddedSession'
 
 let defaultConfigImportStarted = false
 
@@ -111,14 +112,24 @@ export default function App() {
           : current.settings
         current.setSettings(await applyUrlSettings(settings))
         clearAppliedUrlSettings()
+        const selectedKeyId = useStore.getState().settings.selectedKeyId
+        const session = await loadEmbeddedKeys(selectedKeyId)
+        if (session.status === 'ready' && session.selectedKeyId !== selectedKeyId) {
+          useStore.getState().setSettings({ selectedKeyId: session.selectedKeyId })
+        }
       })
       .catch((error) => {
         console.warn('Failed to import preset config:', error)
         setPresetConfig(null)
         const state = useStore.getState()
-        void applyUrlSettings(state.settings).then((settings) => {
+        void applyUrlSettings(state.settings).then(async (settings) => {
           useStore.getState().setSettings(settings)
           clearAppliedUrlSettings()
+          const selectedKeyId = useStore.getState().settings.selectedKeyId
+          const session = await loadEmbeddedKeys(selectedKeyId)
+          if (session.status === 'ready' && session.selectedKeyId !== selectedKeyId) {
+            useStore.getState().setSettings({ selectedKeyId: session.selectedKeyId })
+          }
         })
       })
   }, [])
