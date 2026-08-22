@@ -1,6 +1,6 @@
 # Nanafox Embedded Image Playground
 
-> Status: test-site beta deployed from `d5e0591` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
+> Status: test-site beta deployed from `70aa5a5` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
 >
 > Scope boundary: this repository owns the forked frontend. The first beta does not change the Sub2API backend, database, production custom menu, or the existing `/tools/image-studio/` deployment.
 
@@ -16,7 +16,7 @@
 - Existing stable route: `/tools/image-studio/`; keep unchanged until product acceptance
 - First-release model/provider: OpenAI Images API with `gpt-image-2` only
 - Backend contract: iframe JWT may call only `/api/v1/keys`; the selected Sub2API API key may call only same-origin image generation/edit endpoints
-- Current test release: `/srv/nanafox/image-playground/releases/d5e0591`; rollback release: `ae98d26`
+- Current test release: `/srv/nanafox/image-playground/releases/70aa5a5`; rollback release: `d5e0591`
 
 The implementation must preserve upstream source history and keep Nanafox-specific changes at narrow seams. It must not copy this repository into `sub2api-tools`, add a submodule, or convert either repository into a monorepo.
 
@@ -27,19 +27,17 @@ Verdict: keep the original architecture. The compile-time embedded flavor, in-me
 | Area | Original direction | Current evidence | Adjustment |
 |---|---|---|---|
 | Credential boundary | JWT and raw keys remain in memory | Unit/integration tests pass; the real iframe scrubs its query and generated successfully | Keep unchanged. Never persist JWT to make refresh transparent. |
-| Host layout | Not specified | `getDeploymentSurface` distinguishes iframe and new-tab layouts; 320–1440px browser checks pass | Keep the host button in Sub2API and reserve an embedded-only safe area. |
-| New-tab refresh | Generic "refresh behavior" acceptance | Direct new-tab refresh loses the in-memory JWT while generated history remains visible | Define success as an explicit same-origin return-to-menu action, not silent session recovery. |
-| Menu identity | Custom menu already exists | Test menu still says `AI 图像生成` and has no custom icon | Change test configuration to `图像创作` plus the approved icon; no Sub2API code change. |
-| Deployment | Test-only independent artifact | `d5e0591` is live; health, CSP, asset parity, generation, and stable-tool HTTP checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
+| Host layout | Not specified | `getDeploymentSurface` distinguishes iframe and new-tab layouts; desktop and 390×844 real-browser checks pass | Keep the host button in Sub2API and reserve an embedded-only safe area. |
+| New-tab refresh | Generic "refresh behavior" acceptance | `70aa5a5` preserves generated history, withholds credentials, and exposes a validated return-to-menu action | Keep this explicit safe downgrade; do not add silent session recovery. |
+| Menu identity | Custom menu already exists | Test configuration now renders `图像创作` with the approved Sparkles SVG | Keep this as Sub2API test configuration; no source-code change. |
+| Deployment | Test-only independent artifact | `70aa5a5` is live; health, CSP, asset parity, responsive layout, and stable-tool HTTP checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
 | Live acceptance | Full Slice 4 matrix | Multi-key generation and generated-output reload pass | Still verify reference edit, mask edit, storage/export sentinels, and rollback. |
 
 ### Revised remaining order
 
-1. Preserve only validated same-origin return metadata in native history state; after a new-tab reload, show `重新打开菜单` without restoring credentials.
-2. Change the test custom-menu label/icon through existing settings only.
-3. Re-run default build, embedded build, full tests, bundle scan, and real iframe/new-tab verification.
-4. Complete reference edit, mask edit, storage/export sentinel, download, zero/one-key, and rollback acceptance before any production proposal.
-5. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
+1. Complete real reference edit, mask edit, download, zero/one-key, and rollback acceptance before any production proposal.
+2. Compare the existing `/tools/image-studio/` behavior, not only its HTTP availability.
+3. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
 
 ## Outcome and non-goals
 
@@ -152,8 +150,8 @@ After the beta is stable, add a versioned static curated template catalog in thi
 | `retryTask` | `src/store.ts:3816` | `(task: TaskRecord) => Promise<void>` | Reject reference-dependent retry when ephemeral originals no longer exist. |
 | `createInputImageFromFile` | `src/store.ts:4555` | `(file: File) => Promise<InputImage \| null>` | Replace immediate upload persistence with the ephemeral image path. |
 | `addImageFromUrl` | `src/store.ts:4564` | `(src: string) => Promise<void>` | Apply the same retention and URL-fetch policy as file upload. |
-| `initializeEmbeddedContext` | `src/lib/embeddedSession.ts:74` | `(href?, replaceState?, root?, embedded?) => EmbeddedPublicContext \| null` | Scrub query credentials and preserve only validated public return metadata in native history state. |
-| `getEmbeddedReopenUrl` | `src/lib/embeddedSession.ts:299` | `() => string \| null` | Offer a same-origin route back to the Sub2API custom menu after session loss. |
+| `initializeEmbeddedContext` | `src/lib/embeddedSession.ts:91` | `(href?, replaceState?, root?, embedded?, historyState?) => EmbeddedPublicContext \| null` | Scrub query credentials and preserve only validated public return metadata in native history state. |
+| `getEmbeddedReopenUrl` | `src/lib/embeddedSession.ts:331` | `() => string \| null` | Offer a same-origin route back to the Sub2API custom menu after session loss. |
 | `getDeploymentSurface` | `src/lib/deploymentFlavor.ts:20` | `(embedded?, framed?) => DeploymentSurface` | Keep iframe-only safe-area layout out of standalone and upstream builds. |
 | `Header` | `src/components/Header.tsx:158` | React header render | Hide duplicate iframe title, restore the standalone title, and reserve the host action area. |
 
@@ -331,16 +329,18 @@ No analytics or remote client logging is added in the beta. Browser console diag
 
 ## Acceptance checklist
 
-- [x] Default upstream build passes at `d5e0591`.
-- [x] Nanafox embedded build passes with base `/tools/image-playground/` at `d5e0591`.
-- [x] Full test suite passes: 35 files, 536 tests at `d5e0591`.
-- [ ] No JWT/raw key/bearer sentinel appears in URL after bootstrap, LocalStorage, IndexedDB, task JSON, ZIP export, logs, or Service Worker cache.
-- [ ] No uploaded original/mask sentinel appears in IndexedDB or export.
-- [ ] Zero/one/multiple/deleted/disabled key flows behave as specified.
-- [ ] Unsupported provider/model/mode and `n > 1` cannot reach network I/O.
+- [x] Default upstream build passes at `70aa5a5`.
+- [x] Nanafox embedded build passes with base `/tools/image-playground/` at `70aa5a5`.
+- [x] Full test suite passes: 35 files, 538 tests at `70aa5a5`.
+- [x] URL/history/storage/export negative tests find no JWT, raw key, bearer, upload, or mask sentinel; the live beta has no Service Worker registration.
+- [x] Uploaded originals and masks stay out of IndexedDB and export in automated tests.
+- [x] Zero/one/multiple/deleted/disabled key flows pass automated tests; real zero/one-key acceptance remains pending.
+- [x] Unsupported provider/model/mode and `n > 1` cannot reach network I/O in automated tests.
 - [ ] Reference edit works in the same session; reload makes reference retry unavailable with explicit UI.
 - [x] Generated output remains available after reloading the outer custom page.
 - [x] Real Sub2API iframe multi-key generation passes on the test site.
+- [x] Standalone reload preserves history, disables generation, and returns safely to the custom menu without restoring credentials.
+- [x] Desktop and 390×844 host layouts have no button/key overlap or horizontal overflow.
 - [x] Existing `/tools/image-studio/` remains reachable and uses separate storage; behavioral comparison remains pending.
 - [ ] Switching the test custom menu back to `/tools/image-studio/` demonstrates rollback.
 
@@ -353,7 +353,7 @@ No analytics or remote client logging is added in the beta. Browser console diag
 | Upstream changes can reintroduce prohibited behavior | Controlled by manual tagged merges and negative gates | Fork maintainer | Run the full embedded security suite for every upstream merge. |
 | Memory-only inputs remove cross-reload reference retry | Product tradeoff required by current privacy rule | Product owner | Reassess only with an explicit encrypted/server-side storage design. |
 | Large upstream store increases change-conflict risk | Known; keep changes in lib modules and narrow store seams | Fork maintainer | Extract only proven shared seams during implementation, not speculative abstractions. |
-| Standalone reload cannot resume generation without a fresh JWT | Fix in current beta: preserve only same-origin return metadata and show a reopen action | Image Playground owner | Close before production acceptance. |
+| Standalone reload cannot resume generation without a fresh JWT | Accepted and verified safe downgrade: preserve only same-origin return metadata and show a reopen action | Image Playground owner | Recheck after every upstream merge. |
 
 ## Start command for the implementation task
 
