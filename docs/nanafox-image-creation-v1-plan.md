@@ -1,6 +1,6 @@
 # NanaFox 图像创作 V1 实施计划
 
-状态：Slice 0–3 已完成本地实现与验证；当前仍不推送、不部署。Slice 4 的真实 PostgreSQL/Redis 联调待可用环境继续。
+状态：Slice 0–4 已完成；2026-08-23 已部署到隔离的 ToC 测试环境并通过真实 PostgreSQL、Redis、普通用户、管理员和 `gpt-image-2` 验收。未推送、未部署生产。
 
 本文件是图像创作 V1 的单一实施依据。旧的嵌入适配基线仍由 `docs/nanafox-embedded-plan.md:1` 约束；模板、灵感库、用户状态、管理端、嵌入会话和服务端增量以本文件为准。
 
@@ -25,8 +25,8 @@
 
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
-| Playground | `ab501b1` | `codex/image-creation-v1` | 普通/嵌入构建通过；37 个测试文件 / 543 项测试通过 |
-| Sub2API | `8a82c104f` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...` 通过；前端 lint/typecheck/build、255 个测试文件 / 1743 项测试通过；本机未安装 `golangci-lint`，不将其记为已执行 |
+| Playground | `20e8a95` | `codex/image-creation-v1` | 普通/嵌入构建通过；37 个测试文件 / 543 项测试通过；测试静态制品已发布 |
+| Sub2API | `bc3e85482` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...`、前端 lint/typecheck/build 通过；独立镜像已发布到测试容器；本机未安装 `golangci-lint`，不将其记为已执行 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
@@ -36,7 +36,7 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 - Slice 1：4 张独立表、素材/模板/用户状态/首页精选、严格校验和 API 已完成。
 - Slice 2：管理员模板列表、编辑器、发布状态、封面和首页精选已完成。
 - Slice 3：创作台融合布局、灵感库、详情、收藏/最近使用、应用与撤销已完成。
-- 浏览器验证已覆盖桌面与 390×844 移动端、普通用户与管理员视图、未保存保护、首页排序入口、应用模板与撤销；验证使用同源 mock API，不替代 Slice 4 的真实服务联调。
+- Slice 4 已在 `router-test.nanafox.com` 使用真实后端、测试数据库和测试 Redis 完成；mock 浏览器验证继续保留为快速回归，不再代替真实联调结论。
 
 ## 3. 页面与交互契约
 
@@ -295,15 +295,13 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 实现创作台融合布局、灵感库、详情、收藏、最近使用和应用模板；模板 API 失败隔离于本地创作历史。
 
-### Slice 4：本地完整验收
+### Slice 4：测试环境完整验收
 
-在本地 Sub2API + Playground 环境验证普通用户、管理员、切换账号、iframe、新窗口、刷新、过期/撤销、移动端、深浅色和真实生成兼容。
-
-当前边界：真实 PostgreSQL 集成测试已保留为 `integration` 测试，但本机 Docker 不可用时会明确跳过；在可用联调环境中必须补跑，不以 mock 浏览器验证代替。
+在隔离的 Sub2API 测试环境验证普通用户、管理员、iframe、新窗口、一次性票据、权限负向、移动端和真实生成兼容。验收结果见“测试环境部署与验收记录”。
 
 ### Slice 5：发布
 
-不在当前授权内。只有用户再次明确授权后，才编写测试环境发布记录并部署；生产继续需要独立授权和发布分支。
+测试环境发布已获授权并完成。生产发布仍不在当前授权内，必须重新制定生产门禁、数据迁移备份和回滚窗口，并由用户单独授权。
 
 ## L1.1 引用验证
 
@@ -425,11 +423,59 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 | P99 延迟 | session 每请求 Redis + user lookup | 旧 JWT 也查 user | 2 次有界依赖 | 测试环境观察 |
 | 并发 | 首页/草稿写竞争 | 原无 | revision/ETag 乐观锁 | 并发测试 |
 
+## 8. 测试环境部署与验收记录（2026-08-23）
+
+### 8.1 发布边界
+
+| 项目 | 测试环境结果 | 生产边界 |
+|---|---|---|
+| Sub2API | 从本地 `bc3e85482` 以 `git archive` 传入独立构建目录，镜像 `sub2api:test-image-creation-v1-bc3e85482`，容器 `sub2api-test` 健康 | 生产容器、镜像和配置未修改 |
+| Playground | `20e8a95` 的 embedded 制品发布到 `releases/20e8a95`；完整树 SHA-256 为 `dda4760cf8200360d1dc763a76e672b52f97059fcb44da7f0870330875417788` | `prod-current` 继续指向 `releases/70aa5a5` |
+| 服务端 Git | `/data/service/sub2api` 保持 `main`、`b56d0a7a`、工作区干净 | 未切分支、未提交、未推送 |
+| NAS | 不再承担 V1 验收；旧临时入口无监听，测试数据保留 | 无依赖 |
+
+测试菜单只使用已有 `custom_menu_items` 作为宿主导航，测试值为 `图像创作` → 测试静态地址。模板、首页精选、素材和用户状态仍只在 4 张独立 `image_creation_*` 表中，不复用 settings 作为产品数据。
+
+### 8.2 隔离证明
+
+| 检查 | 结果 |
+|---|---|
+| PostgreSQL | 测试库 `sub2api_test` 有 4 张 `image_creation_*` 表；生产库 `sub2api` 为 0 张 |
+| Redis | 测试使用 DB 1；生产使用 DB 0 |
+| 容器 | `sub2api-test` 与 `sub2api-prod` 均为 healthy；生产容器未重建 |
+| 静态指针 | 测试 `current` → `releases/20e8a95`；生产 `prod-current` → `releases/70aa5a5` |
+| 公网探测 | 测试 health/playground 为 200、旧 `/tools/image-studio/` 为 410；生产 health/playground 保持 200 |
+| 日志 | 测试容器自本次启动后的 fatal/panic/migration fail/error 匹配数为 0 |
+
+### 8.3 验收证据
+
+| 流程 | 当前运行结果 |
+|---|---|
+| 会话安全 | ticket 二次交换 401；普通 scoped session 调管理员 API 403；普通 JWT 直接调 scoped API 401；新窗口最终 URL 无 query/fragment |
+| 普通用户 API | 首页模板、详情、素材、收藏/取消收藏、apply、最近使用全部通过；素材响应有 immutable cache 和 `nosniff` |
+| 管理员 API | 真实 PostgreSQL 中完成封面上传、模板创建、发布和首页精选整组保存 |
+| 普通用户浏览器 | 菜单、iframe、灵感详情、应用模板、撤销、新窗口均通过 |
+| 管理员浏览器 | 模板管理、预览、编辑器关闭、未保存保护、首页精选、新窗口均通过；宿主工具栏不再拦截编辑器按钮 |
+| 多端 | 桌面和 390×844 移动端的宿主与 iframe 均无横向溢出 |
+| 真实生成 | 合成测试用户绑定测试 `gpt-pro` 分组后，`gpt-image-2` 返回 HTTP 200、1 张 PNG，耗时 23.3 秒，约 1.38 MB |
+
+验收只使用两名 `example.test` 合成账号。合成管理员的合规确认、合成用户的一日测试订阅和模板数据仅写入测试数据库，不使用真实用户凭证。
+
+本轮联调发现并在部署前修复 3 个边界问题：DTO JSON 字段序列化、素材超限错误码一致性、图像创作宿主按钮与 iframe 内容重叠。对应 Sub2API 提交为 `8c9fe1cd9`、`8a82c104f`、`bc3e85482`。
+
+### 8.4 测试环境回滚
+
+1. 将测试 `custom_menu_items` 恢复为发布前的空数组，先关闭入口。
+2. 将测试静态 `current` 原子切回 `releases/70aa5a5`。
+3. 停止并保留当前测试容器，将 `sub2api-test-rollback-b56d0a7a` 恢复为 `sub2api-test`。
+4. 保留 4 张增量表，不执行 destructive down migration；旧代码不会读取它们。
+5. 回滚不包含任何生产操作。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Owner | Follow-up ticket |
 |---|---|---|---|
 | PostgreSQL BYTEA 体积随模板增长 | 接受：V1 最多小规模精选素材，8MiB 硬限 | NanaFox backend | V2 asset storage migration trigger |
-| Safari fragment/new-window 行为 | 待 Slice 4 实机验证 | NanaFox frontend | Slice 4 Safari acceptance |
+| Safari fragment/new-window 行为 | Chromium 真实测试已通过；Safari 的 V1 模板流仍待实机回归 | NanaFox frontend | Production Safari acceptance |
 | 开源提示词许可逐条核对 | 待内容导入前完成 | NanaFox product | V1 content provenance checklist |
 | 用户软删除清理接点 | 待 Slice 1 随现有删除流程验证 | NanaFox backend | Slice 1 user cleanup contract |
