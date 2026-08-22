@@ -343,7 +343,7 @@ Planned
 | Caddy live/template 已有漂移 | 已关闭 | ToC ops owner | live 已 reload；ops-only 模板分支独立提交 |
 | 首请求 access log 可含 JWT | 已知继承风险 | Sub2API owner | 后续设计 scoped one-time embed token |
 | 无百分比灰度 | 接受 | Product owner | 首次发布用 admin → user；有真实分批需求再引入 flag |
-| 普通用户受控验收账号未指定 | 待 P3 关闭 | Product owner | 指定现有受控账号，不修改真实客户 Key |
+| 普通用户受控验收账号未指定 | 已关闭 | Product owner | Safari 现有普通用户完成入口、iframe、Key 与提交就绪验收 |
 
 ## 2026-08-22 执行记录
 
@@ -352,7 +352,8 @@ Planned
 | G0 | 通过 | normal/embedded build 通过；Vitest 35 files、538 tests 通过；服务器 release manifest 与 embedded 构建一致 |
 | P1 | 通过 | 生产 Playground HTML/JS 200，安全响应头齐全；root/health/login/keys 与测试站正常；`sub2api-prod` StartedAt 未变化 |
 | P2 | 通过 | 菜单仅管理员可见；生产单次生成 1254×1254 PNG 并下载成功；iframe、390×844、独立窗口与凭据持久化检查通过 |
-| P3 | 暂停 | 未找到明确标记的受控普通用户账号；按门禁保持 `visibility=admin`，未创建临时用户或修改真实客户 Key |
-| P4 | 未执行 | 必须等待 P3 通过；生产 `/tools/image-studio/` 暂不改为 410 |
+| P3 | 通过 | 同一菜单切为 `visibility=user`；公开设置仅一个图像入口；Safari 普通用户看到入口、打开 iframe、加载 9 把 Key、选择既有 `image` Key，输入文案后提交按钮就绪；未再次生成，验收后清空文案 |
+| P4 | 通过 | 生产 `/tools/image-studio` 与子路径均为 410；新路径和核心页面为 200；Caddy reload 后 `sub2api-prod` StartedAt 未变化 |
+| Observe | 通过 | 10:57～11:30 主动观察；最终直连连续 15 轮均为 health 200、新路径 200、旧路径 410、菜单唯一；代理链路 000 误报经 `--noproxy`、服务端本机和 Caddy 日志交叉验证排除；Playground 5xx 为 0 |
 
-当前生产回滚点：`/etc/caddy/Caddyfile.before-image-playground-prod-20260822-022853`；菜单备份：`/srv/nanafox/image-playground/backups/nanafox-production-menu-before-image-playground-20260822-022853.json`。
+当前生产回滚点：完整发布前 `/etc/caddy/Caddyfile.before-image-playground-prod-20260822-022853`，P4 前 `/etc/caddy/Caddyfile.before-image-studio-retire-20260822-025553`；菜单备份：`/srv/nanafox/image-playground/backups/nanafox-production-menu-before-image-playground-20260822-022853.json`。
