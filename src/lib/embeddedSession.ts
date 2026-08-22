@@ -41,6 +41,11 @@ interface RootElement {
   classList: Pick<DOMTokenList, 'toggle'>
 }
 
+interface EmbeddedSource {
+  srcHost: string
+  srcUrl: string
+}
+
 let context: EmbeddedContext | null = null
 let rawKeys = new Map<string, EmbeddedRawKey>()
 let rejectedKeyIds = new Set<string>()
@@ -71,11 +76,24 @@ function getSafeHttpUrl(value: string) {
   }
 }
 
+function getEmbeddedSource(origin: string, value: unknown): EmbeddedSource | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.srcHost !== 'string' || typeof record.srcUrl !== 'string') return null
+  const srcHost = record.srcHost.trim()
+  const srcUrl = record.srcUrl.trim()
+  const source = getSafeHttpUrl(srcHost)
+  const reopen = getSafeHttpUrl(srcUrl)
+  if (!source || !reopen || source.origin !== origin || reopen.origin !== origin) return null
+  return { srcHost, srcUrl }
+}
+
 export function initializeEmbeddedContext(
   href = window.location.href,
   replaceState: (data: unknown, unused: string, url?: string | URL | null) => void = window.history.replaceState.bind(window.history),
   root: RootElement = document.documentElement,
   embedded = isNanafoxEmbedded(),
+  historyState?: unknown,
 ): EmbeddedPublicContext | null {
   if (!embedded) {
     clearEmbeddedSession()
@@ -84,14 +102,28 @@ export function initializeEmbeddedContext(
 
   const url = new URL(href)
   const params = url.searchParams
+  const savedHistoryState = historyState === undefined && typeof window !== 'undefined'
+    ? window.history.state
+    : historyState
+  const querySource = getEmbeddedSource(url.origin, {
+    srcHost: params.get('src_host') ?? '',
+    srcUrl: params.get('src_url') ?? '',
+  })
+  const savedSource = getEmbeddedSource(
+    url.origin,
+    savedHistoryState && typeof savedHistoryState === 'object' && !Array.isArray(savedHistoryState)
+      ? (savedHistoryState as Record<string, unknown>).nanafoxEmbeddedSource
+      : null,
+  )
+  const source = params.has('src_host') || params.has('src_url') ? querySource : savedSource
   context = {
     token: params.get('token')?.trim() ?? '',
     theme: params.get('theme')?.trim() ?? '',
     lang: params.get('lang')?.trim() ?? '',
     uiMode: params.get('ui_mode')?.trim() ?? '',
     userId: params.get('user_id')?.trim() ?? '',
-    srcHost: params.get('src_host')?.trim() ?? '',
-    srcUrl: params.get('src_url')?.trim() ?? '',
+    srcHost: source?.srcHost ?? '',
+    srcUrl: source?.srcUrl ?? '',
     origin: url.origin,
   }
   rawKeys = new Map()
@@ -107,7 +139,7 @@ export function initializeEmbeddedContext(
   for (const key of EMBEDDED_CONTEXT_KEYS) params.delete(key)
   if (hadContext) {
     const search = params.toString()
-    replaceState(null, '', `${url.pathname}${search ? `?${search}` : ''}${url.hash}`)
+    replaceState(source ? { nanafoxEmbeddedSource: source } : null, '', `${url.pathname}${search ? `?${search}` : ''}${url.hash}`)
   }
 
   return getEmbeddedContext()
@@ -300,6 +332,6 @@ export function getEmbeddedReopenUrl() {
   if (!context) return null
   const source = getSafeHttpUrl(context.srcHost)
   const reopen = getSafeHttpUrl(context.srcUrl)
-  if (!source || !reopen || source.origin !== reopen.origin) return null
+  if (!source || !reopen || source.origin !== context.origin || reopen.origin !== context.origin) return null
   return reopen.toString()
 }
