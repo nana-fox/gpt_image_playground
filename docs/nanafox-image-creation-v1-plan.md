@@ -26,7 +26,7 @@
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
 | Playground | `ab501b1` | `codex/image-creation-v1` | 普通/嵌入构建通过；37 个测试文件 / 543 项测试通过 |
-| Sub2API | `8a82c104f` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...` 通过；本机未安装 `golangci-lint`，不将其记为已执行 |
+| Sub2API | `8a82c104f` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...` 通过；前端 lint/typecheck/build、255 个测试文件 / 1743 项测试通过；本机未安装 `golangci-lint`，不将其记为已执行 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
