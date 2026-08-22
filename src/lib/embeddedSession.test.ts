@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultOpenAIProfile } from './apiProfiles'
 import {
   clearEmbeddedSession,
+  getEmbeddedReopenUrl,
   getEmbeddedSessionState,
   hasEmbeddedRuntimeKey,
   initializeEmbeddedContext,
@@ -67,10 +68,52 @@ describe('embedded session', () => {
       srcUrl: 'https://app.example.com/user/custom',
       origin: 'https://app.example.com',
     })
-    expect(replaceState).toHaveBeenCalledWith(null, '', '/tools/image-playground/?keep=1#result')
+    expect(replaceState).toHaveBeenCalledWith({
+      nanafoxEmbeddedSource: {
+        srcHost: 'https://app.example.com',
+        srcUrl: 'https://app.example.com/user/custom',
+      },
+    }, '', '/tools/image-playground/?keep=1#result')
     expect(ROOT.classList.toggle).toHaveBeenCalledWith('dark', true)
     expect(ROOT.lang).toBe('zh-CN')
     expect(JSON.stringify(context)).not.toContain('jwt-secret')
+  })
+
+  it('restores a same-origin reopen URL after reload without restoring credentials', async () => {
+    const historyState = {
+      nanafoxEmbeddedSource: {
+        srcHost: 'https://app.example.com',
+        srcUrl: 'https://app.example.com/user/custom',
+      },
+    }
+
+    initializeEmbeddedContext(
+      'https://app.example.com/tools/image-playground/',
+      vi.fn(),
+      ROOT,
+      true,
+      historyState,
+    )
+    const request = vi.fn<typeof fetch>()
+    await loadEmbeddedKeys(null, request)
+
+    expect(getEmbeddedSessionState()).toMatchObject({ status: 'auth-error' })
+    expect(getEmbeddedReopenUrl()).toBe('https://app.example.com/user/custom')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('rejects cross-origin reopen metadata', () => {
+    const replaceState = vi.fn()
+
+    initializeEmbeddedContext(
+      'https://app.example.com/tools/image-playground/?token=jwt-secret&src_host=https%3A%2F%2Fevil.example&src_url=https%3A%2F%2Fevil.example%2Fcustom',
+      replaceState,
+      ROOT,
+      true,
+    )
+
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/tools/image-playground/')
+    expect(getEmbeddedReopenUrl()).toBeNull()
   })
 
   it('reports a session auth error without fetching when the token is missing', async () => {
