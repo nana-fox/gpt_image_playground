@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useSyncExternalStore } from 'react'
 import { initStore, restoreExplicitPresetConfig, useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, getExplicitUrlSettingsIds, hasUrlSettingParams } from './lib/urlSettings'
 import { createDefaultOpenAIProfile, hasDefaultPresetConfig, isAgentTextApiProfile, normalizeSettings } from './lib/apiProfiles'
@@ -16,9 +16,11 @@ import ConfirmDialog from './components/ConfirmDialog'
 import Toast from './components/Toast'
 import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
+import ImageCreationAdmin from './components/ImageCreationAdmin'
+import ImageCreationUser from './components/ImageCreationUser'
 import { FavoriteCollectionPickerModal, FavoriteCollectionsView, ManageCollectionsModal } from './components/FavoriteCollections'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
-import { loadEmbeddedKeys } from './lib/embeddedSession'
+import { getEmbeddedSessionScope, getEmbeddedSessionState, loadEmbeddedKeys, subscribeEmbeddedSession } from './lib/embeddedSession'
 import { isEmbeddedFeatureEnabled } from './lib/deploymentFlavor'
 
 let defaultConfigImportStarted = false
@@ -35,6 +37,8 @@ export default function App() {
   const settingsEnabled = isEmbeddedFeatureEnabled('settings')
   const supportPromptEnabled = isEmbeddedFeatureEnabled('support-prompt')
   const configTransferEnabled = isEmbeddedFeatureEnabled('config-transfer')
+  const embeddedSession = useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
+  const embeddedAdmin = EMBEDDED_BUILD && getEmbeddedSessionScope() === 'admin'
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
 
@@ -160,7 +164,13 @@ export default function App() {
   return (
     <>
       <Header />
-      {agentEnabled && AgentWorkspace && appMode === 'agent' ? (
+      {EMBEDDED_BUILD && embeddedSession.status === 'auth-error' ? (
+        <main className="safe-area-x mx-auto max-w-7xl py-16 text-center"><h1 className="text-lg font-semibold text-gray-900 dark:text-white">图像创作会话已失效</h1><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{embeddedSession.message}</p><p className="mt-1 text-xs text-gray-400">请返回 NanaFox 后重新打开“图像创作”。本地创作记录不会删除。</p></main>
+      ) : EMBEDDED_BUILD ? embeddedAdmin ? (
+        <ImageCreationAdmin />
+      ) : (
+        <ImageCreationUser localGallery={<><SearchBar />{filterFavorite && !activeFavoriteCollectionId ? <FavoriteCollectionsView /> : <TaskGrid />}</>} />
+      ) : agentEnabled && AgentWorkspace && appMode === 'agent' ? (
         <Suspense fallback={null}><AgentWorkspace /></Suspense>
       ) : (
         <main data-home-main data-drag-select-surface className="pb-48">
@@ -170,7 +180,7 @@ export default function App() {
           </div>
         </main>
       )}
-      <InputBar />
+      {!embeddedAdmin && <InputBar mobileDefaultCollapsed={EMBEDDED_BUILD} />}
       <DetailModal />
       <Lightbox />
       {settingsEnabled && SettingsModal && <Suspense fallback={null}><SettingsModal /></Suspense>}

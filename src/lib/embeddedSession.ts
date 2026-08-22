@@ -273,6 +273,15 @@ export function getEmbeddedSessionAuthorization() {
   return context?.sessionToken ? `Bearer ${context.sessionToken}` : null
 }
 
+export function getEmbeddedSessionScope() {
+  return context?.scope ?? ''
+}
+
+export function invalidateEmbeddedSession(message = '嵌入会话已失效，请返回 NanaFox 后重新打开。') {
+  if (context) context.sessionToken = ''
+  return clearKeys({ status: 'auth-error', keys: [], selectedKeyId: null, message })
+}
+
 export function selectEmbeddedKey(id: string) {
   if (!rawKeys.has(id)) return false
   publish({ status: 'ready', keys: state.keys, selectedKeyId: id })

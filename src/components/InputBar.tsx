@@ -84,7 +84,7 @@ function AtImageOptionThumb({ option }: { option: AtImageOption }) {
   )
 }
 
-export default function InputBar() {
+export default function InputBar({ mobileDefaultCollapsed = false }: { mobileDefaultCollapsed?: boolean }) {
   useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
   const prompt = useStore((s) => s.prompt)
   const appMode = useStore((s) => s.appMode)
@@ -328,7 +328,7 @@ export default function InputBar() {
   const [submitHover, setSubmitHover] = useState(false)
   const [attachHover, setAttachHover] = useState(false)
   const [imageHintId, setImageHintId] = useState<string | null>(null)
-  const [mobileCollapsed, setMobileCollapsed] = useState(false)
+  const [mobileCollapsed, setMobileCollapsed] = useState(mobileDefaultCollapsed)
   const [showSizePicker, setShowSizePicker] = useState(false)
   const [showMobileUploadMenu, setShowMobileUploadMenu] = useState(false)
   const [maskPreviewUrl, setMaskPreviewUrl] = useState('')
