@@ -132,9 +132,9 @@ Gate: IndexedDB and export tests distinguish upload/mask from generated output; 
 
 Gate: product acceptance on the test site plus a demonstrated atomic release rollback. Production remains out of scope.
 
-### Later — templates and saved prompts
+### Next product stage — image creation templates and inspiration
 
-After the beta is stable, add a versioned static curated template catalog in this frontend. Treat cross-device user prompt storage as a separate Sub2API backend proposal because it expands the iframe JWT contract beyond `/api/v1/keys`.
+The former static-catalog idea has been replaced by the approved, backend-supported image creation V1. Its product flow, isolated tables and APIs, scoped embedded session, admin workflow, user state, asset storage, rollout slices, and gates are defined in `docs/nanafox-image-creation-v1-plan.md`. This embedded baseline remains authoritative only for the already-shipped generator adapter and its regression constraints.
 
 ## L1.1 Reference verification
 
