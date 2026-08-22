@@ -66,7 +66,7 @@ describe('persisted state codec', () => {
 
   it('persists only the selected key ID in an embedded session', () => {
     initializeEmbeddedContext(
-      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      'https://app.example.com/tools/image-playground/#launch=one-time-ticket',
       vi.fn(),
       { lang: '', classList: { toggle: vi.fn() } },
       true,
@@ -96,7 +96,7 @@ describe('persisted state codec', () => {
 
   it('does not persist embedded reference drafts that cannot survive reload', () => {
     initializeEmbeddedContext(
-      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      'https://app.example.com/tools/image-playground/#launch=one-time-ticket',
       vi.fn(),
       { lang: '', classList: { toggle: vi.fn() } },
       true,

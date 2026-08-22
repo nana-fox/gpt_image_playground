@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultOpenAIProfile } from './apiProfiles'
 import {
+  bootstrapEmbeddedSession,
   clearEmbeddedSession,
   getEmbeddedReopenUrl,
   getEmbeddedSessionState,
   hasEmbeddedRuntimeKey,
   initializeEmbeddedContext,
+  invalidateEmbeddedSelectedKey,
   loadEmbeddedKeys,
   resolveEmbeddedApiProfile,
   selectEmbeddedKey,
@@ -16,32 +18,30 @@ const ROOT = {
   classList: { toggle: vi.fn() },
 }
 
-function key(id: number, patch: Record<string, unknown> = {}) {
-  return {
-    id,
-    user_id: 9,
-    key: `sk-key-${id}`,
-    name: `Key ${id}`,
-    status: 'active',
-    ...patch,
-  }
+function key(id: number) {
+  return { id, key: `sk-key-${id}`, name: `Key ${id}` }
 }
 
-function page(items: unknown[], current = 1, pages = 1, status = 200) {
+function session(apiKeys: unknown[], status = 200) {
   return new Response(JSON.stringify({
     code: status >= 400 ? status : 0,
     message: status >= 400 ? 'request failed' : 'success',
-    data: { items, total: items.length, page: current, page_size: 2, pages },
+    data: status >= 400 ? null : {
+      session_token: 'scoped-session',
+      expires_in: 7200,
+      viewer: { id: '9', role: 'user', scope: 'user' },
+      api_keys: apiKeys,
+    },
   }), {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
 }
 
-function boot(search = '?token=iframe-jwt&theme=dark&lang=zh-CN&ui_mode=embedded&user_id=9&src_host=https%3A%2F%2Fapp.example.com&src_url=https%3A%2F%2Fapp.example.com%2Fuser%2Fcustom') {
+function boot(fragment = 'launch=one-time-ticket&theme=dark&lang=zh-CN&ui_mode=embedded&src_host=https%3A%2F%2Fapp.example.com&src_url=https%3A%2F%2Fapp.example.com%2Fuser%2Fcustom') {
   const replaceState = vi.fn()
   const context = initializeEmbeddedContext(
-    `https://app.example.com/tools/image-playground/${search}#result`,
+    `https://app.example.com/tools/image-playground/?token=legacy-jwt&user_id=666&keep=1#${fragment}`,
     replaceState,
     ROOT,
     true,
@@ -56,14 +56,14 @@ afterEach(() => {
 })
 
 describe('embedded session', () => {
-  it('captures iframe context once and scrubs it from the visible URL', () => {
-    const { context, replaceState } = boot('?token=jwt-secret&theme=dark&lang=zh-CN&ui_mode=embedded&user_id=9&src_host=https%3A%2F%2Fapp.example.com&src_url=https%3A%2F%2Fapp.example.com%2Fuser%2Fcustom&keep=1')
+  it('captures public launch context and scrubs credentials before exchange', () => {
+    const { context, replaceState } = boot()
 
     expect(context).toEqual({
       theme: 'dark',
       lang: 'zh-CN',
       uiMode: 'embedded',
-      userId: '9',
+      userId: '',
       srcHost: 'https://app.example.com',
       srcUrl: 'https://app.example.com/user/custom',
       origin: 'https://app.example.com',
@@ -73,29 +73,29 @@ describe('embedded session', () => {
         srcHost: 'https://app.example.com',
         srcUrl: 'https://app.example.com/user/custom',
       },
-    }, '', '/tools/image-playground/?keep=1#result')
+    }, '', '/tools/image-playground/?keep=1')
     expect(ROOT.classList.toggle).toHaveBeenCalledWith('dark', true)
     expect(ROOT.lang).toBe('zh-CN')
-    expect(JSON.stringify(context)).not.toContain('jwt-secret')
+    expect(JSON.stringify(context)).not.toContain('legacy-jwt')
+    expect(JSON.stringify(context)).not.toContain('one-time-ticket')
   })
 
   it('restores a same-origin reopen URL after reload without restoring credentials', async () => {
-    const historyState = {
-      nanafoxEmbeddedSource: {
-        srcHost: 'https://app.example.com',
-        srcUrl: 'https://app.example.com/user/custom',
-      },
-    }
-
     initializeEmbeddedContext(
       'https://app.example.com/tools/image-playground/',
       vi.fn(),
       ROOT,
       true,
-      historyState,
+      {
+        nanafoxEmbeddedSource: {
+          srcHost: 'https://app.example.com',
+          srcUrl: 'https://app.example.com/user/custom',
+        },
+      },
     )
     const request = vi.fn<typeof fetch>()
-    await loadEmbeddedKeys(null, request)
+
+    await bootstrapEmbeddedSession(null, request)
 
     expect(getEmbeddedSessionState()).toMatchObject({ status: 'auth-error' })
     expect(getEmbeddedReopenUrl()).toBe('https://app.example.com/user/custom')
@@ -104,9 +104,8 @@ describe('embedded session', () => {
 
   it('rejects cross-origin reopen metadata', () => {
     const replaceState = vi.fn()
-
     initializeEmbeddedContext(
-      'https://app.example.com/tools/image-playground/?token=jwt-secret&src_host=https%3A%2F%2Fevil.example&src_url=https%3A%2F%2Fevil.example%2Fcustom',
+      'https://app.example.com/tools/image-playground/#launch=ticket&src_host=https%3A%2F%2Fevil.example&src_url=https%3A%2F%2Fevil.example%2Fcustom',
       replaceState,
       ROOT,
       true,
@@ -116,21 +115,19 @@ describe('embedded session', () => {
     expect(getEmbeddedReopenUrl()).toBeNull()
   })
 
-  it('reports a session auth error without fetching when the token is missing', async () => {
-    boot('?theme=light&ui_mode=embedded')
+  it('reports an auth error without fetching when the launch ticket is missing', async () => {
+    boot('theme=light&ui_mode=embedded')
     const request = vi.fn<typeof fetch>()
 
-    await loadEmbeddedKeys(null, request)
+    await bootstrapEmbeddedSession(null, request)
 
     expect(getEmbeddedSessionState()).toMatchObject({ status: 'auth-error' })
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('loads every page with the iframe JWT only on the keys endpoint', async () => {
+  it('exchanges the one-time ticket for trusted viewer and runtime keys', async () => {
     boot()
-    const request = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(page([key(1)], 1, 2))
-      .mockResolvedValueOnce(page([key(2)], 2, 2))
+    const request = vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)]))
 
     const state = await loadEmbeddedKeys('2', request)
 
@@ -139,35 +136,40 @@ describe('embedded session', () => {
       selectedKeyId: '2',
       keys: [{ id: '1', name: 'Key 1' }, { id: '2', name: 'Key 2' }],
     })
-    expect(request).toHaveBeenNthCalledWith(1, '/api/v1/keys?page=1&page_size=100', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer iframe-jwt' }),
-    }))
-    expect(request).toHaveBeenNthCalledWith(2, '/api/v1/keys?page=2&page_size=100', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer iframe-jwt' }),
+    expect(request).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith('/api/v1/image-creation/sessions', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ ticket: 'one-time-ticket' }),
     }))
     expect(JSON.stringify(state)).not.toContain('sk-key-')
-    expect(JSON.stringify(state)).not.toContain('iframe-jwt')
+    expect(JSON.stringify(state)).not.toContain('scoped-session')
   })
 
   it('distinguishes zero, one, and multiple eligible keys', async () => {
     boot()
-    const request = vi.fn<typeof fetch>()
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([])))).resolves.toMatchObject({ status: 'no-eligible-key' })
 
-    request.mockResolvedValueOnce(page([]))
-    await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'no-eligible-key', keys: [] })
+    boot()
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1)])))).resolves.toMatchObject({ status: 'ready', selectedKeyId: '1' })
 
-    request.mockResolvedValueOnce(page([key(1)]))
-    await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'ready', selectedKeyId: '1' })
-
-    request.mockResolvedValueOnce(page([key(1), key(2)]))
-    await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'selection-required', selectedKeyId: null })
+    boot()
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))).resolves.toMatchObject({ status: 'selection-required', selectedKeyId: null })
   })
 
-  it('reports runtime credential readiness without exposing the raw key', async () => {
+  it('restores a persisted selection after trusted user storage loads without reusing the ticket', async () => {
+    boot()
+    const request = vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)]))
+    await loadEmbeddedKeys(null, request)
+
+    await expect(loadEmbeddedKeys('2', request)).resolves.toMatchObject({ status: 'ready', selectedKeyId: '2' })
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('keeps runtime credentials out of public state', async () => {
     boot()
     expect(hasEmbeddedRuntimeKey()).toBe(false)
 
-    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(page([key(1)])))
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1)])))
 
     expect(hasEmbeddedRuntimeKey()).toBe(true)
     expect(JSON.stringify(getEmbeddedSessionState())).not.toContain('sk-key-1')
@@ -175,57 +177,36 @@ describe('embedded session', () => {
     expect(hasEmbeddedRuntimeKey()).toBe(false)
   })
 
-  it('does not reuse a deleted or disabled saved key', async () => {
+  it('removes a rejected key and selects the sole remaining in-memory key', async () => {
     boot()
-    const request = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(page([key(1), key(2)], 1, 1))
-      .mockResolvedValueOnce(page([key(1, { status: 'inactive' }), key(2, { status: 'expired' })], 1, 1))
-      .mockResolvedValueOnce(page([key(2)], 1, 1))
+    await loadEmbeddedKeys('1', vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))
 
-    await expect(loadEmbeddedKeys('deleted-key', request)).resolves.toMatchObject({
-      status: 'selection-required',
-      selectedKeyId: null,
-    })
-    await expect(loadEmbeddedKeys('1', request)).resolves.toMatchObject({
-      status: 'no-eligible-key',
-      selectedKeyId: null,
-    })
-    await expect(loadEmbeddedKeys('1', request)).resolves.toMatchObject({
-      status: 'selection-required',
-      selectedKeyId: null,
+    expect(invalidateEmbeddedSelectedKey()).toBe(true)
+    expect(getEmbeddedSessionState()).toEqual({
+      status: 'ready',
+      keys: [{ id: '2', name: 'Key 2' }],
+      selectedKeyId: '2',
     })
   })
 
-  it.each([401, 403])('classifies HTTP %s as an iframe session auth error', async (status) => {
+  it.each([401, 403])('classifies HTTP %s as a session auth error', async (status) => {
     boot()
-    const request = vi.fn<typeof fetch>().mockResolvedValue(page([], 1, 1, status))
+    const request = vi.fn<typeof fetch>().mockResolvedValue(session([], status))
 
     await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'auth-error' })
   })
 
-  it('discards partial keys when a later page fails', async () => {
+  it('discards credentials when exchange fails or returns malformed data', async () => {
     boot()
-    const request = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(page([key(1)], 1, 2))
-      .mockResolvedValueOnce(new Response('bad gateway', { status: 502 }))
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(new Response('bad gateway', { status: 502 })))).resolves.toMatchObject({ status: 'load-error', keys: [] })
 
-    const state = await loadEmbeddedKeys(null, request)
-
-    expect(state).toMatchObject({ status: 'load-error', keys: [] })
-    expect(JSON.stringify(state)).not.toContain('sk-key-1')
-  })
-
-  it('rejects malformed key responses instead of silently selecting partial data', async () => {
     boot()
-    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: 0, data: { items: 'invalid' } })))
-
-    await expect(loadEmbeddedKeys(null, request)).resolves.toMatchObject({ status: 'load-error', keys: [] })
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: 0, data: { api_keys: 'invalid' } }))))).resolves.toMatchObject({ status: 'load-error', keys: [] })
   })
 
   it('resolves the selected raw key into an ephemeral same-origin profile', async () => {
     boot()
-    const request = vi.fn<typeof fetch>().mockResolvedValue(page([key(1), key(2)]))
-    await loadEmbeddedKeys(null, request)
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))
     expect(selectEmbeddedKey('2')).toBe(true)
 
     const profile = resolveEmbeddedApiProfile(createDefaultOpenAIProfile({ apiKey: '', model: 'old-model' }))
@@ -244,8 +225,7 @@ describe('embedded session', () => {
 
   it('fails before request construction when no runtime key is selected', async () => {
     boot()
-    const request = vi.fn<typeof fetch>().mockResolvedValue(page([key(1), key(2)]))
-    await loadEmbeddedKeys(null, request)
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))
 
     expect(() => resolveEmbeddedApiProfile(createDefaultOpenAIProfile())).toThrow('请选择一个可用的 Sub2API API Key')
   })

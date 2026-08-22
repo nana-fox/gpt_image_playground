@@ -1,8 +1,8 @@
 import type { ApiProfile, AppSettings } from '../types'
-import { isNanafoxEmbedded } from './deploymentFlavor'
+import { clearEmbeddedStorageUserId, isNanafoxEmbedded, setEmbeddedStorageUserId } from './deploymentFlavor'
 
-const EMBEDDED_CONTEXT_KEYS = ['token', 'theme', 'lang', 'ui_mode', 'user_id', 'src_host', 'src_url']
-const KEY_PAGE_SIZE = 100
+const LEGACY_QUERY_KEYS = ['token', 'theme', 'lang', 'ui_mode', 'user_id', 'src_host', 'src_url']
+const LAUNCH_FRAGMENT_KEYS = ['launch', 'theme', 'lang', 'ui_mode', 'src_host', 'src_url']
 
 export interface EmbeddedPublicContext {
   theme: string
@@ -29,7 +29,10 @@ export interface EmbeddedSessionState {
 }
 
 interface EmbeddedContext extends EmbeddedPublicContext {
-  token: string
+  launchTicket: string
+  sessionToken: string
+  role: string
+  scope: string
 }
 
 interface EmbeddedRawKey extends EmbeddedPublicKey {
@@ -100,14 +103,16 @@ export function initializeEmbeddedContext(
     return null
   }
 
+  clearEmbeddedStorageUserId()
   const url = new URL(href)
   const params = url.searchParams
+  const fragment = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : '')
   const savedHistoryState = historyState === undefined && typeof window !== 'undefined'
     ? window.history.state
     : historyState
-  const querySource = getEmbeddedSource(url.origin, {
-    srcHost: params.get('src_host') ?? '',
-    srcUrl: params.get('src_url') ?? '',
+  const fragmentSource = getEmbeddedSource(url.origin, {
+    srcHost: fragment.get('src_host') ?? '',
+    srcUrl: fragment.get('src_url') ?? '',
   })
   const savedSource = getEmbeddedSource(
     url.origin,
@@ -115,13 +120,18 @@ export function initializeEmbeddedContext(
       ? (savedHistoryState as Record<string, unknown>).nanafoxEmbeddedSource
       : null,
   )
-  const source = params.has('src_host') || params.has('src_url') ? querySource : savedSource
+  const fragmentHasSource = fragment.has('src_host') || fragment.has('src_url')
+  const source = fragmentHasSource ? fragmentSource : savedSource
+
   context = {
-    token: params.get('token')?.trim() ?? '',
-    theme: params.get('theme')?.trim() ?? '',
-    lang: params.get('lang')?.trim() ?? '',
-    uiMode: params.get('ui_mode')?.trim() ?? '',
-    userId: params.get('user_id')?.trim() ?? '',
+    launchTicket: fragment.get('launch')?.trim() ?? '',
+    sessionToken: '',
+    role: '',
+    scope: '',
+    theme: fragment.get('theme')?.trim() ?? params.get('theme')?.trim() ?? '',
+    lang: fragment.get('lang')?.trim() ?? params.get('lang')?.trim() ?? '',
+    uiMode: fragment.get('ui_mode')?.trim() ?? params.get('ui_mode')?.trim() ?? '',
+    userId: '',
     srcHost: source?.srcHost ?? '',
     srcUrl: source?.srcUrl ?? '',
     origin: url.origin,
@@ -130,16 +140,15 @@ export function initializeEmbeddedContext(
   rejectedKeyIds = new Set()
   publish({ status: 'inactive', keys: [], selectedKeyId: null })
 
-  if (context.theme === 'dark' || context.theme === 'light') {
-    root.classList.toggle('dark', context.theme === 'dark')
-  }
+  if (context.theme === 'dark' || context.theme === 'light') root.classList.toggle('dark', context.theme === 'dark')
   if (context.lang) root.lang = context.lang
 
-  const hadContext = EMBEDDED_CONTEXT_KEYS.some((key) => params.has(key))
-  for (const key of EMBEDDED_CONTEXT_KEYS) params.delete(key)
-  if (hadContext) {
+  const hadLegacyContext = LEGACY_QUERY_KEYS.some((key) => params.has(key))
+  const hadLaunchContext = LAUNCH_FRAGMENT_KEYS.some((key) => fragment.has(key))
+  for (const key of LEGACY_QUERY_KEYS) params.delete(key)
+  if (hadLegacyContext || hadLaunchContext) {
     const search = params.toString()
-    replaceState(source ? { nanafoxEmbeddedSource: source } : null, '', `${url.pathname}${search ? `?${search}` : ''}${url.hash}`)
+    replaceState(source ? { nanafoxEmbeddedSource: source } : null, '', `${url.pathname}${search ? `?${search}` : ''}${hadLaunchContext ? '' : url.hash}`)
   }
 
   return getEmbeddedContext()
@@ -179,95 +188,89 @@ export function clearEmbeddedSession() {
   context = null
   rawKeys = new Map()
   rejectedKeyIds = new Set()
+  clearEmbeddedStorageUserId()
   publish({ status: 'inactive', keys: [], selectedKeyId: null })
 }
 
-export async function loadEmbeddedKeys(selectedKeyId: string | null | undefined, request: typeof fetch = fetch) {
+export async function bootstrapEmbeddedSession(selectedKeyId: string | null | undefined, request: typeof fetch = fetch) {
   if (!context) return state
-  if (!context.token) {
+  if (!context.launchTicket) {
     return clearKeys({
       status: 'auth-error',
       keys: [],
       selectedKeyId: null,
-      message: '嵌入会话缺少身份凭证，请重新打开菜单。',
+      message: '嵌入会话缺少启动凭证，请重新打开菜单。',
     })
   }
 
   publish({ status: 'loading', keys: [], selectedKeyId: null })
   try {
+    const response = await request('/api/v1/image-creation/sessions', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket: context.launchTicket }),
+      cache: 'no-store',
+    })
+    context.launchTicket = ''
+    if (response.status === 401 || response.status === 403) {
+      return clearKeys({ status: 'auth-error', keys: [], selectedKeyId: null, message: '嵌入会话已失效，请重新打开菜单。' })
+    }
+    if (!response.ok) throw new Error(`嵌入会话加载失败：HTTP ${response.status}`)
+
+    const payload = await response.json() as unknown
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('嵌入会话响应格式无效')
+    const envelope = payload as Record<string, unknown>
+    if (envelope.code !== 0 || !envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data)) throw new Error('嵌入会话响应格式无效')
+    const data = envelope.data as Record<string, unknown>
+    const viewer = data.viewer
+    if (!viewer || typeof viewer !== 'object' || Array.isArray(viewer)) throw new Error('嵌入会话用户格式无效')
+    const viewerRecord = viewer as Record<string, unknown>
+    const userId = typeof viewerRecord.id === 'number' || typeof viewerRecord.id === 'string' ? String(viewerRecord.id).trim() : ''
+    const sessionToken = typeof data.session_token === 'string' ? data.session_token.trim() : ''
+    const role = typeof viewerRecord.role === 'string' ? viewerRecord.role.trim() : ''
+    const scope = typeof viewerRecord.scope === 'string' ? viewerRecord.scope.trim() : ''
+    if (!/^[1-9]\d*$/.test(userId) || !sessionToken || !['user', 'admin'].includes(scope) || !Array.isArray(data.api_keys)) throw new Error('嵌入会话响应格式无效')
+
     const loaded: EmbeddedRawKey[] = []
-    let page = 1
-    let pages = 1
+    for (const item of data.api_keys) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('API Key 记录格式无效')
+      const key = item as Record<string, unknown>
+      const id = typeof key.id === 'number' || typeof key.id === 'string' ? String(key.id).trim() : ''
+      const value = typeof key.key === 'string' ? key.key.trim() : ''
+      if (!id || !value || loaded.some((entry) => entry.id === id)) throw new Error('API Key 记录格式无效')
+      if (rejectedKeyIds.has(id)) continue
+      loaded.push({ id, name: typeof key.name === 'string' && key.name.trim() ? key.name.trim() : `API Key ${id}`, value })
+    }
 
-    do {
-      const response = await request(`/api/v1/keys?page=${page}&page_size=${KEY_PAGE_SIZE}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${context.token}`,
-        },
-        cache: 'no-store',
-      })
-      if (response.status === 401 || response.status === 403) {
-        return clearKeys({
-          status: 'auth-error',
-          keys: [],
-          selectedKeyId: null,
-          message: '嵌入会话已失效，请重新打开菜单。',
-        })
-      }
-      if (!response.ok) throw new Error(`API Key 列表加载失败：HTTP ${response.status}`)
-
-      const payload = await response.json() as unknown
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('API Key 列表响应格式无效')
-      const record = payload as Record<string, unknown>
-      if (record.code !== 0 || !record.data || typeof record.data !== 'object' || Array.isArray(record.data)) {
-        throw new Error('API Key 列表响应格式无效')
-      }
-      const data = record.data as Record<string, unknown>
-      if (!Array.isArray(data.items) || !Number.isInteger(data.page) || !Number.isInteger(data.pages)) {
-        throw new Error('API Key 列表响应格式无效')
-      }
-      if (data.page !== page || (data.pages as number) < 1 || (data.pages as number) > 1000) {
-        throw new Error('API Key 列表分页信息无效')
-      }
-      pages = data.pages as number
-
-      for (const item of data.items) {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('API Key 记录格式无效')
-        const key = item as Record<string, unknown>
-        if (key.status !== 'active') continue
-        const id = typeof key.id === 'number' || typeof key.id === 'string' ? String(key.id).trim() : ''
-        const value = typeof key.key === 'string' ? key.key.trim() : ''
-        if (!id || !value || loaded.some((entry) => entry.id === id)) throw new Error('API Key 记录格式无效')
-        if (rejectedKeyIds.has(id)) continue
-        loaded.push({
-          id,
-          name: typeof key.name === 'string' && key.name.trim() ? key.name.trim() : `API Key ${id}`,
-          value,
-        })
-      }
-      page++
-    } while (page <= pages)
-
+    context.userId = userId
+    context.role = role
+    context.scope = scope
+    context.sessionToken = sessionToken
+    setEmbeddedStorageUserId(userId)
     rawKeys = new Map(loaded.map((key) => [key.id, key]))
     const keys = loaded.map(({ id, name }) => ({ id, name }))
     if (!keys.length) return publish({ status: 'no-eligible-key', keys, selectedKeyId: null })
-
     const savedId = selectedKeyId ? String(selectedKeyId) : null
-    const resolvedId = savedId
-      ? rawKeys.has(savedId) ? savedId : null
-      : keys.length === 1 ? keys[0].id : null
+    const resolvedId = savedId ? rawKeys.has(savedId) ? savedId : null : keys.length === 1 ? keys[0].id : null
     if (!resolvedId) return publish({ status: 'selection-required', keys, selectedKeyId: null })
     return publish({ status: 'ready', keys, selectedKeyId: resolvedId })
   } catch (error) {
-    return clearKeys({
-      status: 'load-error',
-      keys: [],
-      selectedKeyId: null,
-      message: getErrorMessage(error),
-    })
+    return clearKeys({ status: 'load-error', keys: [], selectedKeyId: null, message: getErrorMessage(error) })
   }
+}
+
+export async function loadEmbeddedKeys(selectedKeyId: string | null | undefined, request: typeof fetch = fetch) {
+  if (!context) return state
+  if (context.launchTicket) return bootstrapEmbeddedSession(selectedKeyId, request)
+  const savedId = selectedKeyId ? String(selectedKeyId) : ''
+  if (savedId && rawKeys.has(savedId) && state.selectedKeyId !== savedId) {
+    return publish({ status: 'ready', keys: state.keys, selectedKeyId: savedId })
+  }
+  return state
+}
+
+export function getEmbeddedSessionAuthorization() {
+  return context?.sessionToken ? `Bearer ${context.sessionToken}` : null
 }
 
 export function selectEmbeddedKey(id: string) {
@@ -280,22 +283,21 @@ export function invalidateEmbeddedSelectedKey() {
   if (!state.selectedKeyId) return false
   rejectedKeyIds.add(state.selectedKeyId)
   rawKeys.delete(state.selectedKeyId)
+  const keys = state.keys.filter((key) => key.id !== state.selectedKeyId)
+  const selectedKeyId = keys.length === 1 ? keys[0].id : null
   publish({
-    status: 'selection-required',
-    keys: state.keys.filter((key) => key.id !== state.selectedKeyId),
-    selectedKeyId: null,
+    status: selectedKeyId ? 'ready' : keys.length ? 'selection-required' : 'no-eligible-key',
+    keys,
+    selectedKeyId,
   })
   return true
 }
 
 export function resolveEmbeddedApiProfile(profile: ApiProfile): ApiProfile {
   if (!context) return profile
-  if (state.status !== 'ready' || !state.selectedKeyId) {
-    throw new Error('请选择一个可用的 Sub2API API Key')
-  }
+  if (state.status !== 'ready' || !state.selectedKeyId) throw new Error('请选择一个可用的 Sub2API API Key')
   const key = rawKeys.get(state.selectedKeyId)
   if (!key) throw new Error('选择的 Sub2API API Key 已不可用，请重新选择')
-
   return {
     ...profile,
     name: key.name,
@@ -316,11 +318,7 @@ export function sanitizeEmbeddedProfiles(profiles: ApiProfile[]) {
 
 export function sanitizeEmbeddedSettings(settings: AppSettings): AppSettings {
   if (!isEmbeddedSessionActive() && !isNanafoxEmbedded()) return settings
-  return {
-    ...settings,
-    apiKey: '',
-    profiles: sanitizeEmbeddedProfiles(settings.profiles),
-  }
+  return { ...settings, apiKey: '', profiles: sanitizeEmbeddedProfiles(settings.profiles) }
 }
 
 export function getEmbeddedKeysUrl() {

@@ -150,6 +150,18 @@ const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
 const imageB = { id: 'image-b', dataUrl: 'data:image/png;base64,b' }
 const EMBEDDED_RUNTIME_KEY = ['runtime', 'sentinel'].join('-')
 
+function embeddedSessionResponse(apiKeys: Array<{ id: number; key: string; name: string }>) {
+  return new Response(JSON.stringify({
+    code: 0,
+    message: 'success',
+    data: {
+      session_token: 'scoped-session',
+      viewer: { id: 9, role: 'user', scope: 'user' },
+      api_keys: apiKeys,
+    },
+  }))
+}
+
 describe('error toast messages', () => {
   it('drops long error detail after the failure title', () => {
     expect(getErrorToastMessage('Agent 请求失败：接口拒绝了很长的提示词内容')).toBe('Agent 请求失败')
@@ -600,7 +612,7 @@ describe('embedded gallery credential resolution', () => {
       showToast: vi.fn(),
     })
     initializeEmbeddedContext(
-      'https://app.example.com/tools/image-playground/?token=iframe-jwt',
+      'https://app.example.com/tools/image-playground/#launch=one-time-ticket',
       vi.fn(),
       { lang: '', classList: { toggle: vi.fn() } },
       true,
@@ -614,17 +626,9 @@ describe('embedded gallery credential resolution', () => {
   })
 
   it('injects the selected raw key only into submit and execution request settings', async () => {
-    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
-        total: 1,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))))
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key' },
+    ])))
 
     await submitTask()
     await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
@@ -640,32 +644,20 @@ describe('embedded gallery credential resolution', () => {
     expect(JSON.stringify(getPersistedState(useStore.getState()))).not.toContain(EMBEDDED_RUNTIME_KEY)
   })
 
-  it.each([401, 403])('invalidates and refreshes the selected key after generation HTTP %s', async (status) => {
-    const keyResponse = new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [
-          { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Rejected Key', status: 'active' },
-          { id: 13, key: 'runtime-backup-key', name: 'Backup Key', status: 'active' },
-        ],
-        total: 2,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))
-    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(keyResponse.clone()))
-    const refresh = vi.fn<typeof fetch>().mockResolvedValue(keyResponse.clone())
+  it.each([401, 403])('invalidates the selected key and uses the sole in-memory fallback after generation HTTP %s', async (status) => {
+    const keyResponse = embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Rejected Key' },
+      { id: 13, key: 'runtime-backup-key', name: 'Backup Key' },
+    ])
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(keyResponse))
+    const refresh = vi.fn<typeof fetch>()
     vi.stubGlobal('fetch', refresh)
     vi.mocked(callImageApi).mockRejectedValueOnce(Object.assign(new Error('selected key rejected'), { status }))
 
     await submitTask()
     await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('error'))
 
-    expect(refresh).toHaveBeenCalledWith('/api/v1/keys?page=1&page_size=100', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer iframe-jwt' }),
-    }))
+    expect(refresh).not.toHaveBeenCalled()
     expect(useStore.getState().settings.selectedKeyId).toBeNull()
     expect(getEmbeddedSessionState()).toMatchObject({
       status: 'ready',
@@ -675,17 +667,9 @@ describe('embedded gallery credential resolution', () => {
   })
 
   it('rejects a persisted unsupported profile before creating an embedded task', async () => {
-    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
-        total: 1,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))))
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key' },
+    ])))
     useStore.setState((state) => ({
       settings: {
         ...state.settings,
@@ -701,20 +685,10 @@ describe('embedded gallery credential resolution', () => {
   })
 
   it('blocks submission before fetch when multiple keys require a choice', async () => {
-    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [
-          { id: 12, key: 'runtime-secret-a', name: 'Runtime Key A', status: 'active' },
-          { id: 13, key: 'runtime-secret-b', name: 'Runtime Key B', status: 'active' },
-        ],
-        total: 2,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))))
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: 'runtime-secret-a', name: 'Runtime Key A' },
+      { id: 13, key: 'runtime-secret-b', name: 'Runtime Key B' },
+    ])))
 
     await submitTask()
 
@@ -746,17 +720,9 @@ describe('embedded gallery credential resolution', () => {
       actualParamsList: [{}],
       revisedPrompts: [],
     })
-    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
-        total: 1,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))))
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key' },
+    ])))
     const file = {
       type: 'image/png',
       arrayBuffer: async () => new Uint8Array([4, 5, 6]).buffer,
@@ -814,17 +780,9 @@ describe('embedded gallery credential resolution', () => {
   })
 
   it('still allows a pure text-to-image retry', async () => {
-    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        items: [{ id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key', status: 'active' }],
-        total: 1,
-        page: 1,
-        page_size: 100,
-        pages: 1,
-      },
-    }))))
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key' },
+    ])))
     const textTask = task({ id: 'text-task', status: 'error', error: 'failed', inputImageIds: [] })
     useStore.setState({ tasks: [textTask] })
 

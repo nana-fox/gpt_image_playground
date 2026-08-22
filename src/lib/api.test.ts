@@ -21,7 +21,7 @@ describe('callImageApi', () => {
     ['output count', {}, { n: 2 }],
   ])('rejects embedded %s injection before fetch', async (_label, profilePatch, paramsPatch) => {
     initializeEmbeddedContext(
-      'https://router-test.nanafox.com/tools/image-playground/?token=iframe-jwt',
+      'https://router-test.nanafox.com/tools/image-playground/#launch=one-time-ticket',
       () => {},
       { lang: '', classList: { toggle: () => false } },
       true,
@@ -29,9 +29,9 @@ describe('callImageApi', () => {
     await loadEmbeddedKeys(null, vi.fn().mockResolvedValue(new Response(JSON.stringify({
       code: 0,
       data: {
-        items: [{ id: 7, name: '测试 Key', key: 'sk-selected', status: 'active' }],
-        page: 1,
-        pages: 1,
+        session_token: 'scoped-session',
+        viewer: { id: 9, role: 'user', scope: 'user' },
+        api_keys: [{ id: 7, name: '测试 Key', key: 'sk-selected' }],
       },
     }), { status: 200 })))
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
@@ -51,7 +51,7 @@ describe('callImageApi', () => {
 
   it('sends the approved embedded request to the same-origin Images endpoint with n=1', async () => {
     initializeEmbeddedContext(
-      'https://router-test.nanafox.com/tools/image-playground/?token=iframe-jwt',
+      'https://router-test.nanafox.com/tools/image-playground/#launch=one-time-ticket',
       () => {},
       { lang: '', classList: { toggle: () => false } },
       true,
@@ -59,9 +59,9 @@ describe('callImageApi', () => {
     await loadEmbeddedKeys(null, vi.fn().mockResolvedValue(new Response(JSON.stringify({
       code: 0,
       data: {
-        items: [{ id: 7, name: '测试 Key', key: 'sk-selected', status: 'active' }],
-        page: 1,
-        pages: 1,
+        session_token: 'scoped-session',
+        viewer: { id: 9, role: 'user', scope: 'user' },
+        api_keys: [{ id: 7, name: '测试 Key', key: 'sk-selected' }],
       },
     }), { status: 200 })))
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({

@@ -1,6 +1,7 @@
 import type { AgentConversation, TaskRecord, StoredImage, StoredImageThumbnail } from '../types'
+import { getDeploymentStorageName } from './deploymentFlavor'
 
-const DB_NAME = 'gpt-image-playground'
+const DB_NAME = getDeploymentStorageName()
 const DB_VERSION = 3
 const STORE_TASKS = 'tasks'
 const STORE_IMAGES = 'images'
