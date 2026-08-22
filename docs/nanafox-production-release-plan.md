@@ -341,7 +341,7 @@ Planned
 | `70aa5a5` 尚无 origin ref/tag | 已关闭 | Fork maintainer | `nanafox-embedded-2026.08.22` 指向 `70aa5a5` |
 | 生产账号 entitlement 尚未真实证明 | 已关闭 | Sub2API account owner | P2 单次 `gpt-image-2` 金丝雀成功 |
 | Caddy live/template 已有漂移 | 运行态已关闭；仓库待归并 | ToC ops owner | live 已 reload；下一次同步模板前合入 `04b822cc5` 和 `45710b613` |
-| Playground 实现分支尚未合入 fork `main` | 接受 | Fork maintainer | 下一次上游同步前，明确合入 `main` 或将 `codex/embedded-adapter` 固定为长期发布分支 |
+| Playground 实现未合入 fork `main` | 已决策 | Fork maintainer | `main` 保持上游基线；`nanafox/embedded-production` 作为长期生产分支 |
 | 首请求 access log 可含 JWT | 已知继承风险 | Sub2API owner | 后续设计 scoped one-time embed token |
 | 无百分比灰度 | 接受 | Product owner | 首次发布用 admin → user；有真实分批需求再引入 flag |
 | 普通用户受控验收账号未指定 | 已关闭 | Product owner | Safari 现有普通用户完成入口、iframe、Key 与提交就绪验收 |
@@ -364,7 +364,7 @@ Planned
 | 项目 | 当前状态 | 下一次变更门禁 |
 |---|---|---|
 | Playground 制品 | `nanafox-embedded-2026.08.22` → `70aa5a5`；测试与生产使用独立指针 | 新版本必须使用新的 commit-named 目录，先验证测试，再切生产 `prod-current` |
-| Playground 源码 | `codex/embedded-adapter` 承载生产实现，release ref 已推送，尚未合入 fork `main` | 上游更新必须在隔离 worktree/分支执行，并明确长期发布分支归属 |
+| Playground 源码 | `nanafox/embedded-production` 承载生产实现；fork `main` 保持上游基线 | 上游更新必须在隔离 worktree/分支执行，通过门禁后再合入生产分支 |
 | Sub2API 应用 | 本次未部署、未重启、未修改前后端或数据库 | 正常 Sub2API 发布仍需验证 root、health、登录、Key 管理和现有业务页面 |
 | Sub2API Caddy 模板 | `codex/image-playground-caddy-routes` 已推送；包含 `04b822cc5`、`45710b613`，尚未合入 `main` | 任何从仓库同步生产 Caddy 模板的操作前，必须先保留 Playground 200 与旧路由 410 规则 |
 | 菜单配置 | 复用条目 `d42550bf17f68c5d`，当前 `visibility=user` | 后续只原地更新该条目；公开设置中图像入口数量必须保持为 1 |

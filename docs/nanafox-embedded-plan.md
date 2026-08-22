@@ -11,7 +11,7 @@
 - Repository: `nana-fox/gpt_image_playground`
 - Local checkout: `/Users/nio/project/nanafox/gpt_image_playground`
 - Fork baseline branch: `main`
-- Production implementation branch: `codex/embedded-adapter`
+- Production branch: `nanafox/embedded-production`
 - Production release tag: `nanafox-embedded-2026.08.22` → `70aa5a5`
 - `origin`: Nanafox fork
 - `upstream`: `CookSleep/gpt_image_playground`; push is disabled locally
