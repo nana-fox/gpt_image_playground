@@ -1,6 +1,6 @@
 # NanaFox 图像创作 V1 实施计划
 
-状态：已批准开发；当前仅允许本地实现、测试与提交，不推送、不部署。
+状态：Slice 0–3 已完成本地实现与验证；当前仍不推送、不部署。Slice 4 的真实 PostgreSQL/Redis 联调待可用环境继续。
 
 本文件是图像创作 V1 的单一实施依据。旧的嵌入适配基线仍由 `docs/nanafox-embedded-plan.md:1` 约束；模板、灵感库、用户状态、管理端、嵌入会话和服务端增量以本文件为准。
 
@@ -25,10 +25,18 @@
 
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
-| Playground | `4fb8492` | `codex/image-creation-v1` | 普通构建、嵌入构建、35 个测试文件 / 538 项测试通过 |
-| Sub2API | `b56d0a7a7` (`origin/main`) | `feature/image-creation-v1` 独立 worktree | 前后端构建、完整 Go 测试、Go lint、前端 lint/typecheck、13 个测试文件 / 166 项关键测试通过 |
+| Playground | `ab501b1` | `codex/image-creation-v1` | 普通/嵌入构建通过；37 个测试文件 / 543 项测试通过 |
+| Sub2API | `8a82c104f` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...` 通过；本机未安装 `golangci-lint`，不将其记为已执行 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
+
+当前实现检查点：
+
+- Slice 0：一次性 fragment ticket、受限会话、按可信用户隔离本地存储已完成。
+- Slice 1：4 张独立表、素材/模板/用户状态/首页精选、严格校验和 API 已完成。
+- Slice 2：管理员模板列表、编辑器、发布状态、封面和首页精选已完成。
+- Slice 3：创作台融合布局、灵感库、详情、收藏/最近使用、应用与撤销已完成。
+- 浏览器验证已覆盖桌面与 390×844 移动端、普通用户与管理员视图、未保存保护、首页排序入口、应用模板与撤销；验证使用同源 mock API，不替代 Slice 4 的真实服务联调。
 
 ## 3. 页面与交互契约
 
@@ -195,6 +203,8 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 主键/唯一键为 `(user_id, template_id)`。无 `use_count`。用户软删除流程显式清理该表。
 
+该表使用显式 SQL repository 实现复合主键及 upsert；其余三张表使用 Ent。这里不为迎合 Ent 的单列 ID 假造业务主键。
+
 ### 5.4 `image_creation_change_logs`
 
 | 字段 | 类型/约束 | 作用 |
@@ -236,14 +246,14 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 | 方法 | 路径 | 行为 |
 |---|---|---|
-| GET/POST | `/api/v1/image-creation/admin/templates` | 列表 / 新建草稿 |
-| GET | `/api/v1/image-creation/admin/templates/:id` | 草稿与发布快照详情 |
-| PUT | `/api/v1/image-creation/admin/templates/:id/draft` | `If-Match: revision` 保存，成功 revision+1 |
-| POST | `/api/v1/image-creation/admin/templates/:id/publish` | 原子发布草稿和封面 |
-| POST | `/api/v1/image-creation/admin/templates/:id/archive` | 归档并清首页位置 |
-| POST | `/api/v1/image-creation/admin/templates/:id/restore` | archived -> draft |
-| POST | `/api/v1/image-creation/admin/assets` | multipart 单图上传，校验真实格式、尺寸、大小 |
-| GET/PUT | `/api/v1/image-creation/admin/home-featured` | 获取 / 整组替换，ETag + If-Match |
+| GET/POST | `/api/v1/admin/image-creation/templates` | 列表 / 新建草稿 |
+| GET | `/api/v1/admin/image-creation/templates/:id` | 草稿与发布快照详情 |
+| PUT | `/api/v1/admin/image-creation/templates/:id/draft` | `If-Match: revision` 保存，成功 revision+1 |
+| POST | `/api/v1/admin/image-creation/templates/:id/publish` | 原子发布草稿和封面 |
+| POST | `/api/v1/admin/image-creation/templates/:id/archive` | 归档并清首页位置 |
+| POST | `/api/v1/admin/image-creation/templates/:id/restore` | archived -> draft |
+| POST | `/api/v1/admin/image-creation/assets` | multipart 单图上传，校验真实格式、尺寸、大小；超 8 MiB 统一返回 413 |
+| GET/PUT | `/api/v1/admin/image-creation/home-featured` | 获取 / 整组替换，ETag + If-Match |
 
 ### 6.4 错误语义
 
@@ -288,6 +298,8 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 ### Slice 4：本地完整验收
 
 在本地 Sub2API + Playground 环境验证普通用户、管理员、切换账号、iframe、新窗口、刷新、过期/撤销、移动端、深浅色和真实生成兼容。
+
+当前边界：真实 PostgreSQL 集成测试已保留为 `integration` 测试，但本机 Docker 不可用时会明确跳过；在可用联调环境中必须补跑，不以 mock 浏览器验证代替。
 
 ### Slice 5：发布
 
