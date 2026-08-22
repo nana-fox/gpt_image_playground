@@ -6,6 +6,7 @@ import {
   isEmbeddedFeatureEnabled,
   isNanafoxEmbedded,
   shouldRegisterServiceWorker,
+  setEmbeddedStorageUserId,
   stripEmbeddedRemoteCssImports,
 } from './deploymentFlavor'
 
@@ -16,10 +17,16 @@ describe('deployment flavor', () => {
     expect(getDeploymentStorageName('')).toBe('gpt-image-playground')
   })
 
-  it('uses the isolated Nanafox beta base for embedded builds', () => {
+  it('requires a trusted user before selecting embedded persistence', () => {
     expect(isNanafoxEmbedded('nanafox-embedded')).toBe(true)
     expect(getDeploymentBase('nanafox-embedded')).toBe('/tools/image-playground/')
-    expect(getDeploymentStorageName('nanafox-embedded')).toBe('gpt-image-playground-nanafox-embedded')
+    expect(() => getDeploymentStorageName('nanafox-embedded')).toThrow('可信用户')
+
+    setEmbeddedStorageUserId('9')
+    expect(getDeploymentStorageName('nanafox-embedded')).toBe('gpt-image-playground-nanafox-embedded-u-9')
+
+    setEmbeddedStorageUserId('10')
+    expect(getDeploymentStorageName('nanafox-embedded')).toBe('gpt-image-playground-nanafox-embedded-u-10')
   })
 
   it('distinguishes the embedded iframe from a standalone new tab', () => {
