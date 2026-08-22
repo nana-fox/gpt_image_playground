@@ -1,8 +1,8 @@
 # NanaFox 图像创作 ToC 生产发布方案
 
-> 状态：方案已完成，尚未执行生产写操作。
+> 状态：已于 2026-08-22 完成生产发布、普通用户验收、旧路由下线和主动观察。
 >
-> 目标：将 `图像创作` 发布到 `router.nanafox.com` 并对普通用户可见。
+> 目标（已完成）：将 `图像创作` 发布到 `router.nanafox.com` 并对普通用户可见。
 >
 > 边界：不部署或重启 Sub2API，不修改数据库结构，不触碰 ToB `fx.nanafox.com`，不复用测试环境的可变发布指针。
 
@@ -20,9 +20,9 @@
 - 不增加百分比灰度系统；现有 admin/user 可见性足以完成首次发布。
 - 不恢复旧 Image Studio 作为长期回滚目标；它当前并未在生产提供独立静态应用，回滚目标应是隐藏图像菜单并保持正常 Sub2API。
 
-## 当前生产事实（2026-08-22，只读核验）
+## 发布前生产基线（2026-08-22，只读核验）
 
-| 项目 | 当前事实 | 发布含义 |
+| 项目 | 发布前事实 | 发布含义 |
 |---|---|---|
 | Sub2API | `router.nanafox.com` 与 `/health` 均为 200，版本 `0.1.179` | 发布期间必须保持不变 |
 | 容器 | `sub2api-prod` 正常运行，启动时间已记录 | Caddy reload 和菜单更新不得重启容器 |
@@ -340,7 +340,8 @@ Planned
 |---|---|---|---|
 | `70aa5a5` 尚无 origin ref/tag | 已关闭 | Fork maintainer | `nanafox-embedded-2026.08.22` 指向 `70aa5a5` |
 | 生产账号 entitlement 尚未真实证明 | 已关闭 | Sub2API account owner | P2 单次 `gpt-image-2` 金丝雀成功 |
-| Caddy live/template 已有漂移 | 已关闭 | ToC ops owner | live 已 reload；ops-only 模板分支独立提交 |
+| Caddy live/template 已有漂移 | 运行态已关闭；仓库待归并 | ToC ops owner | live 已 reload；下一次同步模板前合入 `04b822cc5` 和 `45710b613` |
+| Playground 实现分支尚未合入 fork `main` | 接受 | Fork maintainer | 下一次上游同步前，明确合入 `main` 或将 `codex/embedded-adapter` 固定为长期发布分支 |
 | 首请求 access log 可含 JWT | 已知继承风险 | Sub2API owner | 后续设计 scoped one-time embed token |
 | 无百分比灰度 | 接受 | Product owner | 首次发布用 admin → user；有真实分批需求再引入 flag |
 | 普通用户受控验收账号未指定 | 已关闭 | Product owner | Safari 现有普通用户完成入口、iframe、Key 与提交就绪验收 |
@@ -357,3 +358,16 @@ Planned
 | Observe | 通过 | 10:57～11:30 主动观察；最终直连连续 15 轮均为 health 200、新路径 200、旧路径 410、菜单唯一；代理链路 000 误报经 `--noproxy`、服务端本机和 Caddy 日志交叉验证排除；Playground 5xx 为 0 |
 
 当前生产回滚点：完整发布前 `/etc/caddy/Caddyfile.before-image-playground-prod-20260822-022853`，P4 前 `/etc/caddy/Caddyfile.before-image-studio-retire-20260822-025553`；菜单备份：`/srv/nanafox/image-playground/backups/nanafox-production-menu-before-image-playground-20260822-022853.json`。
+
+## 发布后维护交接
+
+| 项目 | 当前状态 | 下一次变更门禁 |
+|---|---|---|
+| Playground 制品 | `nanafox-embedded-2026.08.22` → `70aa5a5`；测试与生产使用独立指针 | 新版本必须使用新的 commit-named 目录，先验证测试，再切生产 `prod-current` |
+| Playground 源码 | `codex/embedded-adapter` 承载生产实现，release ref 已推送，尚未合入 fork `main` | 上游更新必须在隔离 worktree/分支执行，并明确长期发布分支归属 |
+| Sub2API 应用 | 本次未部署、未重启、未修改前后端或数据库 | 正常 Sub2API 发布仍需验证 root、health、登录、Key 管理和现有业务页面 |
+| Sub2API Caddy 模板 | `codex/image-playground-caddy-routes` 已推送；包含 `04b822cc5`、`45710b613`，尚未合入 `main` | 任何从仓库同步生产 Caddy 模板的操作前，必须先保留 Playground 200 与旧路由 410 规则 |
+| 菜单配置 | 复用条目 `d42550bf17f68c5d`，当前 `visibility=user` | 后续只原地更新该条目；公开设置中图像入口数量必须保持为 1 |
+| 凭据边界 | JWT/raw Key 仅内存；首请求 access log 含 JWT 是已知继承风险 | 新接口、跨设备 Prompt 或更广 JWT 权限必须另立后端方案；优先设计 scoped one-time embed token |
+
+每次后续发布至少重跑：normal build、embedded build、全量测试、安全负向用例、真实测试站 iframe、独立窗口、移动端、生产核心页面与路由 smoke。旧 Image Studio 已下线，不再作为新旧版本对比基准。

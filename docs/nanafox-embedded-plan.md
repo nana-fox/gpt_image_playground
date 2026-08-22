@@ -1,24 +1,27 @@
 # Nanafox Embedded Image Playground
 
-> Status: test-site beta deployed from `70aa5a5` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
+> Status: test and ToC production are deployed from the immutable `70aa5a5` artifact; `nanafox-embedded-2026.08.22` points to that commit. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
 >
-> Scope boundary: this repository owns the forked frontend. The first beta does not change Sub2API source, backend contracts, database schema/business data, production custom menu, or production routes. Approved test-side configuration changes are limited to `custom_menu_items` and the isolated Caddy routes/headers for the beta and retired Image Studio path.
+> Scope boundary: this repository owns the forked frontend. The implementation did not change Sub2API frontend/backend code, backend contracts, database schema, or business data. The separately authorized release changed only the existing custom-menu configuration and isolated Caddy routes/headers.
 >
-> Production direction: expose `图像创作` to ordinary ToC users according to [the production release plan](./nanafox-production-release-plan.md); execution still requires separate authorization.
+> Production record: `图像创作` is visible to ordinary ToC users according to [the completed production release plan](./nanafox-production-release-plan.md); ToB remains outside this release.
 
 ## Handoff summary
 
 - Repository: `nana-fox/gpt_image_playground`
 - Local checkout: `/Users/nio/project/nanafox/gpt_image_playground`
-- Shipping branch: `main`
-- Implementation branch: `codex/embedded-adapter`
+- Fork baseline branch: `main`
+- Production implementation branch: `codex/embedded-adapter`
+- Production release tag: `nanafox-embedded-2026.08.22` → `70aa5a5`
 - `origin`: Nanafox fork
 - `upstream`: `CookSleep/gpt_image_playground`; push is disabled locally
-- Beta route: `/tools/image-playground/`
-- Retired test route: `/tools/image-studio/` returns 410; its static files are retained, and production is untouched
+- Test and production route: `/tools/image-playground/`
+- Retired route: `/tools/image-studio/` returns 410 on test and production
 - First-release model/provider: OpenAI Images API with `gpt-image-2` only
 - Backend contract: iframe JWT may call only `/api/v1/keys`; the selected Sub2API API key may call only same-origin image generation/edit endpoints
 - Current test release: `/srv/nanafox/image-playground/releases/70aa5a5`; rollback release: `d5e0591`
+- Current production pointer: `/srv/nanafox/image-playground/prod-current` → `releases/70aa5a5`
+- Sub2API ops template branch: `codex/image-playground-caddy-routes`; integrate `04b822cc5` and `45710b613` before a future Caddy template sync
 
 The implementation must preserve upstream source history and keep Nanafox-specific changes at narrow seams. It must not copy this repository into `sub2api-tools`, add a submodule, or convert either repository into a monorepo.
 
@@ -31,17 +34,19 @@ Verdict: keep the original architecture. The compile-time embedded flavor, in-me
 | Credential boundary | JWT and raw keys remain in memory | Unit/integration tests pass; the real iframe scrubs its query and generated successfully | Keep unchanged. Never persist JWT to make refresh transparent. |
 | Host layout | Not specified | `getDeploymentSurface` distinguishes iframe and new-tab layouts; desktop and 390×844 real-browser checks pass | Keep the host button in Sub2API and reserve an embedded-only safe area. |
 | New-tab refresh | Generic "refresh behavior" acceptance | `70aa5a5` preserves generated history, withholds credentials, and exposes a validated return-to-menu action | Keep this explicit safe downgrade; do not add silent session recovery. |
-| Menu identity | Custom menu already exists | Test configuration now renders `图像创作` with the approved Sparkles SVG | Keep this as Sub2API test configuration; no source-code change. |
-| Deployment | Test-only independent artifact | `70aa5a5` is live; health, restrictive CSP, responsive layout, retired-route 410, and release rollback checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
-| Live acceptance | Full Slice 4 matrix | Zero/one/multi-key iframe states, generation, reference edit, mask edit, download, reload behavior, and rollback pass | Test-site technical acceptance is complete; production remains a separate decision and authorization. |
+| Menu identity | Custom menu already exists | Test and production render `图像创作` with the approved Sparkles SVG; production reuses the existing menu item ID | Keep this as Sub2API configuration; no source-code change. |
+| Deployment | Independent static artifact | `70aa5a5` is live behind independent test `current` and production `prod-current` pointers | Continue commit-named releases and atomic pointer swaps; never point production at test `current`. |
+| Live acceptance | Full Slice 4 plus production gates | Test acceptance, production canary, ordinary-user acceptance, old-route retirement, and observation pass | Treat the first release as complete and use the production plan as the release/rollback record. |
 
-### Revised remaining order
+### Maintenance order
 
-1. Execute the separately approved ToC production plan with an admin canary before switching the existing production menu item to ordinary-user visibility; the test configuration remains admin-only.
-2. Compare each new beta release with the previous commit-named release and the normal Sub2API surface; the retired Image Studio is no longer an acceptance oracle.
-3. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
+1. Before a future Sub2API release synchronizes `deploy/Caddyfile.server`, integrate the isolated Playground route commits and validate the resulting Caddy configuration.
+2. For every upstream Playground update, merge a tagged upstream release in an isolated worktree and rerun normal build, embedded build, the full test suite, security-negative gates, and real test-site iframe acceptance.
+3. Deploy each accepted Playground update as a new commit-named immutable release, verify test first, then atomically advance the independent production pointer and repeat production smoke checks.
 
-## Outcome and non-goals
+## Original beta outcome and non-goals
+
+The following sections preserve the test-beta scope and acceptance history that preceded the completed production promotion.
 
 ### Outcome
 
