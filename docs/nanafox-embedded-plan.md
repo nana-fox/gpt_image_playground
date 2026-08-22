@@ -2,7 +2,7 @@
 
 > Status: test-site beta deployed from `70aa5a5` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
 >
-> Scope boundary: this repository owns the forked frontend. The first beta does not change the Sub2API backend, database, production custom menu, or the existing `/tools/image-studio/` deployment.
+> Scope boundary: this repository owns the forked frontend. The first beta does not change Sub2API source, backend contracts, database schema/business data, production custom menu, or the existing `/tools/image-studio/` deployment. Its only Sub2API-side mutation is the approved test `custom_menu_items` setting.
 
 ## Handoff summary
 
@@ -236,9 +236,9 @@ After the beta is stable, add a versioned static curated template catalog in thi
 | Static files | Upload independent beta artifact | Remove or archive only the beta static root | 3 |
 | Code | Nanafox fork commits | Revert the release commit or redeploy the previous Nanafox tag | 4 |
 | Browser data | Generated outputs/task metadata written by beta | Leave compatible local data or clear the beta origin stores during rollback verification | 5 |
-| Backend/database | None in beta | No action | 6 |
+| Backend/database | No source, contract, schema, or business-data change; test menu uses the existing settings path | Revert the test `custom_menu_items` label/icon/URL if a full beta rollback is required | 6 |
 
-Acceptable post-rollback state: the existing `/tools/image-studio/` loads and generates exactly as before; the beta route is absent or unused; Sub2API backend/database state is unchanged; no Service Worker controls either tool route.
+Acceptable post-rollback state: the existing `/tools/image-studio/` loads and generates exactly as before; the beta route is absent or unused; the test menu setting is reverted or no longer points at the beta; Sub2API source/schema/business data is unchanged; no Service Worker controls either tool route.
 
 ## L2.1 Runtime assumptions
 
@@ -325,7 +325,7 @@ No analytics or remote client logging is added in the beta. Browser console diag
 | Upstream shape drift | Can upstream key/profile/task formats change? | Pin commit for beta; merge upstream tags manually behind full gates. |
 | Feature flag | Is a runtime production flag needed? | No backend flag; use compile-time embedded flavor and separate test route. |
 | New/old comparison | How are versions compared? | Independent iframe smoke/E2E against stable and beta; never double-send generation requests. |
-| Rollback pollution | What remains after rollback? | Only beta-local generated output/task metadata; no backend/schema/config mutation and no Service Worker. |
+| Rollback pollution | What remains after rollback? | Only beta-local generated output/task metadata; the existing test menu setting is the sole server-side configuration change, with no source/schema/business-data mutation or Service Worker. |
 
 ## Acceptance checklist
 
