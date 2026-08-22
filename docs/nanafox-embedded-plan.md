@@ -2,7 +2,7 @@
 
 > Status: test-site beta deployed from `70aa5a5` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
 >
-> Scope boundary: this repository owns the forked frontend. The first beta does not change Sub2API source, backend contracts, database schema/business data, production custom menu, or the existing `/tools/image-studio/` deployment. Its only Sub2API-side mutation is the approved test `custom_menu_items` setting.
+> Scope boundary: this repository owns the forked frontend. The first beta does not change Sub2API source, backend contracts, database schema/business data, production custom menu, or production routes. Approved test-side configuration changes are limited to `custom_menu_items` and the isolated Caddy routes/headers for the beta and retired Image Studio path.
 
 ## Handoff summary
 
@@ -13,7 +13,7 @@
 - `origin`: Nanafox fork
 - `upstream`: `CookSleep/gpt_image_playground`; push is disabled locally
 - Beta route: `/tools/image-playground/`
-- Existing stable route: `/tools/image-studio/`; keep unchanged until product acceptance
+- Retired test route: `/tools/image-studio/` returns 410; its static files are retained, and production is untouched
 - First-release model/provider: OpenAI Images API with `gpt-image-2` only
 - Backend contract: iframe JWT may call only `/api/v1/keys`; the selected Sub2API API key may call only same-origin image generation/edit endpoints
 - Current test release: `/srv/nanafox/image-playground/releases/70aa5a5`; rollback release: `d5e0591`
@@ -30,13 +30,13 @@ Verdict: keep the original architecture. The compile-time embedded flavor, in-me
 | Host layout | Not specified | `getDeploymentSurface` distinguishes iframe and new-tab layouts; desktop and 390×844 real-browser checks pass | Keep the host button in Sub2API and reserve an embedded-only safe area. |
 | New-tab refresh | Generic "refresh behavior" acceptance | `70aa5a5` preserves generated history, withholds credentials, and exposes a validated return-to-menu action | Keep this explicit safe downgrade; do not add silent session recovery. |
 | Menu identity | Custom menu already exists | Test configuration now renders `图像创作` with the approved Sparkles SVG | Keep this as Sub2API test configuration; no source-code change. |
-| Deployment | Test-only independent artifact | `70aa5a5` is live; health, CSP, asset parity, responsive layout, and stable-tool HTTP checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
-| Live acceptance | Full Slice 4 matrix | Multi-key generation and generated-output reload pass | Still verify reference edit, mask edit, storage/export sentinels, and rollback. |
+| Deployment | Test-only independent artifact | `70aa5a5` is live; health, restrictive CSP, responsive layout, retired-route 410, and release rollback checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
+| Live acceptance | Full Slice 4 matrix | Multi-key generation, reference edit, mask edit, download, reload behavior, and rollback pass | Real zero/one-key acceptance still needs dedicated test users; automated coverage is green. |
 
 ### Revised remaining order
 
-1. Complete real reference edit, mask edit, download, zero/one-key, and rollback acceptance before any production proposal.
-2. Compare the existing `/tools/image-studio/` behavior, not only its HTTP availability.
+1. Complete real zero/one-key acceptance with dedicated test users before any production proposal; do not disable or delete the current admin user's keys to simulate it.
+2. Compare each new beta release with the previous commit-named release and the normal Sub2API surface; the retired Image Studio is no longer an acceptance oracle.
 3. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
 
 ## Outcome and non-goals
@@ -51,7 +51,7 @@ Deliver a test-site-only embedded beta that:
 4. generates or edits images through the same-origin Sub2API Images API;
 5. persists generated outputs but never uploaded originals or masks;
 6. exposes only the approved `gpt-image-2` image workflow; and
-7. can be rolled back by switching the custom-menu URL to the existing stable tool.
+7. can be rolled back atomically by switching the beta `current` symlink to the previous commit-named release.
 
 ### Non-goals
 
@@ -118,12 +118,12 @@ Gate: IndexedDB and export tests distinguish upload/mask from generated output; 
 
 1. Build an independent artifact for `/tools/image-playground/`.
 2. Deploy only to the test site after separate authorization.
-3. Add `Referrer-Policy: no-referrer` and a restrictive CSP compatible with same-origin API calls and local static assets.
+3. Add `Referrer-Policy: no-referrer` and a restrictive CSP compatible with same-origin API calls plus local `data:`/`blob:` image conversion.
 4. Test inside the real Sub2API custom-menu iframe with zero, one, and multiple eligible keys.
 5. Verify generation, reference editing, mask editing, streaming where supported, downloads, and key/session failures. Reloading the outer custom page must restore a fresh session; reloading a standalone new tab must preserve history, withhold generation, and offer a same-origin return-to-menu action without persisting the JWT.
-6. Verify `/tools/image-studio/` remains byte-for-byte and behaviorally unchanged.
+6. Verify `/tools/image-studio/` returns 410 on the test site, while the normal Sub2API surface and production routes remain unchanged.
 
-Gate: product acceptance on the test site plus a demonstrated custom-menu rollback. Production remains out of scope.
+Gate: product acceptance on the test site plus a demonstrated atomic release rollback. Production remains out of scope.
 
 ### Later — templates and saved prompts
 
@@ -231,14 +231,16 @@ After the beta is stable, add a versioned static curated template catalog in thi
 
 | Category | Change | Rollback action | Order |
 |---|---|---|---|
-| Custom menu | Test menu points to `/tools/image-playground/` | Point it back to `/tools/image-studio/` | 1 |
-| Static route | Add isolated beta route/root | Remove only the beta route and reload validated Caddy config | 2 |
-| Static files | Upload independent beta artifact | Remove or archive only the beta static root | 3 |
-| Code | Nanafox fork commits | Revert the release commit or redeploy the previous Nanafox tag | 4 |
-| Browser data | Generated outputs/task metadata written by beta | Leave compatible local data or clear the beta origin stores during rollback verification | 5 |
-| Backend/database | No source, contract, schema, or business-data change; test menu uses the existing settings path | Revert the test `custom_menu_items` label/icon/URL if a full beta rollback is required | 6 |
+| Static release | `current` points to `releases/70aa5a5` | Atomically switch `current` to `releases/d5e0591` | 1 |
+| Caddy beta policy | Beta CSP permits only same-origin plus `data:`/`blob:` image conversion | Restore `/etc/caddy/Caddyfile.before-image-playground-data-connect-20260822-0928`, validate, then reload | 2 |
+| Custom menu | Test menu points to `/tools/image-playground/` | Keep it on the rolled-back beta release; remove the test menu item only for a full beta withdrawal | 3 |
+| Retired test route | `/tools/image-studio/` returns 410 | Keep retired during beta rollback; restore its pre-retirement Caddy behavior only by a separate product decision | 4 |
+| Static files | Commit-named beta and retired-tool artifacts remain on disk | Retain them for rollback; archive only after the rollback window closes | 5 |
+| Code | Nanafox fork commits | Revert the release commit or deploy a previous verified commit-named artifact | 6 |
+| Browser data | Generated outputs/task metadata written by beta | Leave compatible beta-origin data or clear it during an explicitly requested full withdrawal | 7 |
+| Backend/database | No source, contract, schema, or business-data change; test menu uses the existing settings path | Revert only the test `custom_menu_items` setting for a full beta withdrawal | 8 |
 
-Acceptable post-rollback state: the existing `/tools/image-studio/` loads and generates exactly as before; the beta route is absent or unused; the test menu setting is reverted or no longer points at the beta; Sub2API source/schema/business data is unchanged; no Service Worker controls either tool route.
+Acceptable release-rollback state: `/tools/image-playground/` serves the previous verified release through the unchanged test menu; `/tools/image-studio/` remains 410 on the test site; production is untouched; Sub2API source/schema/business data is unchanged; no Service Worker controls either tool route.
 
 ## L2.1 Runtime assumptions
 
@@ -321,11 +323,11 @@ No analytics or remote client logging is added in the beta. Browser console diag
 
 | Dimension | Question | Decision |
 |---|---|---|
-| Existing caller | Does current Image Studio change? | No; separate repository, artifact, route, and menu URL. |
+| Existing caller | Does the normal Sub2API surface change? | No source or container change; only the approved test custom menu and isolated Caddy routes change. The test Image Studio route is retired, and production is untouched. |
 | Upstream shape drift | Can upstream key/profile/task formats change? | Pin commit for beta; merge upstream tags manually behind full gates. |
 | Feature flag | Is a runtime production flag needed? | No backend flag; use compile-time embedded flavor and separate test route. |
-| New/old comparison | How are versions compared? | Independent iframe smoke/E2E against stable and beta; never double-send generation requests. |
-| Rollback pollution | What remains after rollback? | Only beta-local generated output/task metadata; the existing test menu setting is the sole server-side configuration change, with no source/schema/business-data mutation or Service Worker. |
+| New/old comparison | How are versions compared? | Compare the current and previous commit-named beta releases plus normal Sub2API smoke checks; never double-send generation requests. |
+| Rollback pollution | What remains after rollback? | Beta-local generated output/task metadata, retained static releases, the approved test menu setting, and isolated Caddy configuration; no source/schema/business-data mutation or Service Worker. |
 
 ## Acceptance checklist
 
@@ -334,15 +336,19 @@ No analytics or remote client logging is added in the beta. Browser console diag
 - [x] Full test suite passes: 35 files, 538 tests at `70aa5a5`.
 - [x] URL/history/storage/export negative tests find no JWT, raw key, bearer, upload, or mask sentinel; the live beta has no Service Worker registration.
 - [x] Uploaded originals and masks stay out of IndexedDB and export in automated tests.
-- [x] Zero/one/multiple/deleted/disabled key flows pass automated tests; real zero/one-key acceptance remains pending.
+- [x] Zero/one/multiple/deleted/disabled key flows pass automated tests.
+- [ ] Real zero/one-key acceptance with dedicated safe test users remains pending; do not mutate the current admin user's keys to simulate it.
 - [x] Unsupported provider/model/mode and `n > 1` cannot reach network I/O in automated tests.
-- [ ] Reference edit works in the same session; reload makes reference retry unavailable with explicit UI.
+- [x] Reference edit works in the same session through `/v1/images/edits`; a reloaded masked-reference task shows `参考图已失效` and disables reference reuse explicitly.
+- [x] Generated output download produces a valid 1254×1254 PNG.
+- [x] Real pointer-drawn partial mask saves successfully, is labeled `局部重绘`, and generates through `/v1/images/edits`.
 - [x] Generated output remains available after reloading the outer custom page.
 - [x] Real Sub2API iframe multi-key generation passes on the test site.
 - [x] Standalone reload preserves history, disables generation, and returns safely to the custom menu without restoring credentials.
 - [x] Desktop and 390×844 host layouts have no button/key overlap or horizontal overflow.
-- [x] Existing `/tools/image-studio/` remains reachable and uses separate storage; behavioral comparison remains pending.
-- [ ] Switching the test custom menu back to `/tools/image-studio/` demonstrates rollback.
+- [x] Test `/tools/image-studio/` returns 410; retired static files remain available for an explicit recovery decision, and production is untouched.
+- [x] Atomic `current` symlink rollback serves `d5e0591` and restores `70aa5a5`; the Sub2API container start time is unchanged.
+- [x] Live beta CSP permits only same-origin plus `data:`/`blob:` image conversion; beta, health, and retired-route checks remain 200/200/410.
 
 ## Remaining risks
 
@@ -354,6 +360,7 @@ No analytics or remote client logging is added in the beta. Browser console diag
 | Memory-only inputs remove cross-reload reference retry | Product tradeoff required by current privacy rule | Product owner | Reassess only with an explicit encrypted/server-side storage design. |
 | Large upstream store increases change-conflict risk | Known; keep changes in lib modules and narrow store seams | Fork maintainer | Extract only proven shared seams during implementation, not speculative abstractions. |
 | Standalone reload cannot resume generation without a fresh JWT | Accepted and verified safe downgrade: preserve only same-origin return metadata and show a reopen action | Image Playground owner | Recheck after every upstream merge. |
+| Real zero/one-key host states are not yet exercised on dedicated users | Automated behavior is green; live admin has multiple keys and must not be mutated for simulation | Product owner | Provision disposable test users with zero and one eligible key before production review. |
 
 ## Start command for the implementation task
 
