@@ -3,6 +3,8 @@
 > Status: test-site beta deployed from `70aa5a5` on branch `codex/embedded-adapter`; production gates remain open. Upstream baseline is `47f83ffdd836aa7d1e644b88e02fe4331be4beea`.
 >
 > Scope boundary: this repository owns the forked frontend. The first beta does not change Sub2API source, backend contracts, database schema/business data, production custom menu, or production routes. Approved test-side configuration changes are limited to `custom_menu_items` and the isolated Caddy routes/headers for the beta and retired Image Studio path.
+>
+> Production direction: expose `图像创作` to ordinary ToC users according to [the production release plan](./nanafox-production-release-plan.md); execution still requires separate authorization.
 
 ## Handoff summary
 
@@ -35,7 +37,7 @@ Verdict: keep the original architecture. The compile-time embedded flavor, in-me
 
 ### Revised remaining order
 
-1. Before any production proposal, decide explicitly whether the custom menu is admin-only or user-visible; the test configuration remains admin-only after temporarily exposing it to disposable users for zero/one-key acceptance.
+1. Execute the separately approved ToC production plan with an admin canary before switching the existing production menu item to ordinary-user visibility; the test configuration remains admin-only.
 2. Compare each new beta release with the previous commit-named release and the normal Sub2API surface; the retired Image Studio is no longer an acceptance oracle.
 3. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
 
