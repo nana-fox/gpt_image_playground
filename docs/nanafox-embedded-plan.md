@@ -31,11 +31,11 @@ Verdict: keep the original architecture. The compile-time embedded flavor, in-me
 | New-tab refresh | Generic "refresh behavior" acceptance | `70aa5a5` preserves generated history, withholds credentials, and exposes a validated return-to-menu action | Keep this explicit safe downgrade; do not add silent session recovery. |
 | Menu identity | Custom menu already exists | Test configuration now renders `图像创作` with the approved Sparkles SVG | Keep this as Sub2API test configuration; no source-code change. |
 | Deployment | Test-only independent artifact | `70aa5a5` is live; health, restrictive CSP, responsive layout, retired-route 410, and release rollback checks pass | Continue commit-named releases and atomic `current` symlink swaps. |
-| Live acceptance | Full Slice 4 matrix | Multi-key generation, reference edit, mask edit, download, reload behavior, and rollback pass | Real zero/one-key acceptance still needs dedicated test users; automated coverage is green. |
+| Live acceptance | Full Slice 4 matrix | Zero/one/multi-key iframe states, generation, reference edit, mask edit, download, reload behavior, and rollback pass | Test-site technical acceptance is complete; production remains a separate decision and authorization. |
 
 ### Revised remaining order
 
-1. Complete real zero/one-key acceptance with dedicated test users before any production proposal; do not disable or delete the current admin user's keys to simulate it.
+1. Before any production proposal, decide explicitly whether the custom menu is admin-only or user-visible; the test configuration remains admin-only after temporarily exposing it to disposable users for zero/one-key acceptance.
 2. Compare each new beta release with the previous commit-named release and the normal Sub2API surface; the retired Image Studio is no longer an acceptance oracle.
 3. For every upstream update, merge a tagged upstream release in an isolated worktree and rerun all embedded negative gates before deploying a new commit-named test release.
 
@@ -337,7 +337,7 @@ No analytics or remote client logging is added in the beta. Browser console diag
 - [x] URL/history/storage/export negative tests find no JWT, raw key, bearer, upload, or mask sentinel; the live beta has no Service Worker registration.
 - [x] Uploaded originals and masks stay out of IndexedDB and export in automated tests.
 - [x] Zero/one/multiple/deleted/disabled key flows pass automated tests.
-- [ ] Real zero/one-key acceptance with dedicated safe test users remains pending; do not mutate the current admin user's keys to simulate it.
+- [x] Real zero/one-key iframe acceptance passes with isolated disposable users: zero-key shows the create-key path without generation, one-key auto-selects and enables submission, URL credentials are scrubbed, and JWT/raw-key scans of playground storage are clean. The test menu was restored to admin-only and both users were deleted afterward.
 - [x] Unsupported provider/model/mode and `n > 1` cannot reach network I/O in automated tests.
 - [x] Reference edit works in the same session through `/v1/images/edits`; a reloaded masked-reference task shows `参考图已失效` and disables reference reuse explicitly.
 - [x] Generated output download produces a valid 1254×1254 PNG.
@@ -360,7 +360,6 @@ No analytics or remote client logging is added in the beta. Browser console diag
 | Memory-only inputs remove cross-reload reference retry | Product tradeoff required by current privacy rule | Product owner | Reassess only with an explicit encrypted/server-side storage design. |
 | Large upstream store increases change-conflict risk | Known; keep changes in lib modules and narrow store seams | Fork maintainer | Extract only proven shared seams during implementation, not speculative abstractions. |
 | Standalone reload cannot resume generation without a fresh JWT | Accepted and verified safe downgrade: preserve only same-origin return metadata and show a reopen action | Image Playground owner | Recheck after every upstream merge. |
-| Real zero/one-key host states are not yet exercised on dedicated users | Automated behavior is green; live admin has multiple keys and must not be mutated for simulation | Product owner | Provision disposable test users with zero and one eligible key before production review. |
 
 ## Start command for the implementation task
 
