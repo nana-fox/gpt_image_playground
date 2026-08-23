@@ -16,4 +16,9 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).toContain('探索全部灵感')
     expect(source).toContain('data-inspiration-overlay')
   })
+
+  it('只有一个精选模板时也限制主卡高度', () => {
+    expect(source).toContain('sm:h-52')
+    expect(source).toContain('sm:h-full')
+  })
 })
