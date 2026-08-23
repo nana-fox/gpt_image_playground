@@ -11,27 +11,39 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).not.toContain('今日灵感')
   })
 
-  it('精选区有主卡，全部灵感以覆盖层打开', () => {
-    expect(source).toContain('data-featured-primary')
+  it('精选区按原图比例等高横滑，全部灵感以覆盖层打开', () => {
+    expect(source).toContain('data-featured-shelf')
+    expect(source).toContain('data-auto-aspect')
+    expect(source).toContain('snap-x snap-mandatory')
+    expect(source).toContain('onCoverLoad')
     expect(source).toContain('探索全部灵感')
     expect(source).toContain('data-inspiration-overlay')
+    expect(source).not.toContain('lg:grid-cols-[minmax(0,1.9fr)_repeat(3,minmax(0,1fr))]')
   })
 
-  it('首页使用一张主视觉和三张统一次卡，标题覆盖在图片内', () => {
-    expect(source).toContain('data-featured-secondary')
+  it('精选模板不区分固定横竖槽位，标题覆盖在图片内', () => {
+    expect(source).toContain('data-featured-card')
     expect(source).toContain('bg-gradient-to-t from-black/80')
+    expect(source).not.toContain('data-featured-primary')
+    expect(source).not.toContain('data-featured-secondary')
     expect(source).not.toContain('group-hover:-translate-y-0.5')
   })
 
-  it('完整显示封面时使用同图柔化背景，不拉伸海报', () => {
+  it('比例自适应卡片完整显示原图，不使用柔化背景填充', () => {
     expect(source).toContain('data-template-cover')
-    expect(source).toContain("template.cover_fit === 'contain'")
-    expect(source).toContain('blur-xl')
+    expect(source).toContain('natural')
     expect(source).toContain('object-contain')
   })
 
-  it('全部灵感使用固定比例响应式网格', () => {
-    expect(source).toContain('aspect-[4/5]')
-    expect(source).toContain('xl:grid-cols-4')
+  it('全部灵感使用等宽且高度随原图变化的响应式瀑布流', () => {
+    expect(source).toContain('data-inspiration-masonry')
+    expect(source).toContain('columns-1')
+    expect(source).toContain('break-inside-avoid')
+    expect(source).not.toContain('grid grid-cols-1 gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4')
+  })
+
+  it('最近创作放在独立的轻量内容容器中', () => {
+    expect(source).toContain('data-recent-creations')
+    expect(source).toContain('bg-white/40')
   })
 })
