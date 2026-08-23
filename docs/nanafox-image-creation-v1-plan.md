@@ -19,14 +19,14 @@
 - 不把模板、首页精选或素材配置放进 Sub2API `settings` 表。
 - 不把用户生成历史上传到服务端；现有 IndexedDB 历史继续保留在用户浏览器。
 - 不引入 OSS/S3 抽象、模板版本表、轮播配置表、标签表、收藏计数、定时发布、拖拽排序、自动轮播或模板变量引擎。
-- 不从开源仓库运行时同步提示词；只允许人工筛选、改写、核对许可并生成自有封面。
+- 不从开源仓库运行时同步提示词。隔离测试环境可以导入人工筛选的案例验证流程，但必须记录原案例、原作者链接和“商业权利未核验”；生产发布前仍需逐项复核、替换或取得授权。
 
 ## 2. 当前基线
 
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
-| Playground | `6fbe8aa` | `codex/image-creation-v1` | 普通/嵌入构建通过；39 个测试文件 / 547 项测试通过；修正版已发布测试环境 |
-| Sub2API | `8b17bf4f4` | `feature/image-creation-v1` 独立 worktree | Go 全量测试、257 个前端测试文件 / 1747 项测试、构建和 lint 通过；修正版已发布测试环境 |
+| Playground | `c242a4c` | `codex/image-creation-v1` | 普通/嵌入构建通过；39 个测试文件 / 550 项测试通过；视觉修正版已发布测试环境 |
+| Sub2API | `64b6ffd6b` | `feature/image-creation-v1` 独立 worktree | Go 全量测试通过；`cover_fit` 严格契约已发布测试环境 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
@@ -45,6 +45,8 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 首页不再使用“我的创作 / 探索灵感”双页签。从上到下固定为：`从灵感开始` 精选架、`最近创作` 网格、现有底部创作输入区。
 
 - 精选架最多展示 4 个已发布且配置了 `home_position` 的模板：第 1 个是带摘要和“用这个灵感创作”按钮的主卡，第 2–4 个是紧凑次卡；顺序由 `home_position` 决定。
+- 精选架以图片为主：桌面端使用“1 张主卡 + 3 张次卡”，移动端改为横向滑动的 snap 卡片，不把不同长宽比强塞进自然高度瀑布流。
+- 模板封面使用固定容器。摄影、商品图默认 `cover` 裁切填满；海报、信息图和地图可选 `contain` 完整显示，并以同一张图的模糊放大层填充背景，不使用纯色大留白。
 - “探索全部灵感”在当前产品内打开全屏工作区覆盖层；关闭后原首页、历史筛选和输入内容保持不变，不跳转到另一个顶级产品页面。
 - 最近创作继续读取当前用户作用域下的 IndexedDB，并复用已有搜索、状态筛选、查看、下载、收藏和复用能力；模板 API 失败不能隐藏本地历史。
 - 点击灵感卡片打开详情；卡片上的唯一主动作是“使用此灵感”。
@@ -54,8 +56,8 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 
 ### 3.2 灵感库
 
-- 桌面端：搜索、分类、标签、收藏、最近使用筛选；固定响应式网格；“加载更多”分页。
-- 移动端：搜索常驻；分类和筛选收进底部抽屉；2 列或 1 列卡片取决于可用宽度。
+- 桌面端：搜索、分类、标签、收藏、最近使用筛选；固定 4:5 图片卡网格；“加载更多”分页。卡片标题压在底部渐变上，摘要和“使用”动作在 hover / focus 时出现，不额外增加白色文字底座。
+- 移动端：搜索常驻；分类和筛选收进底部抽屉；小于 460px 为 1 列，达到 460px 为 2 列；触屏不依赖 hover，标题常驻且主动作可聚焦、可点击。
 - 桌面详情使用右侧抽屉；移动端使用全屏详情。
 - 详情展示封面、标题、摘要、分类、标签、输入要求和推荐参数；提示词可预览但主路径仍是“使用此灵感”。
 - 空态区分：无模板、筛选无结果、网络失败；网络失败只影响灵感区域。
@@ -65,7 +67,7 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 模板管理列表支持搜索、状态筛选、新建、编辑、预览、发布、归档、恢复。
 
 - 新建进入单页编辑器。
-- 编辑器字段：标题、摘要、分类、标签、提示词、输入模式、默认尺寸/质量/格式、封面、封面替代文本、来源说明。
+- 编辑器字段：标题、摘要、分类、标签、提示词、输入模式、默认尺寸/质量/格式、封面、封面展示方式、封面替代文本、来源说明。
 - 封面可上传，或从管理员当前浏览器中选择一张已生成作品再上传为模板素材。
 - 保存草稿使用 `revision` 做乐观锁；冲突时不覆盖服务端，提示刷新后重试。
 - 发布原子地复制草稿文档和草稿封面到发布快照。
@@ -177,6 +179,7 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
   "prompt": "string <= 12000",
   "input_mode": "text|reference_optional|reference_required",
   "cover_alt": "string <= 200",
+  "cover_fit": "cover|contain",
   "defaults": {
     "size": "1024x1024|1536x1024|1024x1536",
     "quality": "low|medium|high",
@@ -535,7 +538,23 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 - 多端：桌面与 390×844 移动端完成实际页面检查；宿主导航、精选卡片、历史区、灵感覆盖层和底部输入区无横向溢出或控件重叠。
 - 公网与日志：测试 health 和 `/tools/image-playground/` 为 200，旧 `/tools/image-studio/` 为 410；新测试容器启动后未发现 fatal、panic、migration fail 或 error 日志。
 
-视觉验收的数据边界：测试库当前只有 1 个已配置首页位置的模板，合成普通账号没有本地历史，因此内容数量少于参考图；结构支持并由前后端共同限制为 4 个精选位置，个人历史仍按当前用户浏览器的 IndexedDB 数据自然展示。这是数据差异，不是布局或权限差异。
+该轮验收时测试库只有 1 个已配置首页位置的模板；该数据边界已被 8.8 的测试素材导入取代。个人历史仍按当前用户浏览器的 IndexedDB 数据自然展示。
+
+### 8.8 图片优先视觉版与测试素材导入（2026-08-23）
+
+| 项目 | 当前测试环境 | 回滚点 |
+|---|---|---|
+| Playground | `current` → `releases/c242a4c`；静态树 SHA-256 `b6c509960d98e6816a66d50ad741b68ddd8635fda5dc1d4ec15012fe7c1a5efa` | `releases/6fbe8aa` |
+| Sub2API | `sub2api:test-image-creation-v1-64b6ffd6b`，容器 healthy | 停止保留的 `sub2api-test-rollback-8b17bf4f4` |
+| 生产隔离 | `sub2api-prod` 仍为原生产镜像且 healthy；`prod-current` 仍指向 `releases/70aa5a5` | 无生产操作 |
+
+本轮新增 `cover_fit` 文档字段并保持 JSONB 增量兼容：旧模板缺省按 `cover` 展示；管理员可以明确选择“裁切填满”或“完整显示”。用户首页改为桌面 1+3、移动横向滑动；全部灵感统一 4:5 图片卡、底部渐变标题和 hover / focus 操作层。
+
+隔离测试库通过正式管理 API 导入 `awesome-gpt-image-2` / `gpt-image2.canghe.ai` 中人工筛选的 12 个案例，覆盖信息图、商品、电商、摄影、插画、海报和城市地图。导入后测试库有 25 个模板，其中 24 个已发布、4 个首页精选；原有模板未删除。首页顺序为：高端肉类海鲜品牌英雄图、景德镇青花瓷全景解说图谱、曼哈顿公园水彩旅行插画、体积激光黑场海报。
+
+每个导入模板均保存案例页、原始来源、来源标签和“测试素材，商业权利未核验”说明。仓库 MIT 许可不能推导出第三方案例图片和提示词可商用，因此这些素材只用于测试环境视觉与流程验收，不进入生产发布清单。
+
+API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已发布模板；封面 `cover` / `contain` 顺序正确；详情来源、素材 immutable cache、模板 apply 全部通过。公网 `/tools/image-playground/` 为 200，旧 `/tools/image-studio/` 为 410。生产数据库仍没有 `image_creation_templates` 表。
 
 ## 剩余风险登记
 
@@ -543,5 +562,5 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 |---|---|---|---|
 | PostgreSQL BYTEA 体积随模板增长 | 接受：V1 最多小规模精选素材，8MiB 硬限 | NanaFox backend | V2 asset storage migration trigger |
 | Safari fragment/new-window 行为 | Chromium 真实测试已通过；Safari 的 V1 模板流仍待实机回归 | NanaFox frontend | Production Safari acceptance |
-| 开源提示词许可逐条核对 | 待内容导入前完成 | NanaFox product | V1 content provenance checklist |
+| 开源提示词许可逐条核对 | 测试数据已记录来源并标记“商业权利未核验”；生产前仍须逐项完成 | NanaFox product | V1 content provenance checklist |
 | 用户软删除清理接点 | 待 Slice 1 随现有删除流程验证 | NanaFox backend | Slice 1 user cleanup contract |
