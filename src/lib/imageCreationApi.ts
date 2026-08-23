@@ -173,19 +173,6 @@ export async function listImageCreationAdminTemplates(
   return ensureImageCreationPage<ImageCreationAdminTemplate>((await imageCreationRequest<unknown>(`/api/v1/admin/image-creation/templates?${query}`, {}, request)).data)
 }
 
-export async function listAllImageCreationAdminTemplates(
-  filters: { q?: string, state?: string } = {},
-  request: typeof fetch = fetch,
-) {
-  const first = await listImageCreationAdminTemplates({ ...filters, page: 1, pageSize: 100 }, request)
-  const items = [...first.items]
-  for (let page = 2; page <= first.pages; page += 1) {
-    const next = await listImageCreationAdminTemplates({ ...filters, page, pageSize: 100 }, request)
-    items.push(...next.items)
-  }
-  return items
-}
-
 export async function getImageCreationAdminTemplate(id: number) {
   return (await imageCreationRequest<ImageCreationAdminTemplate>(`/api/v1/admin/image-creation/templates/${id}`)).data
 }

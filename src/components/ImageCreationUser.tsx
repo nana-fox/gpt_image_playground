@@ -5,6 +5,7 @@ import {
   applyImageCreationTemplate,
   getImageCreationAssetUrl,
   getImageCreationTemplate,
+  ImageCreationApiError,
   listImageCreationTemplates,
   setImageCreationTemplateFavorite,
   type ImageCreationTemplateDetail,
@@ -41,7 +42,7 @@ function TemplateCover({ template, alt = '', className = '', eager = false, natu
   onCoverLoad?: (width: number, height: number) => void
 }) {
   if (!template.cover_asset_id) {
-    return <div data-template-cover className={`flex items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 text-sm text-teal-700 dark:from-teal-950/40 dark:to-cyan-950/40 dark:text-teal-300 ${className}`}>等待封面</div>
+    return <div data-template-cover className={`flex items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 text-sm text-teal-700 dark:from-teal-950/40 dark:to-cyan-950/40 dark:text-teal-300 ${natural ? 'aspect-[4/5]' : ''} ${className}`}>等待封面</div>
   }
   const src = getImageCreationAssetUrl(template.cover_asset_id)
   const contained = !natural && template.cover_fit === 'contain'
@@ -51,7 +52,7 @@ function TemplateCover({ template, alt = '', className = '', eager = false, natu
       <img
         src={src}
         alt={alt}
-        className={`relative h-full w-full ${natural ? 'object-contain' : `transition duration-300 group-hover:scale-[1.015] ${contained ? 'object-contain p-2' : 'object-cover'}`}`}
+        className={`relative w-full ${natural ? 'block h-auto object-contain' : `h-full transition duration-300 group-hover:scale-[1.015] ${contained ? 'object-contain p-2' : 'object-cover'}`}`}
         loading={eager ? 'eager' : 'lazy'}
         onLoad={(event) => onCoverLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
       />
@@ -65,15 +66,10 @@ function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   onUse: () => void
   onFavorite?: () => void
 }) {
-  const [aspectRatio, setAspectRatio] = useState(4 / 5)
-  const onCoverLoad = (width: number, height: number) => {
-    if (width > 0 && height > 0) setAspectRatio(width / height)
-  }
-
   return (
-    <article data-template-card data-auto-aspect style={{ aspectRatio }} className="group relative mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
-      <button type="button" onClick={onDetail} className="absolute inset-0 block h-full w-full text-left" aria-label={`查看${template.title}`}>
-        <TemplateCover template={template} className="h-full w-full" natural onCoverLoad={onCoverLoad} />
+    <article data-template-card data-auto-aspect className="group relative mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
+      <button type="button" onClick={onDetail} className="relative block w-full text-left" aria-label={`查看${template.title}`}>
+        <TemplateCover template={template} className="w-full" natural />
       </button>
       <div className="pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20 group-focus-within:bg-black/20" />
       <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">{categoryLabel(template.category)}</span>
@@ -103,7 +99,7 @@ function FeaturedCard({ template, featured, onDetail, onUse }: {
 
   return (
     <article data-featured-card data-auto-aspect style={{ aspectRatio }} className="group relative h-[250px] w-auto shrink-0 snap-start overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950 sm:h-[290px] lg:h-[330px]">
-      <button type="button" onClick={onDetail} className="absolute inset-0 h-full w-full text-left" aria-label={`查看${template.title}`}><TemplateCover template={template} className="h-full w-full" eager={featured} natural onCoverLoad={onCoverLoad} /></button>
+      <button type="button" onClick={onDetail} className="absolute inset-0 h-full w-full text-left" aria-label={`查看${template.title}`}><TemplateCover template={template} className="h-full w-full" eager={featured} onCoverLoad={onCoverLoad} /></button>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-4 pb-4 pt-20 text-white">
         {featured && <span className="mb-2 inline-flex rounded-full bg-teal-500/90 px-2.5 py-1 text-[10px] font-semibold backdrop-blur">本周精选</span>}
         <h3 className="line-clamp-2 text-sm font-semibold leading-5 sm:text-base">{template.title}</h3>
@@ -138,7 +134,7 @@ function TemplateDetail({ template, loading, onClose, onUse }: {
 }) {
   return (
     <div className="fixed inset-0 z-[90] flex justify-end bg-black/25 backdrop-blur-sm" onClick={onClose}>
-      <section className="h-full w-full overflow-y-auto bg-white shadow-2xl dark:bg-gray-950 sm:max-w-lg" onClick={(event) => event.stopPropagation()} aria-label="灵感详情">
+      <section role="dialog" aria-modal="true" className="h-full w-full overflow-y-auto bg-white shadow-2xl dark:bg-gray-950 sm:max-w-lg" onClick={(event) => event.stopPropagation()} aria-label="灵感详情">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white/90 px-5 py-4 backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/90">
           <h2 className="font-semibold text-gray-900 dark:text-white">灵感详情</h2>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]" aria-label="关闭灵感详情"><CloseIcon className="h-5 w-5" /></button>
@@ -147,7 +143,7 @@ function TemplateDetail({ template, loading, onClose, onUse }: {
           <div className="p-8 text-center text-sm text-gray-500">正在加载...</div>
         ) : (
           <div className="p-5 pb-28">
-            <TemplateCover template={template} alt={template.cover_alt} className="aspect-[4/5] w-full rounded-2xl" eager />
+            <div data-template-detail-cover><TemplateCover template={template} alt={template.cover_alt} className="w-full rounded-2xl" eager natural /></div>
             <h2 className="mt-5 text-xl font-bold text-gray-900 dark:text-white">{template.title}</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{template.summary}</p>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -186,6 +182,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
   const [featured, setFeatured] = useState<ImageCreationTemplateListItem[]>([])
   const [featuredError, setFeaturedError] = useState('')
   const [items, setItems] = useState<ImageCreationTemplateListItem[]>([])
+  const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
@@ -195,6 +192,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
   const [recent, setRecent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [galleryError, setGalleryError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [detail, setDetail] = useState<ImageCreationTemplateDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -218,14 +216,15 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
     const timer = window.setTimeout(() => {
       setLoading(true)
       setGalleryError('')
-      listImageCreationTemplates({ q: query, category, tag, favorite, recent, page, pageSize: 24 })
+      listImageCreationTemplates({ q: query, category, tag, favorite, recent, page, pageSize: 20 })
         .then((result) => {
           if (cancelled) return
           setItems((current) => page === 1 ? result.items : [...current, ...result.items.filter((item) => !current.some((existing) => existing.id === item.id))])
+          setTotal(result.total)
           setTotalPages(result.pages)
         })
         .catch((error) => {
-          if (!cancelled) setGalleryError(error instanceof Error ? error.message : '灵感库加载失败')
+          if (!cancelled) setGalleryError(error instanceof ImageCreationApiError && error.status >= 500 ? '筛选暂时不可用，请重试或清除筛选。' : error instanceof Error ? error.message : '灵感库加载失败')
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -235,13 +234,33 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [view, query, category, tag, favorite, recent, page])
+  }, [view, query, category, tag, favorite, recent, page, reloadKey])
 
   const resetPage = (change: () => void) => {
     change()
     setPage(1)
     setItems([])
+    setTotal(0)
   }
+
+  useEffect(() => {
+    if (view !== 'inspiration') return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (detail) {
+        setDetail(null)
+        return
+      }
+      setView('create')
+    }
+    window.addEventListener('keydown', close)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', close)
+    }
+  }, [view, detail])
 
   const openDetail = async (template: ImageCreationTemplateListItem) => {
     setDetailLoading(true)
@@ -313,7 +332,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
         <section className="mb-7 rounded-2xl border border-gray-200/80 bg-white/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
           <div className="mb-3 flex items-center justify-between gap-4">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">从灵感开始</h2>
-            <button type="button" onClick={() => setView('inspiration')} className="shrink-0 text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">探索全部灵感 →</button>
+            <button type="button" onClick={() => setView('inspiration')} className="shrink-0 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 transition hover:border-teal-300 hover:bg-teal-100 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">浏览全部 →</button>
           </div>
           {featuredError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">{featuredError}，你的本地创作不受影响。</p> : featured.length ? (
             <FeaturedShelf templates={featured} onDetail={openDetail} onUse={useTemplate} />
@@ -329,10 +348,10 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
       </main>
 
       {view === 'inspiration' && (
-        <section data-inspiration-overlay role="dialog" aria-modal="true" aria-label="探索全部灵感" className="fixed inset-0 z-[80] overflow-y-auto bg-gray-50 dark:bg-gray-950">
+        <section data-inspiration-overlay role="dialog" aria-modal="true" aria-label="灵感画廊" className="fixed inset-0 z-[80] overflow-y-auto bg-gray-50 dark:bg-gray-950">
           <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/95">
             <div className="safe-area-x mx-auto flex max-w-7xl items-center justify-between py-4">
-              <div><h1 className="text-xl font-bold text-gray-900 dark:text-white">探索全部灵感</h1><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">从模板开始，再把它变成你的作品。</p></div>
+              <div><h1 className="text-xl font-bold text-gray-900 dark:text-white">灵感画廊</h1><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">浏览模板，预览效果，一键应用到创作区。</p></div>
               <button type="button" onClick={() => setView('create')} className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]" aria-label="返回创作台"><CloseIcon className="h-5 w-5" /></button>
             </div>
           </header>
@@ -342,13 +361,14 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
               <button type="button" onClick={() => setFiltersOpen(true)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-600 dark:border-white/[0.08] dark:text-gray-300 sm:hidden">筛选</button>
               <div className="hidden gap-2 sm:flex">{filters}</div>
             </div>
-            {galleryError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{galleryError}</div> : !loading && items.length === 0 ? (
+            {galleryError && <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300"><span>{galleryError}</span><button type="button" onClick={() => setReloadKey((value) => value + 1)} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 font-medium dark:border-red-500/30 dark:bg-transparent">重新加载</button></div>}
+            {!loading && !galleryError && items.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-white/[0.12]">没有找到符合条件的灵感，试试清除筛选。</div>
             ) : (
-              <div data-inspiration-masonry className="columns-1 gap-4 min-[460px]:columns-2 lg:columns-3 xl:columns-4">{items.map((template) => <TemplateCard key={template.id} template={template} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>
+              <div data-inspiration-masonry>{Array.from({ length: Math.ceil(items.length / 20) }, (_, index) => <div data-inspiration-page key={index} className={`${index ? 'mt-4 ' : ''}columns-1 gap-4 min-[460px]:columns-2 lg:columns-3 xl:columns-4`}>{items.slice(index * 20, index * 20 + 20).map((template) => <TemplateCard key={template.id} template={template} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>)}</div>
             )}
-            {loading && <p className="py-6 text-center text-sm text-gray-400">正在加载灵感...</p>}
-            {!loading && page < totalPages && <div className="mt-6 text-center"><button type="button" onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.04]">加载更多</button></div>}
+            <p aria-live="polite" className="mt-5 text-center text-xs text-gray-400">{loading ? '正在加载灵感…' : `已显示 ${items.length} / ${total} 个灵感`}</p>
+            {(loading || page < totalPages) && <div className="mt-3 text-center"><button type="button" disabled={loading} onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.04]">{loading ? '正在加载…' : '加载更多'}</button></div>}
           </div>
         </section>
       )}
