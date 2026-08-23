@@ -8,4 +8,10 @@ describe('融合版 1.1 首页精选管理', () => {
     expect(source).toContain('selected.length >= 4')
     expect(source).not.toContain('今日灵感')
   })
+
+  it('管理员可选择封面裁切或完整显示', () => {
+    expect(source).toContain('封面展示')
+    expect(source).toContain("cover_fit: 'cover'")
+    expect(source).toContain("cover_fit: 'contain'")
+  })
 })

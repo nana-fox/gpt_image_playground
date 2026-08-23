@@ -17,8 +17,21 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).toContain('data-inspiration-overlay')
   })
 
-  it('只有一个精选模板时也限制主卡高度', () => {
-    expect(source).toContain('sm:h-52')
-    expect(source).toContain('sm:h-full')
+  it('首页使用一张主视觉和三张统一次卡，标题覆盖在图片内', () => {
+    expect(source).toContain('data-featured-secondary')
+    expect(source).toContain('bg-gradient-to-t from-black/80')
+    expect(source).not.toContain('group-hover:-translate-y-0.5')
+  })
+
+  it('完整显示封面时使用同图柔化背景，不拉伸海报', () => {
+    expect(source).toContain('data-template-cover')
+    expect(source).toContain("template.cover_fit === 'contain'")
+    expect(source).toContain('blur-xl')
+    expect(source).toContain('object-contain')
+  })
+
+  it('全部灵感使用固定比例响应式网格', () => {
+    expect(source).toContain('aspect-[4/5]')
+    expect(source).toContain('xl:grid-cols-4')
   })
 })
