@@ -188,7 +188,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
 
   useEffect(() => {
     let cancelled = false
-    listImageCreationTemplates({ home: true, pageSize: 6 })
+    listImageCreationTemplates({ home: true, pageSize: 4 })
       .then((result) => {
         if (!cancelled) setFeatured(result.items)
       })
