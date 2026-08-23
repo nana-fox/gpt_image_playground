@@ -572,11 +572,43 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 - 公网复验：测试首页、health、JS 和 CSS 资源均为 200；旧 `/tools/image-studio/` 为 410；测试容器最近 15 分钟未发现 fatal、panic、migration fail 或 error。生产首页与 health 均为 200，生产指针和容器未变化。
 - 已登录 Chrome 测试页保持可见，但自动视觉控制连续中断。为避免读取或复制登录凭证，本轮不绕过登录态；桌面、移动端、深色模式和“全部灵感”的最终视觉确认保留为测试环境人工验收项，未把自动化中断误记为视觉通过。
 
+### 8.10 百条素材、容量回归与发布审计（2026-08-23）
+
+本轮只向逻辑独立的测试库补充数据并更新 Playground 静态制品；生产数据库、生产静态指针和 Sub2API 源码均未修改。测试库与生产库当前仍共享同一个 PostgreSQL 实例，因此数据隔离成立，连接与资源隔离不成立。
+
+| 项目 | 结果 |
+|---|---|
+| 模板规模 | 100 个已发布、1 个已归档、4 个首页精选；101 个素材，共 55,914,202 bytes |
+| 新增来源 | 从 `VigoZhao/AI-Visual-Prompt-Cookbook` 人工配额筛选 76 个案例，经正式管理 API 完成素材上传、草稿创建和发布；没有直接写数据库 |
+| 数据备份 | 导入前备份 `/srv/nanafox/image-playground/backups/test-image-creation-pre-100-20260823T122307Z.sql.gz` |
+| 数据完整性 | 100 个已发布文档均有标题与提示词；用户 API 为 5 页（24/24/24/24/4），ID 无重复 |
+| 静态制品 | 测试 `current` → `releases/c0eee02`；63 个文件，内容树 SHA-256 `977c9eea72f8a4817b22fc23cf30607843c2237e0251f70b8499726d8963bd1a`；生产 `prod-current` 仍为 `releases/70aa5a5` |
+| 前端门禁 | 40 个测试文件、553/553；普通构建和 embedded 构建通过；管理员 101 个列表项完整渲染，无失败素材请求和横向溢出 |
+| 后端门禁 | `go test ./...` 通过；此前前端 lint、typecheck、build 和 257 个测试文件 / 1747 项测试均通过 |
+| 实机页面 | 管理员 1440×1000 显示 101 条；用户 390×844 深色首页、同宽度全部灵感均无横向溢出；票据交换后 query/fragment 清空，用户页看不到管理功能 |
+
+百条容量回归发现并修复了一个前端边界：管理端原先固定只请求第一页 100 条，测试库达到 101 条后会静默遗漏最后一条。修复在共享 API 层聚合全部管理分页，同时覆盖“模板管理”和“首页精选”；对应 TDD 提交为 `27e2bba`（RED）和 `62c2b12`（GREEN）。当前规模下管理页会请求 2 个列表页；达到 500 条前不增加虚拟列表或新的批量接口。
+
+视觉复验同时发现宿主主题与 Tailwind 策略不一致：票据 URL 的 `theme=dark` 已添加 `dark` class，但 Tailwind 原先只监听操作系统媒体查询，宿主和系统主题不同时会显示错误。`c6e4bac` 先固化失败契约，`c0eee02` 将暗色策略改为 selector；显式宿主主题优先，普通版和未显式指定主题的嵌入版继续监听系统主题变化。使用“系统浅色 + 宿主深色”实测得到深色背景和白色标题，390×844 无横向溢出。
+
+容量回归还发现现有服务器的数据库连接预算不成立：测试和生产配置都没有显式连接池值，应用默认 `max_open_conns=256` / `max_idle_conns=128`，而共享 PostgreSQL 的 `max_connections=100`。管理员并发加载百张封面时，测试池占满连接并使生产支付订单后台任务出现一次 `too many clients` 警告。已立即完成以下测试侧止血：
+
+- 仅在 `/etc/sub2api/test.yaml` 设置 `max_open_conns=10`、`max_idle_conns=2`、`conn_max_idle_time_minutes=1`，备份为 `/etc/sub2api/test.yaml.before-image-creation-pool-20260823-2118`；只重启测试容器。
+- 重放 101 条管理页面后，测试库保持 2 个空闲连接、生产库保持 5 个空闲连接，两个容器健康且未再出现连接不足。
+- 未修改生产配置。生产发布前必须按 PostgreSQL 总上限为生产、测试和其他客户端分配连接预算；不能依赖应用默认值。更稳妥的长期方案是把测试库迁移到独立 PostgreSQL 实例，避免测试负载再次影响生产。
+
+本轮依赖审计结果不能写成“全绿”：运行时依赖 DOMPurify / Mermaid 有中危公告；完整开发依赖另有 Vite、Wrangler 链等高危公告。嵌入式图像创作不开放 Agent/Mermaid 输入，降低了当前表面的可达性，但生产前仍应以独立升级提交处理 `npm audit fix --dry-run` 所列更新并重跑双构建、全量测试和浏览器安全回归，不能在当前功能分支上直接宽泛升级。
+
+发布结论分为两层：代码和隔离测试环境可继续验收；生产发布暂时 No-Go。解除生产阻断至少需要：完成 76 个测试素材的逐项权利复核或替换为自有生成封面、轮换本轮审计中意外暴露的支付密钥、明确生产数据库连接池预算，并处理运行时依赖公告。PostgreSQL BYTEA 在当前约 53.3 MiB 规模下不是阻断项。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Owner | Follow-up ticket |
 |---|---|---|---|
 | PostgreSQL BYTEA 体积随模板增长 | 接受：V1 最多小规模精选素材，8MiB 硬限 | NanaFox backend | V2 asset storage migration trigger |
+| PostgreSQL 连接池与实例隔离 | 测试已限制为 10/2；生产仍使用不适配 100 连接上限的默认值，且测试/生产共享实例，阻止生产发布 | NanaFox ops | Production database connection budget |
+| 前端运行时依赖公告 | DOMPurify / Mermaid 中危；当前图像 surface 可达性低，仍需升级回归 | NanaFox frontend | Dependency security refresh |
+| 支付密钥轮换 | 审计读取时发生一次意外暴露；不得继续沿用到生产发布 | NanaFox ops | Payment credential rotation |
 | Safari fragment/new-window 行为 | Chromium 真实测试已通过；Safari 的 V1 模板流仍待实机回归 | NanaFox frontend | Production Safari acceptance |
 | 开源提示词许可逐条核对 | 测试数据已记录来源并标记“商业权利未核验”；生产前仍须逐项完成 | NanaFox product | V1 content provenance checklist |
 | 用户软删除清理接点 | 待 Slice 1 随现有删除流程验证 | NanaFox backend | Slice 1 user cleanup contract |
