@@ -32,7 +32,13 @@ function configureServiceWorker() {
 }
 
 async function start() {
-  initializeEmbeddedContext()
+  const embeddedContext = initializeEmbeddedContext()
+  if (embeddedContext?.theme !== 'dark' && embeddedContext?.theme !== 'light') {
+    const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+    const syncColorScheme = () => document.documentElement.classList.toggle('dark', colorScheme.matches)
+    syncColorScheme()
+    colorScheme.addEventListener('change', syncColorScheme)
+  }
   installMobileViewportGuards()
   configureServiceWorker()
 
