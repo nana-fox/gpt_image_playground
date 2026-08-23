@@ -161,13 +161,29 @@ export async function applyImageCreationTemplate(id: number, publishedVersion: n
   }, request)).data
 }
 
-export async function listImageCreationAdminTemplates(filters: { q?: string, state?: string, page?: number, pageSize?: number } = {}) {
+export async function listImageCreationAdminTemplates(
+  filters: { q?: string, state?: string, page?: number, pageSize?: number } = {},
+  request: typeof fetch = fetch,
+) {
   const query = new URLSearchParams()
   if (filters.q?.trim()) query.set('q', filters.q.trim())
   if (filters.state) query.set('state', filters.state)
   query.set('page', String(filters.page ?? 1))
   query.set('page_size', String(filters.pageSize ?? 50))
-  return ensureImageCreationPage<ImageCreationAdminTemplate>((await imageCreationRequest<unknown>(`/api/v1/admin/image-creation/templates?${query}`)).data)
+  return ensureImageCreationPage<ImageCreationAdminTemplate>((await imageCreationRequest<unknown>(`/api/v1/admin/image-creation/templates?${query}`, {}, request)).data)
+}
+
+export async function listAllImageCreationAdminTemplates(
+  filters: { q?: string, state?: string } = {},
+  request: typeof fetch = fetch,
+) {
+  const first = await listImageCreationAdminTemplates({ ...filters, page: 1, pageSize: 100 }, request)
+  const items = [...first.items]
+  for (let page = 2; page <= first.pages; page += 1) {
+    const next = await listImageCreationAdminTemplates({ ...filters, page, pageSize: 100 }, request)
+    items.push(...next.items)
+  }
+  return items
 }
 
 export async function getImageCreationAdminTemplate(id: number) {

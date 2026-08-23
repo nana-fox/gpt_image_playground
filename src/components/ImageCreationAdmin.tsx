@@ -8,7 +8,7 @@ import {
   getImageCreationAssetUrl,
   getImageCreationHomeFeatured,
   ImageCreationApiError,
-  listImageCreationAdminTemplates,
+  listAllImageCreationAdminTemplates,
   replaceImageCreationHomeFeatured,
   updateImageCreationTemplate,
   uploadImageCreationAsset,
@@ -193,10 +193,10 @@ function HomeFeaturedManager() {
   const load = async () => {
     setLoading(true)
     try {
-      const [home, published] = await Promise.all([getImageCreationHomeFeatured(), listImageCreationAdminTemplates({ state: 'published', pageSize: 100 })])
+      const [home, published] = await Promise.all([getImageCreationHomeFeatured(), listAllImageCreationAdminTemplates({ state: 'published' })])
       setSelected(home.template_ids)
       setEtag(home.etag)
-      setTemplates(published.items.filter((template) => template.state === 'published'))
+      setTemplates(published.filter((template) => template.state === 'published'))
     } catch (error) {
       showToast(error instanceof Error ? error.message : '首页精选加载失败', 'error')
     } finally {
@@ -254,8 +254,7 @@ export default function ImageCreationAdmin() {
   const load = async () => {
     setLoading(true)
     try {
-      const result = await listImageCreationAdminTemplates({ q: query, state, pageSize: 100 })
-      setTemplates(result.items)
+      setTemplates(await listAllImageCreationAdminTemplates({ q: query, state }))
     } catch (error) {
       showToast(error instanceof Error ? error.message : '模板列表加载失败', 'error')
     } finally {
