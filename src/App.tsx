@@ -163,7 +163,7 @@ export default function App() {
 
   return (
     <>
-      <Header />
+      <Header embeddedAdmin={embeddedAdmin} />
       {EMBEDDED_BUILD && embeddedSession.status === 'auth-error' ? (
         <main className="safe-area-x mx-auto max-w-7xl py-16 text-center"><h1 className="text-lg font-semibold text-gray-900 dark:text-white">图像创作会话已失效</h1><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{embeddedSession.message}</p><p className="mt-1 text-xs text-gray-400">请返回 NanaFox 后重新打开“图像创作”。本地创作记录不会删除。</p></main>
       ) : EMBEDDED_BUILD ? embeddedAdmin ? (

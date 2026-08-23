@@ -21,7 +21,7 @@ function isInstalledPwa() {
   return window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true
 }
 
-export default function Header() {
+export default function Header({ embeddedAdmin = false }: { embeddedAdmin?: boolean }) {
   const appMode = useStore((s) => s.appMode)
   const setAppMode = useStore((s) => s.setAppMode)
   const setShowSettings = useStore((s) => s.setShowSettings)
@@ -153,6 +153,8 @@ export default function Header() {
     }
   }
 
+  if (embeddedAdmin && embeddedFrame) return null
+
   return (
     <>
       <header data-no-drag-select data-deployment-surface={deploymentSurface} className={`safe-area-top fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-white/[0.08] transition-transform duration-300 ease-in-out ${appMode === 'agent' && !agentMobileHeaderVisible ? '-translate-y-full sm:translate-y-0' : 'translate-y-0'}`}>
@@ -163,9 +165,9 @@ export default function Header() {
                 <h1 className={embeddedFrame ? 'sr-only' : 'shrink-0 text-[17px] font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:text-lg'}>
                   图像创作
                 </h1>
-                <div className="min-w-0 flex-1 sm:max-w-40">
+                {!embeddedAdmin && <div className="min-w-0 flex-1 sm:max-w-40">
                   <EmbeddedKeySelector />
-                </div>
+                </div>}
               </>
             ) : <h1 className="inline-flex min-w-0 items-start relative mr-2">
               {showFavoriteCollectionTitle ? (
