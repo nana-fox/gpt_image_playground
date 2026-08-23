@@ -32,16 +32,15 @@ function inputModeLabel(mode: ImageCreationTemplateListItem['input_mode']) {
   return '文字创作'
 }
 
-function TemplateCard({ template, featured = false, onDetail, onUse, onFavorite }: {
+function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   template: ImageCreationTemplateListItem
-  featured?: boolean
   onDetail: () => void
   onUse: () => void
   onFavorite?: () => void
 }) {
   return (
-    <article className={`group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03] ${featured ? 'w-[280px] shrink-0 sm:w-[340px]' : ''}`}>
-      <div className={`relative overflow-hidden bg-gray-100 dark:bg-white/[0.04] ${featured ? 'aspect-[16/8]' : 'aspect-[4/3]'}`}>
+    <article className="group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
+      <div className="relative aspect-[4/3] overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
         <button type="button" onClick={onDetail} className="block h-full w-full text-left" aria-label={`查看${template.title}`}>
           {template.cover_asset_id ? (
             <img src={getImageCreationAssetUrl(template.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" loading="lazy" />
@@ -72,6 +71,46 @@ function TemplateCard({ template, featured = false, onDetail, onUse, onFavorite 
         <button type="button" onClick={onUse} className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-teal-700">使用此灵感</button>
       </div>
     </article>
+  )
+}
+
+function FeaturedShelf({ templates, onDetail, onUse }: {
+  templates: ImageCreationTemplateListItem[]
+  onDetail: (template: ImageCreationTemplateListItem) => void
+  onUse: (template: ImageCreationTemplateListItem) => void
+}) {
+  const primary = templates[0]
+  const secondary = templates.slice(1, 4)
+  if (!primary) return null
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-5">
+      <article data-featured-primary className={`group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] ${secondary.length ? 'lg:col-span-2' : 'lg:col-span-5'}`}>
+        <div className="grid h-full min-h-48 sm:grid-cols-[minmax(0,1.45fr)_minmax(210px,0.8fr)]">
+          <button type="button" onClick={() => onDetail(primary)} className="min-h-44 overflow-hidden bg-gray-100 text-left dark:bg-white/[0.04]" aria-label={`查看${primary.title}`}>
+            {primary.cover_asset_id ? <img src={getImageCreationAssetUrl(primary.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="flex h-full items-center justify-center text-sm text-gray-400">等待封面</span>}
+          </button>
+          <div className="flex min-w-0 flex-col justify-center p-5">
+            <span className="text-xs font-medium text-teal-600 dark:text-teal-400">本周精选</span>
+            <button type="button" onClick={() => onDetail(primary)} className="mt-2 text-left">
+              <h3 className="line-clamp-2 text-lg font-semibold text-gray-900 dark:text-white">{primary.title}</h3>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500 dark:text-gray-400">{primary.summary}</p>
+            </button>
+            <button type="button" onClick={() => onUse(primary)} className="mt-4 w-fit rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-700">用这个灵感创作</button>
+          </div>
+        </div>
+      </article>
+      {secondary.map((template) => (
+        <button key={template.id} type="button" onClick={() => onDetail(template)} className="group overflow-hidden rounded-2xl border border-gray-200/80 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
+          <div className="aspect-[4/3] overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
+            {template.cover_asset_id ? <img src={getImageCreationAssetUrl(template.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="flex h-full items-center justify-center text-sm text-gray-400">等待封面</span>}
+          </div>
+          <div className="px-3 py-3">
+            <h3 className="line-clamp-2 text-sm font-medium text-gray-800 dark:text-gray-100">{template.title}</h3>
+          </div>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -122,7 +161,7 @@ function TemplateDetail({ template, loading, onClose, onUse }: {
   )
 }
 
-export default function ImageCreationUser({ localGallery }: { localGallery: ReactNode }) {
+export default function ImageCreationUser({ localSearch, localGallery }: { localSearch: ReactNode, localGallery: ReactNode }) {
   const prompt = useStore((state) => state.prompt)
   const params = useStore((state) => state.params)
   const setPrompt = useStore((state) => state.setPrompt)
@@ -154,7 +193,7 @@ export default function ImageCreationUser({ localGallery }: { localGallery: Reac
         if (!cancelled) setFeatured(result.items)
       })
       .catch((error) => {
-        if (!cancelled) setFeaturedError(error instanceof Error ? error.message : '今日灵感加载失败')
+        if (!cancelled) setFeaturedError(error instanceof Error ? error.message : '精选灵感加载失败')
       })
     return () => { cancelled = true }
   }, [])
@@ -256,32 +295,34 @@ export default function ImageCreationUser({ localGallery }: { localGallery: Reac
 
   return (
     <>
-      <main className="safe-area-x mx-auto max-w-7xl pb-48">
-        <nav className="mb-5 flex border-b border-gray-200 dark:border-white/[0.08]" aria-label="图像创作视图">
-          <button type="button" onClick={() => setView('create')} className={`border-b-2 px-4 py-3 text-sm font-medium ${view === 'create' ? 'border-teal-500 text-teal-700 dark:text-teal-300' : 'border-transparent text-gray-500'}`}>我的创作</button>
-          <button type="button" onClick={() => setView('inspiration')} className={`border-b-2 px-4 py-3 text-sm font-medium ${view === 'inspiration' ? 'border-teal-500 text-teal-700 dark:text-teal-300' : 'border-transparent text-gray-500'}`}>探索灵感</button>
-        </nav>
+      <main data-image-creation-home className="safe-area-x mx-auto max-w-7xl pb-48">
+        <section className="mb-7 rounded-2xl border border-gray-200/80 bg-white/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">从灵感开始</h2>
+            <button type="button" onClick={() => setView('inspiration')} className="shrink-0 text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">探索全部灵感 →</button>
+          </div>
+          {featuredError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">{featuredError}，你的本地创作不受影响。</p> : featured.length ? (
+            <FeaturedShelf templates={featured} onDetail={openDetail} onUse={useTemplate} />
+          ) : <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500 dark:bg-white/[0.03]">暂时没有精选灵感，你仍可继续自己的创作。</p>}
+        </section>
+        <section>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 className="text-base font-semibold text-gray-900 dark:text-white">最近创作</h2><p className="mt-1 text-xs text-gray-400">历史作品只保存在当前账号的浏览器空间</p></div>
+            <div className="min-w-0 sm:w-[480px]">{localSearch}</div>
+          </div>
+          {localGallery}
+        </section>
+      </main>
 
-        {view === 'create' ? (
-          <>
-            <section className="mb-7 rounded-2xl border border-gray-200/80 bg-white/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
-              <div className="mb-3 flex items-center justify-between">
-                <div><h2 className="text-sm font-semibold text-gray-900 dark:text-white">今日灵感</h2><p className="mt-0.5 text-xs text-gray-400">选一个方向，继续完成你的作品</p></div>
-                <button type="button" onClick={() => setView('inspiration')} className="text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">查看全部灵感 →</button>
-              </div>
-              {featuredError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">{featuredError}，你的本地创作不受影响。</p> : featured.length ? (
-                <div className="flex gap-3 overflow-x-auto pb-2">{featured.map((template) => <TemplateCard key={template.id} template={template} featured onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} />)}</div>
-              ) : <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500 dark:bg-white/[0.03]">暂时没有精选灵感，你仍可继续自己的创作。</p>}
-            </section>
-            <div className="mb-2"><h2 className="text-base font-semibold text-gray-900 dark:text-white">我的创作</h2><p className="mt-1 text-xs text-gray-400">历史作品只保存在当前账号的浏览器空间</p></div>
-            {localGallery}
-          </>
-        ) : (
-          <section>
-            <div className="mb-5">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">探索灵感</h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">从模板开始，再把它变成你的作品。</p>
+      {view === 'inspiration' && (
+        <section data-inspiration-overlay role="dialog" aria-modal="true" aria-label="探索全部灵感" className="fixed inset-0 z-[80] overflow-y-auto bg-gray-50 dark:bg-gray-950">
+          <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/95">
+            <div className="safe-area-x mx-auto flex max-w-7xl items-center justify-between py-4">
+              <div><h1 className="text-xl font-bold text-gray-900 dark:text-white">探索全部灵感</h1><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">从模板开始，再把它变成你的作品。</p></div>
+              <button type="button" onClick={() => setView('create')} className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]" aria-label="返回创作台"><CloseIcon className="h-5 w-5" /></button>
             </div>
+          </header>
+          <div className="safe-area-x mx-auto max-w-7xl py-6 pb-24">
             <div className="mb-5 flex gap-2">
               <input value={query} onChange={(event) => resetPage(() => setQuery(event.target.value))} placeholder="搜索标题或描述" className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-teal-400 dark:border-white/[0.08] dark:bg-gray-900" />
               <button type="button" onClick={() => setFiltersOpen(true)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-600 dark:border-white/[0.08] dark:text-gray-300 sm:hidden">筛选</button>
@@ -294,9 +335,9 @@ export default function ImageCreationUser({ localGallery }: { localGallery: Reac
             )}
             {loading && <p className="py-6 text-center text-sm text-gray-400">正在加载灵感...</p>}
             {!loading && page < totalPages && <div className="mt-6 text-center"><button type="button" onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.04]">加载更多</button></div>}
-          </section>
-        )}
-      </main>
+          </div>
+        </section>
+      )}
 
       {filtersOpen && <div className="fixed inset-0 z-[85] flex items-end bg-black/30 sm:hidden" onClick={() => setFiltersOpen(false)}><div className="w-full rounded-t-3xl bg-white p-5 dark:bg-gray-950" onClick={(event) => event.stopPropagation()}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">筛选灵感</h2><button type="button" onClick={() => setFiltersOpen(false)} aria-label="关闭筛选"><CloseIcon className="h-5 w-5" /></button></div><div className="grid gap-3">{filters}</div><button type="button" onClick={() => setFiltersOpen(false)} className="mt-5 w-full rounded-xl bg-teal-600 py-3 text-sm font-medium text-white">查看结果</button></div></div>}
       {detail !== null && <TemplateDetail template={detail} loading={detailLoading} onClose={() => setDetail(null)} onUse={() => useTemplate(detail)} />}

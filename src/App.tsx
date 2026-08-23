@@ -169,7 +169,7 @@ export default function App() {
       ) : EMBEDDED_BUILD ? embeddedAdmin ? (
         <ImageCreationAdmin />
       ) : (
-        <ImageCreationUser localGallery={<><SearchBar />{filterFavorite && !activeFavoriteCollectionId ? <FavoriteCollectionsView /> : <TaskGrid />}</>} />
+        <ImageCreationUser localSearch={<SearchBar className="m-0" />} localGallery={filterFavorite && !activeFavoriteCollectionId ? <FavoriteCollectionsView /> : <TaskGrid />} />
       ) : agentEnabled && AgentWorkspace && appMode === 'agent' ? (
         <Suspense fallback={null}><AgentWorkspace /></Suspense>
       ) : (

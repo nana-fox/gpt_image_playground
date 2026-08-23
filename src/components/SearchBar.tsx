@@ -43,7 +43,7 @@ function SearchActionButton({
   )
 }
 
-export default function SearchBar() {
+export default function SearchBar({ className = 'mt-6 mb-4' }: { className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const searchQuery = useStore((s) => s.searchQuery)
@@ -130,7 +130,7 @@ export default function SearchBar() {
   }
 
   return (
-    <div ref={rootRef} data-no-drag-select className="mt-6 mb-4 flex gap-3">
+    <div ref={rootRef} data-no-drag-select className={`${className} flex gap-3`}>
       <div className="flex gap-2 flex-shrink-0 z-20">
         <SearchActionButton
           tooltip={favoriteTooltip}

@@ -1,10 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { describe, expect, it } from 'vitest'
 
-const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ImageCreationUser.tsx'), 'utf8')
+import source from './ImageCreationUser.tsx?raw'
 
 describe('融合版 1.1 创作首页', () => {
   it('首页按灵感、最近创作和创作框的顺序组织，不显示双页签', () => {
