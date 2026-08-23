@@ -471,6 +471,27 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 4. 保留 4 张增量表，不执行 destructive down migration；旧代码不会读取它们。
 5. 回滚不包含任何生产操作。
 
+### 8.5 嵌入布局回归修复（2026-08-23）
+
+管理员页在宽屏下同时出现 Sub2API 页头、独立“新窗口打开”工具栏和 Playground 内页头，造成纵向层级重复、控件位置松散；问题不是内容横向溢出，也不是 Sub2API 侧栏重复渲染。
+
+修复保持宿主与 Playground 的职责边界：
+
+- Sub2API 将“新窗口打开”复用到现有页头标题旁，图像创作页不再生成独立工具栏；普通自定义页面继续使用原有悬浮按钮，不受本次改动影响。
+- Playground 在管理员 iframe 中隐藏重复页头；普通用户 iframe 仍展示 API Key 状态，独立窗口仍展示完整标题、API Key 状态和操作指南。
+- 管理列表仅收紧为 `max-w-6xl` 并缩小顶部留白，没有引入动态高度同步、额外滚动容器或新的布局依赖。
+
+| 项目 | 提交 / 制品 | 验证结果 |
+|---|---|---|
+| Playground | `22f7266`；测试 `current` → `releases/22f7266` | normal build、embedded build、37 个测试文件 / 543 项测试通过 |
+| Sub2API | `a30628595`（页头插槽与回归测试）、`8a5d1f880`（Docker 前端构建堆上限 2048MiB） | 前端 build、256 个测试文件 / 1744 项测试通过；测试容器 healthy |
+| 管理员界面 | 1830×1155、390×844 | 页头只保留一个新窗口入口；列表、筛选、操作按钮无重叠或横向溢出 |
+| 普通用户界面 | 1440×900、390×844 | API Key 状态、灵感卡片、创作输入区和新窗口入口无重叠 |
+| 独立窗口 | 管理员、普通用户 | 一次性票据交换后 URL 清理为 `/tools/image-playground/`；页面职责完整 |
+| 隔离复查 | 测试库 4 张 `image_creation_*` 表；生产库 0 张 | `sub2api-test` 与 `sub2api-prod` 均 healthy；生产 `prod-current` 仍指向 `releases/70aa5a5` |
+
+本次测试环境回滚点为 Playground `releases/20e8a95` 和停止保留的容器 `sub2api-test-rollback-bc3e85482`。两个仓库均未推送，生产未部署。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Owner | Follow-up ticket |
