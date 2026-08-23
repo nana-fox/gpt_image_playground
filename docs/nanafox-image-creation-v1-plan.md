@@ -556,13 +556,21 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已发布模板；封面 `cover` / `contain` 顺序正确；详情来源、素材 immutable cache、模板 apply 全部通过。公网 `/tools/image-playground/` 为 200，旧 `/tools/image-studio/` 为 410。生产数据库仍没有 `image_creation_templates` 表。
 
-### 8.9 比例自适应视觉调整（2026-08-23，本地待发布）
+### 8.9 比例自适应视觉调整与测试发布（2026-08-23）
+
+| 项目 | 当前测试环境 | 回滚点 |
+|---|---|---|
+| Playground | `current` → `releases/5fb735c`；静态树 SHA-256 `8cb50a7819ffe73649cedfbe48c43a862e8bf1cc5c1ac8242cf88c40b1fdd96c` | `releases/c242a4c` |
+| Sub2API | `sub2api:test-image-creation-v1-64b6ffd6b`，容器 healthy，本轮未重启或修改 | 保持当前测试容器 |
+| 生产隔离 | `sub2api-prod` healthy；`prod-current` 仍指向 `releases/70aa5a5` | 无生产操作 |
 
 - 精选区由固定“1 主 + 3 次”槽位改为统一等高横滑；每张卡片读取封面原始尺寸后按比例确定宽度，避免竖图被放大裁切、横图被压窄。
 - 全部灵感改为响应式等宽瀑布流，卡片高度跟随原图比例；底部渐变标题、hover / focus 操作层、详情和应用流程保持不变。
 - 最近创作只增加轻量内容容器，继续复用现有 `TaskGrid`、IndexedDB 和全部作品操作，不引入第二套历史组件。
 - 本轮只修改 Playground 用户 UI、布局契约测试和本文档；未修改 API、数据库、管理端、Sub2API 或部署配置。
-- 本地检查点 `9425c62`：定向布局测试 6/6、全量 39 个测试文件 551/551、生产构建通过。测试环境与生产环境均未部署本轮代码。
+- 发布检查点 `5fb735c`：全量 39 个测试文件 551/551、普通构建和 NanaFox embedded 构建均通过。embedded 制品共 63 个文件，归档 SHA-256 为 `c332e037109fa8562ed00f1b99ab98ad73886b29033afaf32700e4a027bd19fd`，服务器解包后的文件清单与本地逐项一致。
+- 公网复验：测试首页、health、JS 和 CSS 资源均为 200；旧 `/tools/image-studio/` 为 410；测试容器最近 15 分钟未发现 fatal、panic、migration fail 或 error。生产首页与 health 均为 200，生产指针和容器未变化。
+- 已登录 Chrome 测试页保持可见，但自动视觉控制连续中断。为避免读取或复制登录凭证，本轮不绕过登录态；桌面、移动端、深色模式和“全部灵感”的最终视觉确认保留为测试环境人工验收项，未把自动化中断误记为视觉通过。
 
 ## 剩余风险登记
 
