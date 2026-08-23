@@ -86,8 +86,8 @@ function FeaturedShelf({ templates, onDetail, onUse }: {
   return (
     <div className="grid gap-3 lg:grid-cols-5">
       <article data-featured-primary className={`group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] ${secondary.length ? 'lg:col-span-2' : 'lg:col-span-5'}`}>
-        <div className="grid h-full min-h-48 sm:grid-cols-[minmax(0,1.45fr)_minmax(210px,0.8fr)]">
-          <button type="button" onClick={() => onDetail(primary)} className="min-h-44 overflow-hidden bg-gray-100 text-left dark:bg-white/[0.04]" aria-label={`查看${primary.title}`}>
+        <div className="grid sm:h-52 sm:grid-cols-[minmax(0,1.45fr)_minmax(210px,0.8fr)]">
+          <button type="button" onClick={() => onDetail(primary)} className="h-44 overflow-hidden bg-gray-100 text-left dark:bg-white/[0.04] sm:h-full" aria-label={`查看${primary.title}`}>
             {primary.cover_asset_id ? <img src={getImageCreationAssetUrl(primary.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="flex h-full items-center justify-center text-sm text-gray-400">等待封面</span>}
           </button>
           <div className="flex min-w-0 flex-col justify-center p-5">
