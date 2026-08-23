@@ -22,6 +22,7 @@ export interface ImageCreationTemplateDocument {
   prompt: string
   input_mode: 'text' | 'reference_optional' | 'reference_required'
   cover_alt: string
+  cover_fit?: 'cover' | 'contain'
   defaults: ImageCreationTemplateDefaults
   source?: ImageCreationTemplateSource
 }
@@ -33,6 +34,7 @@ export interface ImageCreationTemplateListItem {
   category: string
   tags: string[]
   cover_asset_id?: string
+  cover_fit?: ImageCreationTemplateDocument['cover_fit']
   published_version: number
   defaults: ImageCreationTemplateDefaults
   input_mode: ImageCreationTemplateDocument['input_mode']

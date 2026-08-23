@@ -10,7 +10,7 @@ import {
   type ImageCreationTemplateDetail,
   type ImageCreationTemplateListItem,
 } from '../lib/imageCreationApi'
-import { CloseIcon, FavoriteIcon } from './icons'
+import { CloseIcon, ExpandIcon, FavoriteIcon } from './icons'
 
 const CATEGORIES = [
   ['portrait', '人像'],
@@ -32,6 +32,25 @@ function inputModeLabel(mode: ImageCreationTemplateListItem['input_mode']) {
   return '文字创作'
 }
 
+function TemplateCover({ template, alt = '', className = '', eager = false }: {
+  template: ImageCreationTemplateListItem
+  alt?: string
+  className?: string
+  eager?: boolean
+}) {
+  if (!template.cover_asset_id) {
+    return <div data-template-cover className={`flex items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 text-sm text-teal-700 dark:from-teal-950/40 dark:to-cyan-950/40 dark:text-teal-300 ${className}`}>等待封面</div>
+  }
+  const src = getImageCreationAssetUrl(template.cover_asset_id)
+  const contained = template.cover_fit === 'contain'
+  return (
+    <div data-template-cover className={`relative overflow-hidden bg-gray-100 dark:bg-gray-900 ${className}`}>
+      {contained && <><img src={src} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-xl dark:opacity-25" /><span className="absolute inset-0 bg-black/10 dark:bg-black/35" /></>}
+      <img src={src} alt={alt} className={`relative h-full w-full transition duration-300 group-hover:scale-[1.015] ${contained ? 'object-contain p-2' : 'object-cover'}`} loading={eager ? 'eager' : 'lazy'} />
+    </div>
+  )
+}
+
 function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   template: ImageCreationTemplateListItem
   onDetail: () => void
@@ -39,36 +58,20 @@ function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   onFavorite?: () => void
 }) {
   return (
-    <article className="group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
-      <div className="relative aspect-[4/3] overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
-        <button type="button" onClick={onDetail} className="block h-full w-full text-left" aria-label={`查看${template.title}`}>
-          {template.cover_asset_id ? (
-            <img src={getImageCreationAssetUrl(template.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" loading="lazy" />
-          ) : (
-            <div className="flex h-full items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 text-sm text-teal-700 dark:from-teal-950/40 dark:to-cyan-950/40 dark:text-teal-300">等待封面</div>
-          )}
-        </button>
-        {onFavorite && (
-          <button
-            type="button"
-            onClick={onFavorite}
-            className="absolute right-2 top-2 rounded-full bg-white/90 p-2 text-gray-600 shadow-sm backdrop-blur hover:text-rose-500 dark:bg-gray-900/85 dark:text-gray-300"
-            aria-label={template.favorited ? '取消收藏' : '收藏模板'}
-          >
-            <FavoriteIcon filled={template.favorited} className={`h-4 w-4 ${template.favorited ? 'text-rose-500' : ''}`} />
-          </button>
-        )}
-      </div>
-      <button type="button" onClick={onDetail} className="block w-full px-4 pb-3 pt-3 text-left">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{template.title}</h3>
-            <span className="shrink-0 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">{categoryLabel(template.category)}</span>
-          </div>
-          <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-gray-500 dark:text-gray-400">{template.summary}</p>
+    <article className="group relative aspect-[4/5] overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
+      <button type="button" onClick={onDetail} className="absolute inset-0 block h-full w-full text-left" aria-label={`查看${template.title}`}>
+        <TemplateCover template={template} className="h-full w-full" />
       </button>
-      <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2.5 dark:border-white/[0.06]">
-        <span className="text-[11px] text-gray-400 dark:text-gray-500">{inputModeLabel(template.input_mode)}</span>
-        <button type="button" onClick={onUse} className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-teal-700">使用此灵感</button>
+      <div className="pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20 group-focus-within:bg-black/20" />
+      <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">{categoryLabel(template.category)}</span>
+      {onFavorite && <button type="button" onClick={onFavorite} className="absolute right-3 top-3 rounded-full bg-black/45 p-2 text-white backdrop-blur-sm transition hover:bg-white hover:text-rose-500 focus:bg-white focus:text-rose-500" aria-label={template.favorited ? '取消收藏' : '收藏模板'}><FavoriteIcon filled={template.favorited} className={`h-4 w-4 ${template.favorited ? 'text-rose-400' : ''}`} /></button>}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-4 pb-4 pt-16 text-white">
+        <h3 className="line-clamp-2 text-base font-semibold leading-6">{template.title}</h3>
+        <p className="mt-1 line-clamp-1 text-xs text-white/70">{inputModeLabel(template.input_mode)}</p>
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+        <button type="button" onClick={onDetail} className="inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-xs font-medium text-gray-800 shadow-sm backdrop-blur"><ExpandIcon className="h-4 w-4" />预览</button>
+        <button type="button" onClick={onUse} className="rounded-xl bg-teal-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-teal-700">用此灵感</button>
       </div>
     </article>
   )
@@ -84,31 +87,25 @@ function FeaturedShelf({ templates, onDetail, onUse }: {
   if (!primary) return null
 
   return (
-    <div className="grid gap-3 lg:grid-cols-5">
-      <article data-featured-primary className={`group overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] ${secondary.length ? 'lg:col-span-2' : 'lg:col-span-5'}`}>
-        <div className="grid sm:h-52 sm:grid-cols-[minmax(0,1.45fr)_minmax(210px,0.8fr)]">
-          <button type="button" onClick={() => onDetail(primary)} className="h-44 overflow-hidden bg-gray-100 text-left dark:bg-white/[0.04] sm:h-full" aria-label={`查看${primary.title}`}>
-            {primary.cover_asset_id ? <img src={getImageCreationAssetUrl(primary.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="flex h-full items-center justify-center text-sm text-gray-400">等待封面</span>}
-          </button>
-          <div className="flex min-w-0 flex-col justify-center p-5">
-            <span className="text-xs font-medium text-teal-600 dark:text-teal-400">本周精选</span>
-            <button type="button" onClick={() => onDetail(primary)} className="mt-2 text-left">
-              <h3 className="line-clamp-2 text-lg font-semibold text-gray-900 dark:text-white">{primary.title}</h3>
-              <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500 dark:text-gray-400">{primary.summary}</p>
-            </button>
-            <button type="button" onClick={() => onUse(primary)} className="mt-4 w-fit rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-700">用这个灵感创作</button>
-          </div>
+    <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 lg:grid lg:grid-cols-[minmax(0,1.9fr)_repeat(3,minmax(0,1fr))] lg:overflow-visible lg:pb-0">
+      <article data-featured-primary className={`group relative h-[330px] shrink-0 snap-start overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950 ${secondary.length ? 'w-[86vw] sm:w-[68vw] lg:w-auto' : 'w-full lg:col-span-4'}`}>
+        <button type="button" onClick={() => onDetail(primary)} className="absolute inset-0 h-full w-full text-left" aria-label={`查看${primary.title}`}><TemplateCover template={primary} className="h-full w-full" eager /></button>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent p-5 pt-24 text-white sm:p-6">
+          <span className="inline-flex rounded-full bg-teal-500/90 px-2.5 py-1 text-[10px] font-semibold backdrop-blur">本周精选</span>
+          <button type="button" onClick={() => onDetail(primary)} className="pointer-events-auto mt-3 block text-left"><h3 className="line-clamp-2 text-xl font-semibold sm:text-2xl">{primary.title}</h3></button>
+          <p className="mt-2 line-clamp-2 max-w-xl text-sm leading-6 text-white/80">{primary.summary}</p>
+          <button type="button" onClick={() => onUse(primary)} className="pointer-events-auto mt-4 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-700">用这个灵感创作</button>
         </div>
       </article>
       {secondary.map((template) => (
-        <button key={template.id} type="button" onClick={() => onDetail(template)} className="group overflow-hidden rounded-2xl border border-gray-200/80 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
-          <div className="aspect-[4/3] overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
-            {template.cover_asset_id ? <img src={getImageCreationAssetUrl(template.cover_asset_id)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="flex h-full items-center justify-center text-sm text-gray-400">等待封面</span>}
+        <article key={template.id} data-featured-secondary className="group relative h-[330px] w-[72vw] shrink-0 snap-start overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950 sm:w-[42vw] lg:w-auto">
+          <button type="button" onClick={() => onDetail(template)} className="absolute inset-0 h-full w-full text-left" aria-label={`查看${template.title}`}><TemplateCover template={template} className="h-full w-full" /></button>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-4 pb-4 pt-16 text-white"><h3 className="line-clamp-2 text-sm font-semibold leading-5">{template.title}</h3></div>
+          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100 group-focus-within:bg-black/20 group-focus-within:opacity-100">
+            <button type="button" onClick={() => onDetail(template)} className="inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-xs font-medium text-gray-800 shadow-sm"><ExpandIcon className="h-4 w-4" />预览</button>
+            <button type="button" onClick={() => onUse(template)} className="rounded-xl bg-teal-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-teal-700">用此灵感</button>
           </div>
-          <div className="px-3 py-3">
-            <h3 className="line-clamp-2 text-sm font-medium text-gray-800 dark:text-gray-100">{template.title}</h3>
-          </div>
-        </button>
+        </article>
       ))}
     </div>
   )
@@ -131,9 +128,7 @@ function TemplateDetail({ template, loading, onClose, onUse }: {
           <div className="p-8 text-center text-sm text-gray-500">正在加载...</div>
         ) : (
           <div className="p-5 pb-28">
-            <div className="aspect-[4/3] overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/[0.04]">
-              {template.cover_asset_id && <img src={getImageCreationAssetUrl(template.cover_asset_id)} alt={template.cover_alt} className="h-full w-full object-cover" />}
-            </div>
+            <TemplateCover template={template} alt={template.cover_alt} className="aspect-[4/5] w-full rounded-2xl" eager />
             <h2 className="mt-5 text-xl font-bold text-gray-900 dark:text-white">{template.title}</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{template.summary}</p>
             <div className="mt-4 flex flex-wrap gap-2">
