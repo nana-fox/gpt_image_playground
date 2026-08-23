@@ -11,12 +11,13 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).not.toContain('今日灵感')
   })
 
-  it('精选区按原图比例等高横滑，全部灵感以覆盖层打开', () => {
+  it('精选区按原图比例等高横滑，灵感画廊以覆盖层打开', () => {
     expect(source).toContain('data-featured-shelf')
     expect(source).toContain('data-auto-aspect')
     expect(source).toContain('snap-x snap-mandatory')
     expect(source).toContain('onCoverLoad')
-    expect(source).toContain('探索全部灵感')
+    expect(source).toContain('浏览全部')
+    expect(source).toContain('灵感画廊')
     expect(source).toContain('data-inspiration-overlay')
     expect(source).not.toContain('lg:grid-cols-[minmax(0,1.9fr)_repeat(3,minmax(0,1fr))]')
   })
@@ -37,9 +38,22 @@ describe('融合版 1.1 创作首页', () => {
 
   it('全部灵感使用等宽且高度随原图变化的响应式瀑布流', () => {
     expect(source).toContain('data-inspiration-masonry')
+    expect(source).toContain('data-inspiration-page')
     expect(source).toContain('columns-1')
     expect(source).toContain('break-inside-avoid')
+    expect(source).toContain('pageSize: 20')
     expect(source).not.toContain('grid grid-cols-1 gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4')
+  })
+
+  it('详情页按封面原始比例展示，不再套用固定 4:5 画框', () => {
+    expect(source).toContain('data-template-detail-cover')
+    expect(source).not.toContain('className="aspect-[4/5] w-full rounded-2xl"')
+  })
+
+  it('增量加载保留已有卡片并提供明确进度和错误重试', () => {
+    expect(source).toContain('已显示')
+    expect(source).toContain('重新加载')
+    expect(source).toContain('aria-live="polite"')
   })
 
   it('最近创作放在独立的轻量内容容器中', () => {

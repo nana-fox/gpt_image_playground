@@ -14,4 +14,22 @@ describe('融合版 1.1 首页精选管理', () => {
     expect(source).toContain("cover_fit: 'cover'")
     expect(source).toContain("cover_fit: 'contain'")
   })
+
+  it('模板与精选候选都按每页 20 条加载，不一次请求全部模板', () => {
+    expect(source).toContain('data-admin-pagination')
+    expect(source).toContain('pageSize: 20')
+    expect(source).not.toContain('listAllImageCreationAdminTemplates')
+  })
+
+  it('已发布模板可直接加入首页精选，并在精选页调整顺序', () => {
+    expect(source).toContain('加入精选')
+    expect(source).toContain('data-featured-candidate')
+    expect(source).toContain('aria-label="上移"')
+    expect(source).toContain('aria-label="下移"')
+  })
+
+  it('详情预览和管理缩略图尊重封面展示方式', () => {
+    expect(source).toContain('data-admin-template-cover')
+    expect(source).toContain('natural')
+  })
 })
