@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootstrapEmbeddedSession, clearEmbeddedSession, getEmbeddedSessionState, initializeEmbeddedContext } from './embeddedSession'
-import { applyImageCreationTemplate, listImageCreationTemplates } from './imageCreationApi'
+import { applyImageCreationTemplate, listAllImageCreationAdminTemplates, listImageCreationTemplates } from './imageCreationApi'
 
 const ROOT = { lang: '', classList: { toggle: vi.fn() } }
 
@@ -77,5 +77,38 @@ describe('image creation API', () => {
     }), { status: 200 }))
 
     await expect(listImageCreationTemplates({}, request)).rejects.toMatchObject({ status: 502 })
+  })
+
+  it('loads every admin template page when the result exceeds the API page limit', async () => {
+    await startSession('admin')
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 0,
+        data: {
+          items: Array.from({ length: 100 }, (_, index) => ({ id: index + 1 })),
+          total: 101,
+          page: 1,
+          page_size: 100,
+          pages: 2,
+        },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 0,
+        data: {
+          items: [{ id: 101 }],
+          total: 101,
+          page: 2,
+          page_size: 100,
+          pages: 2,
+        },
+      }), { status: 200 }))
+
+    const result = await listAllImageCreationAdminTemplates({}, request)
+
+    expect(result).toHaveLength(101)
+    expect(request.mock.calls.map((call) => call[0])).toEqual([
+      '/api/v1/admin/image-creation/templates?page=1&page_size=100',
+      '/api/v1/admin/image-creation/templates?page=2&page_size=100',
+    ])
   })
 })
