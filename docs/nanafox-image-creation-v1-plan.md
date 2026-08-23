@@ -1,17 +1,17 @@
 # NanaFox 图像创作 V1 实施计划
 
-状态：Slice 0–4 已完成；2026-08-23 已部署到隔离的 ToC 测试环境并通过真实 PostgreSQL、Redis、普通用户、管理员和 `gpt-image-2` 验收。未推送、未部署生产。
+状态：Slice 0–4 已按“融合版 1.1”完成纠偏、全量回归和隔离测试环境复验。用户入口与管理员入口已在路由、票据、菜单和页面职责上分离。未推送、未部署生产。
 
 本文件是图像创作 V1 的单一实施依据。旧的嵌入适配基线仍由 `docs/nanafox-embedded-plan.md:1` 约束；模板、灵感库、用户状态、管理端、嵌入会话和服务端增量以本文件为准。
 
 ## 1. 产品边界
 
-### 1.1 一个产品、两种身份
+### 1.1 一个产品、两个明确入口
 
-- 用户入口仍是 Sub2API 的“图像创作”自定义菜单；页面主体由本 React 项目提供。
-- 普通用户看到“创作台”和“灵感库”。
-- 管理员通过同一嵌入应用进入管理视图，看到“模板管理”和“首页精选”。
-- Sub2API Vue 只负责宿主菜单、iframe、新窗口、签发启动票据；不复制一套模板管理页面。
+- 用户入口是 Sub2API 的“图像创作”自定义菜单：`/custom/image-creation`，固定签发 `surface=user`，展示“融合版 1.1”创作首页。即使当前登录者是管理员，从这个入口进入也只能看到用户创作页。
+- 管理入口是管理员侧栏中的“模板管理”自定义菜单：`/admin/custom/image-creation-admin`，路由本身要求管理员并固定签发 `surface=admin`，展示“模板管理”和“首页精选”。
+- 两个菜单项都由现有自定义菜单设置承载，使用不同 `id` 和 `visibility`，但可指向同一份 `/tools/image-playground/` 静态制品；身份由宿主路径和服务端签发接口决定，不由静态 URL 或当前账号角色猜测。
+- Sub2API Vue 只负责两类宿主菜单、iframe、新窗口、签发启动票据；不复制模板管理业务页面。
 - 后端权限是唯一安全边界。前端隐藏管理入口只改善体验，不代表授权。
 
 ### 1.2 V1 明确不做
@@ -25,8 +25,8 @@
 
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
-| Playground | `20e8a95` | `codex/image-creation-v1` | 普通/嵌入构建通过；37 个测试文件 / 543 项测试通过；测试静态制品已发布 |
-| Sub2API | `bc3e85482` | `feature/image-creation-v1` 独立 worktree | `go test ./...`、`go vet ./...`、前端 lint/typecheck/build 通过；独立镜像已发布到测试容器；本机未安装 `golangci-lint`，不将其记为已执行 |
+| Playground | `6fbe8aa` | `codex/image-creation-v1` | 普通/嵌入构建通过；39 个测试文件 / 547 项测试通过；修正版已发布测试环境 |
+| Sub2API | `8b17bf4f4` | `feature/image-creation-v1` 独立 worktree | Go 全量测试、257 个前端测试文件 / 1747 项测试、构建和 lint 通过；修正版已发布测试环境 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
@@ -36,20 +36,21 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 - Slice 1：4 张独立表、素材/模板/用户状态/首页精选、严格校验和 API 已完成。
 - Slice 2：管理员模板列表、编辑器、发布状态、封面和首页精选已完成。
 - Slice 3：创作台融合布局、灵感库、详情、收藏/最近使用、应用与撤销已完成。
-- Slice 4 已在 `router-test.nanafox.com` 使用真实后端、测试数据库和测试 Redis 完成；mock 浏览器验证继续保留为快速回归，不再代替真实联调结论。
+- Slice 4：修正版已在 `router-test.nanafox.com` 完成双入口、双角色、权限负向、桌面和移动端复验；旧部署记录仅用于追溯。
 
 ## 3. 页面与交互契约
 
-### 3.1 创作台
+### 3.1 融合版 1.1 创作首页
 
-从上到下固定为：页签、今日灵感横向架、我的创作网格、底部创作输入区。
+首页不再使用“我的创作 / 探索灵感”双页签。从上到下固定为：`从灵感开始` 精选架、`最近创作` 网格、现有底部创作输入区。
 
-- 今日灵感最多展示 6 个已发布且配置了 `home_position` 的模板，顺序由 1–6 决定。
-- 我的创作继续读取当前用户作用域下的 IndexedDB，不因模板 API 失败而隐藏。
+- 精选架最多展示 4 个已发布且配置了 `home_position` 的模板：第 1 个是带摘要和“用这个灵感创作”按钮的主卡，第 2–4 个是紧凑次卡；顺序由 `home_position` 决定。
+- “探索全部灵感”在当前产品内打开全屏工作区覆盖层；关闭后原首页、历史筛选和输入内容保持不变，不跳转到另一个顶级产品页面。
+- 最近创作继续读取当前用户作用域下的 IndexedDB，并复用已有搜索、状态筛选、查看、下载、收藏和复用能力；模板 API 失败不能隐藏本地历史。
 - 点击灵感卡片打开详情；卡片上的唯一主动作是“使用此灵感”。
 - “使用此灵感”只把提示词和允许的生成默认值写入当前输入区，不自动生成，不改变 API Key、供应商、Base URL 或模型。
 - 输入区已有内容时弹出“替换 / 取消”；替换成功后提供一次撤销。
-- 最近创作卡片保留现有查看、下载、收藏/复用能力；V1 不把个人作品与公共模板拆成两个产品。
+- V1 不把个人作品与公共模板拆成两个顶级页面。
 
 ### 3.2 灵感库
 
@@ -73,7 +74,7 @@ Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/
 
 首页精选页支持添加、移除、上移、下移、预览、发布：
 
-- 最多 6 个已发布模板。
+- 最多 4 个已发布模板，与用户首页的 1 张主卡和 3 张次卡严格对应；前端禁用第 5 个，服务端同时拒绝超过 4 个的请求。
 - 保存整组有序模板 ID，使用 ETag / `If-Match` 防止并发覆盖。
 - 不做拖拽作为唯一操作，以保证键盘与触屏可用性。
 
@@ -289,11 +290,11 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 ### Slice 2：管理员嵌入页面
 
-实现模板管理、编辑器、封面、预览、发布/归档/恢复和首页精选；桌面、平板、移动端验证全部按钮和键盘路径。
+实现独立管理员入口 `/admin/custom/image-creation-admin`、模板管理、编辑器、封面、预览、发布/归档/恢复和首页精选；桌面、平板、移动端验证全部按钮和键盘路径。普通 `/custom/image-creation` 入口不得因登录者是管理员而切换成管理视图。
 
 ### Slice 3：用户产品页面
 
-实现创作台融合布局、灵感库、详情、收藏、最近使用和应用模板；模板 API 失败隔离于本地创作历史。
+实现“融合版 1.1”首页、覆盖层灵感库、详情、收藏、最近使用和应用模板；模板 API 失败隔离于本地创作历史。
 
 ### Slice 4：测试环境完整验收
 
@@ -301,14 +302,15 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 ### Slice 5：发布
 
-测试环境发布已获授权并完成。生产发布仍不在当前授权内，必须重新制定生产门禁、数据迁移备份和回滚窗口，并由用户单独授权。
+测试环境重新发布和验收已完成。生产发布不在当前授权内，必须重新制定生产门禁、数据迁移备份和回滚窗口，并由用户单独授权。
 
 ## L1.1 引用验证
 
 | 符号 | 证据 | 签名 | 用途 |
 |---|---|---|---|
 | `buildEmbeddedUrl` | `../sub2api/.claude/worktrees/image-creation-v1/frontend/src/utils/embedded-url.ts:16` | `(baseUrl, userId?, authToken?, theme?, lang?) => string` | 替换 JWT/user_id 查询参数入口 |
-| `CustomPageView.embeddedUrl` | `../sub2api/.claude/worktrees/image-creation-v1/frontend/src/views/user/CustomPageView.vue:176` | Vue computed URL | iframe 与新窗口分别申请 fresh ticket |
+| `CustomPageView.surface` | `../sub2api/.claude/worktrees/image-creation-v1/frontend/src/views/user/CustomPageView.vue:165` | `user \| admin` route prop | iframe 与新窗口都按入口 surface 申请 fresh ticket，不读取 `isAdmin` 猜页面 |
+| `CustomPage` / `AdminCustomPage` | `../sub2api/.claude/worktrees/image-creation-v1/frontend/src/router/index.ts:426` | `/custom/:id` / `/admin/custom/:id` | 普通入口与管理员入口在路由层分离，后者要求管理员 |
 | `NewJWTAuthMiddleware` | `../sub2api/.claude/worktrees/image-creation-v1/backend/internal/server/middleware/jwt_auth.go:14` | JWT + active + TokenVersion | 普通 ticket 签发身份来源 |
 | `validateJWTForAdmin` | `../sub2api/.claude/worktrees/image-creation-v1/backend/internal/server/middleware/admin_auth.go:156` | JWT + active + TokenVersion + admin | 管理 ticket 签发身份来源 |
 | `redissession.Store.TryConsume` | `../sub2api/.claude/worktrees/image-creation-v1/backend/internal/pkg/redissession/store.go:96` | `(ctx, id) => (bool, error)` | 对照单次消费语义；新域不复用 OAuth namespace |
@@ -336,7 +338,7 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 |---|---|---|---|
 | API 前缀 | `/api/v1` | `/api/v1/image-creation` | 领域隔离 |
 | 数据迁移 | 顺序 SQL + Ent | 新增下一号 migration + 4 个 schema | 跟随仓库 |
-| 前端宿主 | Vue custom page | 只改启动 ticket | 不复制业务 UI |
+| 前端宿主 | Vue custom page | 复用同一宿主组件，但用两条 route 和两个菜单项固定 surface | 不复制业务 UI，也不让账号角色改变入口语义 |
 | 产品 UI | React embedded build | 在现有应用增量实现 | 保留生成与历史能力 |
 | 图片存储 | 无模板素材后端 | PostgreSQL BYTEA + 稳定内容 API | V1 通用、无需先开 OSS |
 
@@ -386,7 +388,7 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 
 | 维度 | 处理 |
 |---|---|
-| 老调用方 | 普通构建和非图像 custom page URL 保持原逻辑；只对图像创作菜单申请 ticket |
+| 老调用方 | 普通构建和非图像 custom page URL 保持原逻辑；`/custom/:id` 保持用户语义，新增 `/admin/custom/:id` 只承载管理员可见菜单 |
 | shape 漂移 | 双端严格 V1 DTO；schema_version 不支持则明确错误 |
 | feature flag | V1 不新增全局 settings flag；菜单是否配置本身就是入口开关 |
 | 新旧对比 | 普通/嵌入构建、现有生成、iframe/new-window 并行回归 |
@@ -424,6 +426,8 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 | 并发 | 首页/草稿写竞争 | 原无 | revision/ETag 乐观锁 | 并发测试 |
 
 ## 8. 测试环境部署与验收记录（2026-08-23）
+
+本节 8.1–8.5 是旧制品的历史记录；因 8.6 所列入口与产品结构缺陷，不能作为当前修正版通过的证据。
 
 ### 8.1 发布边界
 
@@ -491,6 +495,47 @@ V1 不删除 asset；模板封面 FK 使用 RESTRICT。列表查询绝不读取 
 | 隔离复查 | 测试库 4 张 `image_creation_*` 表；生产库 0 张 | `sub2api-test` 与 `sub2api-prod` 均 healthy；生产 `prod-current` 仍指向 `releases/70aa5a5` |
 
 本次测试环境回滚点为 Playground `releases/20e8a95` 和停止保留的容器 `sub2api-test-rollback-bc3e85482`。两个仓库均未推送，生产未部署。
+
+### 8.6 入口与产品结构纠偏（2026-08-23）
+
+旧实现错误地用 `authStore.isAdmin` 决定图像创作 ticket：管理员从普通 `/custom/image-creation` 入口进入时被切换到模板管理页。旧计划又把“融合版 1.1”误写成双页签结构，导致实现与已选定页面方向不一致。两项均属于验收结论错误，不作为后续依据。
+
+本轮根因修复：
+
+- Sub2API：普通 `/custom/:id` 固定 `surface=user`；新增受管理员路由守卫保护的 `/admin/custom/:id` 并固定 `surface=admin`；侧栏按菜单 `visibility` 分别生成两类路径；iframe 和新窗口使用相同 surface。
+- 菜单设置：测试环境需要两个导航项。用户项 `image-creation` / “图像创作” / `visibility=user`；管理项 `image-creation-admin` / “模板管理” / `visibility=admin`。两项均可指向同一静态制品，产品数据仍只存在 `image_creation_*` 表。
+- Playground：用户首页恢复“从灵感开始 → 最近创作 → 底部创作输入区”；“探索全部灵感”改为覆盖层工作区；管理员页面仍由 admin surface 单独加载。
+
+修正版按以下最低验收矩阵重新验证：
+
+| 登录身份 | 入口 | 必须看到 | 必须看不到 |
+|---|---|---|---|
+| 普通用户 | `/custom/image-creation` | 融合版创作首页 | 模板管理、首页精选 |
+| 管理员 | `/custom/image-creation` | 与普通用户相同的融合版创作首页 | 模板管理、首页精选 |
+| 管理员 | `/admin/custom/image-creation-admin` | 模板管理、首页精选 | 用户最近创作首页 |
+| 普通用户 | 直接访问 `/admin/custom/image-creation-admin` | 管理员路由拒绝或重定向 | admin ticket、管理 API 数据 |
+
+以上四项分别覆盖 iframe 和新窗口；当前测试环境均通过。
+
+### 8.7 纠偏版测试环境发布与复验（2026-08-23）
+
+| 项目 | 当前测试环境 | 回滚点 |
+|---|---|---|
+| Playground | `current` → `releases/6fbe8aa` | `releases/2bbd09a` |
+| Sub2API | `sub2api:test-image-creation-v1-8b17bf4f4`，容器 healthy | 停止保留的 `sub2api-test-rollback-766e738ba` |
+| 生产隔离 | `sub2api-prod` 仍为原生产镜像且 healthy；`prod-current` 仍指向 `releases/70aa5a5` | 无生产操作 |
+
+纠偏后的实现与验收结论：
+
+- 路由职责：`/custom/image-creation` 固定用户 surface；`/admin/custom/image-creation-admin` 由管理员路由守卫保护并固定 admin surface。管理员从普通入口进入时仍只看到融合版创作首页。
+- 菜单职责：管理员侧栏同时出现管理区“模板管理”和个人区“图像创作”；普通用户只出现“图像创作”。设置中用两个独立菜单项表达这两个入口，不再依赖登录角色推断页面职责。
+- 用户页面：与选定参考同一结构，固定为“从灵感开始 → 最近创作 → 创作输入区”；灵感库为当前页面覆盖层；应用模板直接写入当前输入区并支持撤销。
+- 管理页面：只包含模板列表、编辑器和首页精选；首页精选最多 4 个，顺序就是用户首页展示顺序。
+- 权限负向：普通用户请求 admin ticket 返回 403；user scoped session 请求管理 API 返回 403；错误 surface 返回 400；ticket 重放返回 401。
+- 多端：桌面与 390×844 移动端完成实际页面检查；宿主导航、精选卡片、历史区、灵感覆盖层和底部输入区无横向溢出或控件重叠。
+- 公网与日志：测试 health 和 `/tools/image-playground/` 为 200，旧 `/tools/image-studio/` 为 410；新测试容器启动后未发现 fatal、panic、migration fail 或 error 日志。
+
+视觉验收的数据边界：测试库当前只有 1 个已配置首页位置的模板，合成普通账号没有本地历史，因此内容数量少于参考图；结构支持并由前后端共同限制为 4 个精选位置，个人历史仍按当前用户浏览器的 IndexedDB 数据自然展示。这是数据差异，不是布局或权限差异。
 
 ## 剩余风险登记
 
