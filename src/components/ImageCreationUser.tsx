@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useStore } from '../store'
 import type { TaskParams } from '../types'
+import { distributeGalleryItems } from '../lib/galleryColumns'
 import {
   applyImageCreationTemplate,
   getImageCreationAssetUrl,
@@ -67,7 +68,7 @@ function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   onFavorite?: () => void
 }) {
   return (
-    <article data-template-card data-auto-aspect className="group relative mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
+    <article data-template-card data-auto-aspect className="group relative w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
       <button type="button" onClick={onDetail} className="relative block w-full text-left" aria-label={`查看${template.title}`}>
         <TemplateCover template={template} className="w-full" natural />
       </button>
@@ -121,7 +122,7 @@ function FeaturedShelf({ templates, onDetail, onUse }: {
 
   return (
     <div data-featured-shelf className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
-      {templates.slice(0, 4).map((template, index) => <FeaturedCard key={template.id} template={template} featured={index === 0} onDetail={() => onDetail(template)} onUse={() => onUse(template)} />)}
+      {templates.map((template, index) => <FeaturedCard key={template.id} template={template} featured={index === 0} onDetail={() => onDetail(template)} onUse={() => onUse(template)} />)}
     </div>
   )
 }
@@ -197,10 +198,18 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
   const [detail, setDetail] = useState<ImageCreationTemplateDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [undo, setUndo] = useState<{ prompt: string, params: TaskParams } | null>(null)
+  const [galleryColumnCount, setGalleryColumnCount] = useState(() => {
+    if (typeof window === 'undefined') return 1
+    if (window.innerWidth >= 1280) return 4
+    if (window.innerWidth >= 1024) return 3
+    if (window.innerWidth >= 460) return 2
+    return 1
+  })
+  const galleryColumns = useMemo(() => distributeGalleryItems(items, galleryColumnCount), [items, galleryColumnCount])
 
   useEffect(() => {
     let cancelled = false
-    listImageCreationTemplates({ home: true, pageSize: 4 })
+    listImageCreationTemplates({ home: true, pageSize: 20 })
       .then((result) => {
         if (!cancelled) setFeatured(result.items)
       })
@@ -209,6 +218,24 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
       })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (view !== 'inspiration') return
+    const update = () => {
+      if (window.innerWidth >= 1280) {
+        setGalleryColumnCount(4)
+        return
+      }
+      if (window.innerWidth >= 1024) {
+        setGalleryColumnCount(3)
+        return
+      }
+      setGalleryColumnCount(window.innerWidth >= 460 ? 2 : 1)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [view])
 
   useEffect(() => {
     if (view !== 'inspiration') return
@@ -365,7 +392,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
             {!loading && !galleryError && items.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-white/[0.12]">没有找到符合条件的灵感，试试清除筛选。</div>
             ) : (
-              <div data-inspiration-masonry>{Array.from({ length: Math.ceil(items.length / 20) }, (_, index) => <div data-inspiration-page key={index} className={`${index ? 'mt-4 ' : ''}columns-1 gap-4 min-[460px]:columns-2 lg:columns-3 xl:columns-4`}>{items.slice(index * 20, index * 20 + 20).map((template) => <TemplateCard key={template.id} template={template} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>)}</div>
+              <div data-inspiration-masonry className="grid grid-cols-1 items-start gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{galleryColumns.map((column, index) => <div key={index} className="space-y-4">{column.map((template) => <TemplateCard key={template.id} template={template} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>)}</div>
             )}
             <p aria-live="polite" className="mt-5 text-center text-xs text-gray-400">{loading ? '正在加载灵感…' : `已显示 ${items.length} / ${total} 个灵感`}</p>
             {(loading || page < totalPages) && <div className="mt-3 text-center"><button type="button" disabled={loading} onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.04]">{loading ? '正在加载…' : '加载更多'}</button></div>}

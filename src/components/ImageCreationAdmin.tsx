@@ -32,6 +32,7 @@ const EMPTY_DOCUMENT: ImageCreationTemplateDocument = {
 }
 
 const STATE_LABELS = { draft: '草稿', published: '已发布', archived: '已归档' }
+const FEATURED_LIMIT = 20
 
 function LocalImageThumb({ imageId, selected, onSelect }: { imageId: string, selected: boolean, onSelect: () => void }) {
   const [src, setSrc] = useState(getCachedImage(imageId) ?? '')
@@ -195,6 +196,7 @@ function HomeFeaturedManager({ initialTemplate, onInitialHandled }: { initialTem
   const [loading, setLoading] = useState(true)
   const [candidateLoading, setCandidateLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const initialHandledRef = useRef<number | undefined>(undefined)
 
   const load = async () => {
     setLoading(true)
@@ -240,49 +242,59 @@ function HomeFeaturedManager({ initialTemplate, onInitialHandled }: { initialTem
   }, [query, page])
 
   useEffect(() => {
-    if (!initialTemplate || loading) return
+    if (!initialTemplate || loading || initialHandledRef.current === initialTemplate.id) return
+    initialHandledRef.current = initialTemplate.id
     setTemplates((current) => (current.some((item) => item.id === initialTemplate.id) ? current : [...current, initialTemplate]))
-    setSelected((current) => {
-      if (current.includes(initialTemplate.id)) return current
-      if (current.length >= 4) {
-        showToast('首页精选最多 4 个，请先移除一个再添加。', 'error')
-        return current
-      }
-      return [...current, initialTemplate.id]
-    })
+    if (selected.includes(initialTemplate.id)) {
+      onInitialHandled()
+      return
+    }
+    if (selected.length >= FEATURED_LIMIT) {
+      showToast(`首页精选最多 ${FEATURED_LIMIT} 个，请先移除一个再添加。`, 'error')
+      onInitialHandled()
+      return
+    }
+    void persistFeatured([...selected, initialTemplate.id], '已加入首页精选')
     onInitialHandled()
   }, [initialTemplate, loading])
 
+  async function persistFeatured(next: number[], successMessage: string) {
+    if (saving) return
+    setSaving(true)
+    try {
+      const home = await replaceImageCreationHomeFeatured(etag, next)
+      setSelected(home.template_ids)
+      setEtag(home.etag)
+      setTemplates((current) => [...current, ...home.templates.filter((item) => !current.some((existing) => existing.id === item.id))])
+      showToast(successMessage, 'success')
+    } catch (error) {
+      const conflict = error instanceof ImageCreationApiError && error.status === 409
+      showToast(conflict ? '首页精选已被其他管理员修改，已为你刷新。' : error instanceof Error ? error.message : '保存失败', 'error')
+      if (conflict) await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const add = (template: ImageCreationAdminTemplate) => {
-    if (selected.length >= 4) {
-      showToast('首页精选最多 4 个，请先移除一个再添加。', 'error')
+    if (selected.length >= FEATURED_LIMIT) {
+      showToast(`首页精选最多 ${FEATURED_LIMIT} 个，请先移除一个再添加。`, 'error')
       return
     }
     setTemplates((current) => (current.some((item) => item.id === template.id) ? current : [...current, template]))
-    setSelected((current) => (current.includes(template.id) ? current : [...current, template.id]))
+    void persistFeatured([...selected, template.id], '已加入首页精选')
   }
 
   const move = (index: number, offset: number) => {
     const target = index + offset
     if (target < 0 || target >= selected.length) return
-    setSelected((current) => {
-      const next = [...current]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
+    const next = [...selected]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    void persistFeatured(next, '精选顺序已更新')
   }
 
-  const save = async () => {
-    setSaving(true)
-    try {
-      const home = await replaceImageCreationHomeFeatured(etag, selected)
-      setEtag(home.etag)
-      showToast('首页精选已发布', 'success')
-    } catch (error) {
-      showToast(error instanceof ImageCreationApiError && error.status === 409 ? '首页精选已被其他管理员修改，请刷新后重试。' : error instanceof Error ? error.message : '发布失败', 'error')
-    } finally {
-      setSaving(false)
-    }
+  const remove = (id: number) => {
+    void persistFeatured(selected.filter((value) => value !== id), '已移出首页精选')
   }
 
   if (loading) return <p className="py-12 text-center text-sm text-gray-400">正在加载首页精选...</p>
@@ -292,15 +304,13 @@ function HomeFeaturedManager({ initialTemplate, onInitialHandled }: { initialTem
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-semibold">首页精选</h2>
-          <p className="mt-1 text-xs text-gray-400">最多 4 个，顺序即用户“从灵感开始”的展示顺序。</p>
+          <p className="mt-1 text-xs text-gray-400">最多 {FEATURED_LIMIT} 个，顺序即用户“从灵感开始”的展示顺序，更改后自动保存。</p>
         </div>
         <div className="flex gap-2">
           <button type="button" onClick={load} className="rounded-xl border border-gray-200 px-3 py-2 text-sm dark:border-white/[0.08]">
             刷新
           </button>
-          <button type="button" disabled={saving} onClick={save} className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-            {saving ? '发布中...' : '发布首页'}
-          </button>
+          {saving && <span aria-live="polite" className="self-center text-xs text-teal-600 dark:text-teal-300">正在保存...</span>}
         </div>
       </div>
       <h3 className="mt-5 text-sm font-semibold">当前展示顺序</h3>
@@ -317,13 +327,13 @@ function HomeFeaturedManager({ initialTemplate, onInitialHandled }: { initialTem
                 <h3 className="truncate text-sm font-medium">{doc.title}</h3>
               </div>
               <div className="flex gap-1">
-                <button type="button" disabled={index === 0} onClick={() => move(index, -1)} className="rounded-lg border border-gray-200 p-2 disabled:opacity-30 dark:border-white/[0.08]" aria-label="上移">
+                <button type="button" disabled={saving || index === 0} onClick={() => move(index, -1)} className="rounded-lg border border-gray-200 p-2 disabled:opacity-30 dark:border-white/[0.08]" aria-label="上移">
                   <ChevronLeftIcon className="h-4 w-4 rotate-90" />
                 </button>
-                <button type="button" disabled={index === selected.length - 1} onClick={() => move(index, 1)} className="rounded-lg border border-gray-200 p-2 disabled:opacity-30 dark:border-white/[0.08]" aria-label="下移">
+                <button type="button" disabled={saving || index === selected.length - 1} onClick={() => move(index, 1)} className="rounded-lg border border-gray-200 p-2 disabled:opacity-30 dark:border-white/[0.08]" aria-label="下移">
                   <ChevronRightIcon className="h-4 w-4 rotate-90" />
                 </button>
-                <button type="button" onClick={() => setSelected((current) => current.filter((value) => value !== id))} className="rounded-lg border border-red-200 p-2 text-red-500 dark:border-red-500/20" aria-label="移除">
+                <button type="button" disabled={saving} onClick={() => remove(id)} className="rounded-lg border border-red-200 p-2 text-red-500 disabled:opacity-30 dark:border-red-500/20" aria-label="移除">
                   <CloseIcon className="h-4 w-4" />
                 </button>
               </div>
@@ -360,7 +370,7 @@ function HomeFeaturedManager({ initialTemplate, onInitialHandled }: { initialTem
                   <CoverPreview src={getImageCreationAssetUrl(template.published_cover_asset_id)} alt="" fit={doc.cover_fit} className="h-20 w-20 shrink-0 rounded-xl" />
                   <div className="min-w-0 flex-1">
                     <h4 className="line-clamp-2 text-sm font-medium">{doc.title}</h4>
-                    <button type="button" disabled={chosen || selected.length >= 4} onClick={() => add(template)} className="mt-3 rounded-lg border border-teal-200 px-2.5 py-1.5 text-xs font-medium text-teal-700 disabled:opacity-40 dark:border-teal-500/20 dark:text-teal-300">
+                    <button type="button" disabled={saving || chosen || selected.length >= FEATURED_LIMIT} onClick={() => add(template)} className="mt-3 rounded-lg border border-teal-200 px-2.5 py-1.5 text-xs font-medium text-teal-700 disabled:opacity-40 dark:border-teal-500/20 dark:text-teal-300">
                       {chosen ? '已在精选' : '加入精选'}
                     </button>
                   </div>
