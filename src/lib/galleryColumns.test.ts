@@ -11,4 +11,18 @@ describe('distributeGalleryItems', () => {
   it('列数无效时仍至少返回一列', () => {
     expect(distributeGalleryItems([1, 2], 0)).toEqual([[1, 2]])
   })
+
+  it('按卡片高度追加到当前最短列，避免长列越来越长', () => {
+    const items = [
+      { id: 1, height: 4 },
+      { id: 2, height: 1 },
+      { id: 3, height: 1 },
+      { id: 4, height: 1 },
+    ]
+
+    expect(distributeGalleryItems(items, 2, (item) => item.height).map((column) => column.map((item) => item.id))).toEqual([
+      [1],
+      [2, 3, 4],
+    ])
+  })
 })

@@ -145,7 +145,7 @@ describe('embedded session', () => {
     expect(JSON.stringify(state)).not.toContain('scoped-session')
   })
 
-  it('distinguishes zero, one, and multiple eligible keys', async () => {
+  it('distinguishes zero keys and automatically selects the first eligible key', async () => {
     boot()
     await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([])))).resolves.toMatchObject({ status: 'no-eligible-key' })
 
@@ -153,7 +153,7 @@ describe('embedded session', () => {
     await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1)])))).resolves.toMatchObject({ status: 'ready', selectedKeyId: '1' })
 
     boot()
-    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))).resolves.toMatchObject({ status: 'selection-required', selectedKeyId: null })
+    await expect(loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))).resolves.toMatchObject({ status: 'ready', selectedKeyId: '1' })
   })
 
   it('restores a persisted selection after trusted user storage loads without reusing the ticket', async () => {
