@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest'
 import source from './ImageCreationAdmin.tsx?raw'
 
 describe('融合版 1.1 首页精选管理', () => {
-  it('只允许配置首页实际展示的四个精选位置', () => {
-    expect(source).toContain('最多 4 个')
-    expect(source).toContain('selected.length >= 4')
+  it('首页精选支持一页候选的二十个位置', () => {
+    expect(source).toContain('FEATURED_LIMIT = 20')
+    expect(source).toContain('selected.length >= FEATURED_LIMIT')
+    expect(source).not.toContain('最多 4 个')
     expect(source).not.toContain('今日灵感')
   })
 
@@ -26,6 +27,13 @@ describe('融合版 1.1 首页精选管理', () => {
     expect(source).toContain('data-featured-candidate')
     expect(source).toContain('aria-label="上移"')
     expect(source).toContain('aria-label="下移"')
+  })
+
+  it('增加、移除和排序都立即保存，不再要求二次点击发布', () => {
+    expect(source).toContain('persistFeatured')
+    expect(source).toContain('已移出首页精选')
+    expect(source).toContain('精选顺序已更新')
+    expect(source).not.toContain('发布首页')
   })
 
   it('详情预览和管理缩略图尊重封面展示方式', () => {

@@ -22,6 +22,12 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).not.toContain('lg:grid-cols-[minmax(0,1.9fr)_repeat(3,minmax(0,1fr))]')
   })
 
+  it('首页横滑区展示全部精选，不在前端截断成四个', () => {
+    expect(source).toContain('pageSize: 20')
+    expect(source).toContain('templates.map((template, index)')
+    expect(source).not.toContain('templates.slice(0, 4)')
+  })
+
   it('精选模板不区分固定横竖槽位，标题覆盖在图片内', () => {
     expect(source).toContain('data-featured-card')
     expect(source).toContain('bg-gradient-to-t from-black/80')
@@ -38,11 +44,10 @@ describe('融合版 1.1 创作首页', () => {
 
   it('全部灵感使用等宽且高度随原图变化的响应式瀑布流', () => {
     expect(source).toContain('data-inspiration-masonry')
-    expect(source).toContain('data-inspiration-page')
-    expect(source).toContain('columns-1')
-    expect(source).toContain('break-inside-avoid')
+    expect(source).toContain('distributeGalleryItems')
+    expect(source).toContain('grid-cols-1')
     expect(source).toContain('pageSize: 20')
-    expect(source).not.toContain('grid grid-cols-1 gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4')
+    expect(source).not.toContain('data-inspiration-page')
   })
 
   it('详情页按封面原始比例展示，不再套用固定 4:5 画框', () => {
