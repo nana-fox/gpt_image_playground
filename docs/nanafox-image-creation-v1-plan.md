@@ -25,8 +25,8 @@
 
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
-| Playground | `9425c62` | `codex/image-creation-v1` | 普通/嵌入构建通过；39 个测试文件 / 551 项测试通过；比例自适应版仅完成本地验证，尚未部署 |
-| Sub2API | `64b6ffd6b` | `feature/image-creation-v1` 独立 worktree | Go 全量测试通过；`cover_fit` 严格契约已发布测试环境 |
+| Playground | `aa7dde7` | `codex/image-creation-v1` | 普通/嵌入构建通过；40 个测试文件 / 558 项测试通过；工作流修复版已发布测试环境 |
+| Sub2API | `387f3d30f` | `feature/image-creation-v1` 独立 worktree | Go 全量测试及前端 257 个测试文件 / 1748 项测试通过；筛选与双入口切换修复版已发布测试环境 |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
@@ -600,6 +600,29 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 本轮依赖审计结果不能写成“全绿”：运行时依赖 DOMPurify / Mermaid 有中危公告；完整开发依赖另有 Vite、Wrangler 链等高危公告。嵌入式图像创作不开放 Agent/Mermaid 输入，降低了当前表面的可达性，但生产前仍应以独立升级提交处理 `npm audit fix --dry-run` 所列更新并重跑双构建、全量测试和浏览器安全回归，不能在当前功能分支上直接宽泛升级。
 
 发布结论分为两层：代码和隔离测试环境可继续验收；生产发布暂时 No-Go。解除生产阻断至少需要：完成 76 个测试素材的逐项权利复核或替换为自有生成封面、轮换本轮审计中意外暴露的支付密钥、明确生产数据库连接池预算，并处理运行时依赖公告。PostgreSQL BYTEA 在当前约 53.3 MiB 规模下不是阻断项。
+
+### 8.11 工作流回归修复与测试环境复验（2026-08-24）
+
+本轮针对产品方现场发现的筛选、比例、增量加载、文案、精选配置和双入口切换问题做根因修复。未推送、未部署生产、未修改生产数据库或生产配置。
+
+| 项目 | 测试环境结果 | 回滚点 |
+|---|---|---|
+| Playground | `current` → `releases/aa7dde7`；筛选友好错误、自然比例、20 条增量页组、灵感画廊文案、管理员 20 条分页与精选顺序交互已生效 | `releases/c0eee02` |
+| Sub2API | 容器 `sub2api-test` 使用 `sub2api:test-image-creation-v1-387f3d30f` 并保持 healthy；镜像二进制为 `0.1.179 / 387f3d30f` | 停止保留的 `sub2api-test-rollback-776592c90-20260824` |
+| 生产隔离 | `sub2api-prod` 仍使用 `sub2api:prod` 且 healthy；`prod-current` 仍为 `releases/70aa5a5` | 无生产变更 |
+
+实现与验证证据：
+
+- 分类与标签筛选改为 PostgreSQL `sqljson.ValueContains`，文本搜索保持不区分大小写；实机选择“人像”得到空态而非 `internal error`，选择“产品”得到 18 条，搜索小写 `hud` 能命中大写标题。
+- 全部灵感首次展示 20 条；连续加载后保留原卡片并增量成为 3 个 page group、60/99 条。每页保持独立列布局，避免旧卡片重排和整页闪烁。
+- 卡片与详情封面使用图片自然比例。实机样本从原始 `900×1600` 渲染为约 `298×529.8`，宽高比一致，不再横向压缩。
+- 管理端模板列表每页 20 条；当前精选最多 4 个，提供上移、下移、移除；候选区提供直接“加入精选”，满 4 个时禁用加入。
+- 双入口路由复用同一 Vue 组件时，不能只依赖静态 route prop。现在由当前 route name 解析 surface，并把它加入 iframe 会话刷新依赖。实机从 `/custom/image-creation` 切到 `/admin/custom/image-creation-admin` 再切回时，宿主标题、`src_url`、ticket scope 和 iframe 内容均同步切换。
+- 390×844 实测宿主与 iframe 的 `scrollWidth` 分别等于各自 `clientWidth`，无横向溢出；宿主深色模式切换后 iframe fragment 为 `theme=dark`，宿主和 iframe 根节点均进入 dark。
+- Playground 40 个测试文件 / 558 项、普通构建和 embedded 构建通过；Sub2API 前端 257 个测试文件 / 1748 项、生产构建通过。既有 Go 全量测试与 PostgreSQL 集成门禁在本轮后端筛选修复上通过。
+- 测试机仅清理可再生成的 Docker builder cache；没有删除数据库、运行容器、镜像或静态回滚版本。清理后根分区约 85%，保留约 6.8 GiB。
+
+浏览器验收曾捕获一次“路由已切、iframe 仍是上一个 surface”的漏网问题；对应补充提交 `387f3d30f` 在测试先失败后修复，并完成重新部署与双向切换复验。因此 `776592c90` 不作为最终候选，当前候选固定为 Playground `aa7dde7` + Sub2API `387f3d30f`。
 
 ## 剩余风险登记
 
