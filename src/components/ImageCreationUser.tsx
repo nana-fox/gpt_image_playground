@@ -67,10 +67,15 @@ function TemplateCard({ template, onDetail, onUse, onFavorite }: {
   onUse: () => void
   onFavorite?: () => void
 }) {
+  const [aspectRatio, setAspectRatio] = useState(4 / 5)
+  const onCoverLoad = (width: number, height: number) => {
+    if (width > 0 && height > 0) setAspectRatio(width / height)
+  }
+
   return (
-    <article data-template-card data-auto-aspect className="group relative w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
+    <article data-template-card data-auto-aspect style={{ aspectRatio }} className="group relative w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
       <button type="button" onClick={onDetail} className="relative block w-full text-left" aria-label={`查看${template.title}`}>
-        <TemplateCover template={template} className="w-full" natural />
+        <TemplateCover template={template} className="w-full" natural onCoverLoad={onCoverLoad} />
       </button>
       <div className="pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20 group-focus-within:bg-black/20" />
       <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">{categoryLabel(template.category)}</span>
