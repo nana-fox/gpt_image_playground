@@ -684,17 +684,17 @@ describe('embedded gallery credential resolution', () => {
     expect(useStore.getState().tasks).toEqual([])
   })
 
-  it('blocks submission before fetch when multiple keys require a choice', async () => {
+  it('uses the first eligible runtime key when multiple keys have no saved choice', async () => {
     await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
       { id: 12, key: 'runtime-secret-a', name: 'Runtime Key A' },
       { id: 13, key: 'runtime-secret-b', name: 'Runtime Key B' },
     ])))
 
     await submitTask()
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
 
-    expect(callImageApi).not.toHaveBeenCalled()
-    expect(useStore.getState().showToast).toHaveBeenCalledWith('请选择一个可用的 Sub2API API Key', 'error')
-    expect(useStore.getState().tasks).toEqual([])
+    expect(vi.mocked(callImageApi).mock.calls[0][0].settings.apiKey).toBe('runtime-secret-a')
+    expect(getEmbeddedSessionState()).toMatchObject({ status: 'ready', selectedKeyId: '12' })
   })
 
   it('keeps uploaded references in memory with a stable ID and no IndexedDB image row', async () => {

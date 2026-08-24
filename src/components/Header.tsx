@@ -293,7 +293,7 @@ export default function Header({ embeddedAdmin = false }: { embeddedAdmin?: bool
               </div>
             )}
             <div
-              className={embeddedFrame ? 'relative hidden sm:block' : 'relative'}
+              className="relative"
               {...helpTooltip.handlers}
             >
               <button
@@ -362,7 +362,7 @@ export default function Header({ embeddedAdmin = false }: { embeddedAdmin?: bool
           </div>
         </div>
       </div>
-      {showHelp && <HelpModal appMode={appMode} isFavoriteCollectionOverview={appMode === 'gallery' && filterFavorite && !activeFavoriteCollectionId} onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal appMode={appMode} embedded={embedded} isFavoriteCollectionOverview={appMode === 'gallery' && filterFavorite && !activeFavoriteCollectionId} onClose={() => setShowHelp(false)} />}
     </>
   )
 }

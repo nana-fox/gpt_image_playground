@@ -19,7 +19,7 @@ export interface EmbeddedPublicKey {
   name: string
 }
 
-export type EmbeddedSessionStatus = 'inactive' | 'loading' | 'auth-error' | 'load-error' | 'no-eligible-key' | 'selection-required' | 'ready'
+export type EmbeddedSessionStatus = 'inactive' | 'loading' | 'auth-error' | 'load-error' | 'no-eligible-key' | 'ready'
 
 export interface EmbeddedSessionState {
   status: EmbeddedSessionStatus
@@ -251,8 +251,7 @@ export async function bootstrapEmbeddedSession(selectedKeyId: string | null | un
     const keys = loaded.map(({ id, name }) => ({ id, name }))
     if (!keys.length) return publish({ status: 'no-eligible-key', keys, selectedKeyId: null })
     const savedId = selectedKeyId ? String(selectedKeyId) : null
-    const resolvedId = savedId ? rawKeys.has(savedId) ? savedId : null : keys.length === 1 ? keys[0].id : null
-    if (!resolvedId) return publish({ status: 'selection-required', keys, selectedKeyId: null })
+    const resolvedId = savedId && rawKeys.has(savedId) ? savedId : keys[0].id
     return publish({ status: 'ready', keys, selectedKeyId: resolvedId })
   } catch (error) {
     return clearKeys({ status: 'load-error', keys: [], selectedKeyId: null, message: getErrorMessage(error) })
@@ -293,9 +292,9 @@ export function invalidateEmbeddedSelectedKey() {
   rejectedKeyIds.add(state.selectedKeyId)
   rawKeys.delete(state.selectedKeyId)
   const keys = state.keys.filter((key) => key.id !== state.selectedKeyId)
-  const selectedKeyId = keys.length === 1 ? keys[0].id : null
+  const selectedKeyId = keys[0]?.id ?? null
   publish({
-    status: selectedKeyId ? 'ready' : keys.length ? 'selection-required' : 'no-eligible-key',
+    status: selectedKeyId ? 'ready' : 'no-eligible-key',
     keys,
     selectedKeyId,
   })

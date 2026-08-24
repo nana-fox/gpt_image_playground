@@ -50,10 +50,11 @@ describe('融合版 1.1 创作首页', () => {
     expect(source).not.toContain('data-inspiration-page')
   })
 
-  it('懒加载封面在图片到达前预留卡片高度，避免增量内容出现空白', () => {
+  it('封面在图片到达前预留高度，并把实际比例反馈给最短列算法', () => {
     const cardSource = source.slice(source.indexOf('function TemplateCard'), source.indexOf('function FeaturedCard'))
-    expect(cardSource).toContain('useState(4 / 5)')
+    expect(source).toContain('galleryAspectRatios[item.id] ?? 4 / 5')
     expect(cardSource).toContain('style={{ aspectRatio }}')
+    expect(cardSource).toContain('onAspectRatio(width / height)')
     expect(cardSource).toContain('onCoverLoad={onCoverLoad}')
   })
 

@@ -61,21 +61,22 @@ function TemplateCover({ template, alt = '', className = '', eager = false, natu
   )
 }
 
-function TemplateCard({ template, onDetail, onUse, onFavorite }: {
+function TemplateCard({ template, aspectRatio, onDetail, onUse, onFavorite, onAspectRatio }: {
   template: ImageCreationTemplateListItem
+  aspectRatio: number
   onDetail: () => void
   onUse: () => void
   onFavorite?: () => void
+  onAspectRatio: (aspectRatio: number) => void
 }) {
-  const [aspectRatio, setAspectRatio] = useState(4 / 5)
   const onCoverLoad = (width: number, height: number) => {
-    if (width > 0 && height > 0) setAspectRatio(width / height)
+    if (width > 0 && height > 0) onAspectRatio(width / height)
   }
 
   return (
     <article data-template-card data-auto-aspect style={{ aspectRatio }} className="group relative w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-gray-100 shadow-sm focus-within:ring-2 focus-within:ring-teal-500 focus-within:ring-offset-2 dark:border-white/[0.08] dark:bg-gray-900 dark:focus-within:ring-offset-gray-950">
       <button type="button" onClick={onDetail} className="relative block w-full text-left" aria-label={`查看${template.title}`}>
-        <TemplateCover template={template} className="w-full" natural onCoverLoad={onCoverLoad} />
+        <TemplateCover template={template} className="w-full" eager natural onCoverLoad={onCoverLoad} />
       </button>
       <div className="pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20 group-focus-within:bg-black/20" />
       <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">{categoryLabel(template.category)}</span>
@@ -126,7 +127,7 @@ function FeaturedShelf({ templates, onDetail, onUse }: {
   if (!templates.length) return null
 
   return (
-    <div data-featured-shelf className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+    <div data-featured-shelf className="hide-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
       {templates.map((template, index) => <FeaturedCard key={template.id} template={template} featured={index === 0} onDetail={() => onDetail(template)} onUse={() => onUse(template)} />)}
     </div>
   )
@@ -198,6 +199,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
   const [recent, setRecent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [galleryError, setGalleryError] = useState('')
+  const [galleryAspectRatios, setGalleryAspectRatios] = useState<Record<number, number>>({})
   const [reloadKey, setReloadKey] = useState(0)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [detail, setDetail] = useState<ImageCreationTemplateDetail | null>(null)
@@ -210,7 +212,11 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
     if (window.innerWidth >= 460) return 2
     return 1
   })
-  const galleryColumns = useMemo(() => distributeGalleryItems(items, galleryColumnCount), [items, galleryColumnCount])
+  const galleryColumns = useMemo(() => distributeGalleryItems(
+    items,
+    galleryColumnCount,
+    (item) => 1 / (galleryAspectRatios[item.id] ?? 4 / 5),
+  ), [galleryAspectRatios, galleryColumnCount, items])
 
   useEffect(() => {
     let cancelled = false
@@ -360,10 +366,10 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
 
   return (
     <>
-      <main data-image-creation-home className="safe-area-x mx-auto max-w-7xl pb-48">
-        <section className="mb-7 rounded-2xl border border-gray-200/80 bg-white/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">从灵感开始</h2>
+      <main data-image-creation-home className="safe-area-x mx-auto max-w-7xl pb-48 pt-6 sm:pt-8">
+        <section data-inspiration-section className="mb-8 border-b border-gray-200/80 pb-8 dark:border-white/[0.08]">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div><h2 className="text-base font-semibold text-gray-900 dark:text-white">从灵感开始</h2><p className="mt-1 text-xs text-gray-400">选择一个模板，再把它变成你的作品</p></div>
             <button type="button" onClick={() => setView('inspiration')} className="shrink-0 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 transition hover:border-teal-300 hover:bg-teal-100 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">浏览全部 →</button>
           </div>
           {featuredError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">{featuredError}，你的本地创作不受影响。</p> : featured.length ? (
@@ -397,7 +403,7 @@ export default function ImageCreationUser({ localSearch, localGallery }: { local
             {!loading && !galleryError && items.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-white/[0.12]">没有找到符合条件的灵感，试试清除筛选。</div>
             ) : (
-              <div data-inspiration-masonry className="grid grid-cols-1 items-start gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{galleryColumns.map((column, index) => <div key={index} className="space-y-4">{column.map((template) => <TemplateCard key={template.id} template={template} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>)}</div>
+              <div data-inspiration-masonry className="grid grid-cols-1 items-start gap-4 min-[460px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{galleryColumns.map((column, index) => <div key={index} className="space-y-4">{column.map((template) => <TemplateCard key={template.id} template={template} aspectRatio={galleryAspectRatios[template.id] ?? 4 / 5} onAspectRatio={(aspectRatio) => setGalleryAspectRatios((current) => Math.abs((current[template.id] ?? 0) - aspectRatio) < 0.001 ? current : { ...current, [template.id]: aspectRatio })} onDetail={() => openDetail(template)} onUse={() => useTemplate(template)} onFavorite={() => toggleFavorite(template)} />)}</div>)}</div>
             )}
             <p aria-live="polite" className="mt-5 text-center text-xs text-gray-400">{loading ? '正在加载灵感…' : `已显示 ${items.length} / ${total} 个灵感`}</p>
             {(loading || page < totalPages) && <div className="mt-3 text-center"><button type="button" disabled={loading} onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.04]">{loading ? '正在加载…' : '加载更多'}</button></div>}

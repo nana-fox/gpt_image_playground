@@ -29,7 +29,7 @@ export default function EmbeddedKeySelector() {
   if (session.status === 'no-eligible-key') {
     const url = getEmbeddedKeysUrl()
     return url ? (
-      <a className="block truncate text-xs font-medium text-amber-600 hover:underline" href={url} target="_top">创建 API Key</a>
+      <a className="block truncate text-xs font-medium text-amber-600 hover:underline" href={url} target="_top">创建生图 API Key</a>
     ) : <span className="block truncate text-xs text-amber-600">没有可用的 API Key</span>
   }
 

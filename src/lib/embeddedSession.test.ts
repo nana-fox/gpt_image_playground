@@ -225,7 +225,7 @@ describe('embedded session', () => {
 
   it('fails before request construction when no runtime key is selected', async () => {
     boot()
-    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([key(1), key(2)])))
+    await loadEmbeddedKeys(null, vi.fn<typeof fetch>().mockResolvedValue(session([])))
 
     expect(() => resolveEmbeddedApiProfile(createDefaultOpenAIProfile())).toThrow('请选择一个可用的 Sub2API API Key')
   })

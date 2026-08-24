@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { AppMode } from '../types'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
+import { getEmbeddedKeysUrl, getEmbeddedSessionState, subscribeEmbeddedSession } from '../lib/embeddedSession'
 
 interface HelpModalProps {
   appMode: AppMode
+  embedded?: boolean
   isFavoriteCollectionOverview?: boolean
   onClose: () => void
 }
@@ -20,8 +22,10 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function HelpModal({ appMode, isFavoriteCollectionOverview = false, onClose }: HelpModalProps) {
+export default function HelpModal({ appMode, embedded = false, isFavoriteCollectionOverview = false, onClose }: HelpModalProps) {
   const isMobile = useIsMobile()
+  const embeddedSession = useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
+  const keysUrl = getEmbeddedKeysUrl()
   const modalRef = useRef<HTMLDivElement>(null)
   const isAgentMode = appMode === 'agent'
   useCloseOnEscape(true, onClose)
@@ -62,7 +66,23 @@ export default function HelpModal({ appMode, isFavoriteCollectionOverview = fals
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain mb-6 text-sm text-gray-600 dark:text-gray-300 space-y-6 custom-scrollbar pr-2">
-          {isAgentMode ? (
+          {embedded ? (
+            <>
+              <section>
+                <h4 className="mb-2 font-medium text-gray-800 dark:text-gray-100">1. 选择 API Key</h4>
+                {embeddedSession.status === 'ready' ? <p>已自动选中“{embeddedSession.keys.find((key) => key.id === embeddedSession.selectedKeyId)?.name}”，也可以在页面顶部切换。</p> : <p>系统会自动选中可用于图像生成的 API Key；当前没有可用密钥时，请先创建一个。</p>}
+                {embeddedSession.status === 'no-eligible-key' && keysUrl && <a href={keysUrl} target="_top" className="mt-3 inline-flex rounded-xl bg-teal-600 px-3 py-2 font-medium text-white hover:bg-teal-700">去创建 API Key</a>}
+              </section>
+              <section>
+                <h4 className="mb-2 font-medium text-gray-800 dark:text-gray-100">2. 从灵感开始</h4>
+                <p>浏览精选或灵感画廊，预览后点击“使用此灵感”，提示词和推荐参数会进入创作区。</p>
+              </section>
+              <section>
+                <h4 className="mb-2 font-medium text-gray-800 dark:text-gray-100">3. 生成你的作品</h4>
+                <p>按需要修改提示词和参数，添加参考图后即可生成；生成记录保存在当前账号的浏览器空间。</p>
+              </section>
+            </>
+          ) : isAgentMode ? (
             <>
               <section>
                 <div className="space-y-4">
@@ -168,7 +188,7 @@ export default function HelpModal({ appMode, isFavoriteCollectionOverview = fals
           )}
         </div>
 
-        <div className="pt-4 border-t border-gray-200 dark:border-white/[0.08] flex justify-center">
+        {!embedded && <div className="pt-4 border-t border-gray-200 dark:border-white/[0.08] flex justify-center">
           <a
             href="https://github.com/CookSleep/gpt_image_playground"
             target="_blank"
@@ -180,7 +200,7 @@ export default function HelpModal({ appMode, isFavoriteCollectionOverview = fals
             </svg>
             @CookSleep
           </a>
-        </div>
+        </div>}
       </div>
     </div>,
     document.body

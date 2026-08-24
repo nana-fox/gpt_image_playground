@@ -12,7 +12,7 @@ import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { getSafeBoundingClientRect } from '../lib/domRect'
 import { collectAgentRoundOutputImageSlots } from '../lib/agentImageReferences'
 import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds } from '../lib/favoriteState'
-import { getEmbeddedSessionState, hasEmbeddedRuntimeKey, subscribeEmbeddedSession } from '../lib/embeddedSession'
+import { getEmbeddedKeysUrl, getEmbeddedReopenUrl, getEmbeddedSessionState, hasEmbeddedRuntimeKey, subscribeEmbeddedSession } from '../lib/embeddedSession'
 import { isNanafoxEmbedded } from '../lib/deploymentFlavor'
 import { getContentEditableCursor, getContentEditablePlainText, getContentEditableSelection, getMentionTagHtml, setContentEditableCursor, setContentEditableSelection, syncMentionTagSelection } from '../lib/contentEditableMentions'
 import { useHintTooltip } from '../hooks/useHintTooltip'
@@ -85,7 +85,7 @@ function AtImageOptionThumb({ option }: { option: AtImageOption }) {
 }
 
 export default function InputBar({ mobileDefaultCollapsed = false }: { mobileDefaultCollapsed?: boolean }) {
-  useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
+  const embeddedSession = useSyncExternalStore(subscribeEmbeddedSession, getEmbeddedSessionState)
   const prompt = useStore((s) => s.prompt)
   const appMode = useStore((s) => s.appMode)
   const setPrompt = useStore((s) => s.setPrompt)
@@ -439,7 +439,15 @@ export default function InputBar({ mobileDefaultCollapsed = false }: { mobileDef
     : hasSubmitApiConfig
     ? maskDraft ? '遮罩编辑' : '生成图像'
     : '请先配置 API'
-  const submitTooltipText = activeAgentIsRunning ? '停止生成' : '尚未完成 API 配置，请在右上角设置中进行'
+  const submitTooltipText = activeAgentIsRunning ? '停止生成' : isNanafoxEmbedded() ? '请先创建可用于图像生成的 API Key' : '尚未完成 API 配置，请在右上角设置中进行'
+  const openApiConfiguration = () => {
+    const url = embeddedSession.status === 'auth-error' ? getEmbeddedReopenUrl() : getEmbeddedKeysUrl()
+    if (isNanafoxEmbedded() && url) {
+      window.open(url, '_top')
+      return
+    }
+    setShowSettings(true)
+  }
   const promptPlaceholder = '描述你想生成的图片，可输入 @ 来指定参考图...'
   const submitCurrentMode = useCallback(() => {
     if (appMode === 'agent') {
@@ -1793,7 +1801,7 @@ export default function InputBar({ mobileDefaultCollapsed = false }: { mobileDef
                 >
                   <ButtonTooltip visible={(activeAgentIsRunning || !hasSubmitApiConfig) && submitHover} text={submitTooltipText} />
                   <button
-                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
+                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : openApiConfiguration()}
                     disabled={activeAgentIsRunning ? false : hasSubmitApiConfig ? !canSubmit : false}
                     className={`p-2.5 rounded-xl transition-all shadow-sm hover:shadow ${
                       activeAgentIsRunning
@@ -1900,7 +1908,7 @@ export default function InputBar({ mobileDefaultCollapsed = false }: { mobileDef
                 >
                   <ButtonTooltip visible={(activeAgentIsRunning || !hasSubmitApiConfig) && submitHover} text={submitTooltipText} />
                   <button
-                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
+                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : openApiConfiguration()}
                     disabled={activeAgentIsRunning ? false : hasSubmitApiConfig ? !canSubmit : false}
                     aria-label={submitButtonAriaLabel}
                     className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
