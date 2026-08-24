@@ -643,14 +643,34 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 - TDD 红测提交为 `d88b5a0`，修复提交为 `70fea87`。Playground 42 个测试文件 / 565 项、普通构建和 embedded 构建通过；测试根路由和静态路由均返回 200。
 - 测试静态制品中的 `App-BTokzZ9V.js` 已确认包含新首页、自动选 Key、无 Key 引导文案。当前登录态 Chrome 的 CDP 调试会话失效，因此本轮没有把桌面、移动端和深色模式的最终视觉冒充自动验收通过，保留为产品方刷新后的人工验收项。
 
+### 8.13 生产发布与模板同步（2026-08-25）
+
+产品方确认生产发布，并进一步确认将测试环境的全部模板和封面素材同步到生产。同步范围严格限定为图像创作模块，不包含测试用户收藏、最近使用或测试操作日志。
+
+| 项目 | 生产结果 | 回滚点 |
+|---|---|---|
+| Playground | `prod-current` → `releases/179c8eb`；线上静态资源已切换到新构建 | 发布前静态指针与备份目录中的发布记录 |
+| Sub2API | 容器 `sub2api-prod` 使用 `sub2api:prod-image-creation-v1-ecba95ba3`，healthy，重启计数 0 | `sub2api:prod-rollback-20260824T164308Z` |
+| 数据库 | 新增 4 张独立的 `image_creation_*` 表；同步 101 个素材、101 个模板 | `/srv/nanafox/image-playground/backups/prod-image-creation-v1-20260824T164308Z` |
+
+发布与同步证据：
+
+- Playground 候选提交 `179c8ebe46c6ba2a1085ccfae6ff257e928ce4e7`，Sub2API 候选提交 `ecba95ba38737da703f06913dbc82d372a9172f5`；候选分支均已推送到各自 `origin`，没有推送上游仓库。
+- 完整生产数据库、生产配置、Caddy 配置和旧镜像回滚点均在发布前保存并完成 SHA-256 校验；模板同步前另保存空表快照和 101 条测试模板数据包。
+- 模板导入使用单事务，只写入 `image_creation_assets`、`image_creation_templates` 及模板序列。导入后为 99 个已发布、2 个已归档、5 个首页精选；封面素材总计 55,914,202 bytes，缺失封面引用为 0，用户模板状态和变更日志均为 0。
+- 生产封面接口实测返回 HTTP 200、`image/png` 和实际图片字节；首页、health、登录、仪表盘、API Key、管理页面、Playground 静态入口和公开设置接口均为 HTTP 200。未授权访问用户与管理员模板 API 均为 401，符合 scoped session 边界。
+- 发布后 `sub2api-prod` 保持 healthy，生产数据库活动连接为 7，最近 15 分钟未发现 panic、fatal、连接耗尽、迁移失败、支付/订单错误或 HTTP 5xx。
+- 生产原有用户侧“图像创作”菜单保持不变；新增的管理员“模板管理”菜单仅对管理员可见。旧业务表、测试数据库配置和生产支付配置均未修改。
+- 产品方决定本次不调整生产连接池，接受当前小流量发布风险；生产池仍需在正式放量前显式设置连接预算。第三方参考模板经产品方确认同步到生产，后续在管理端继续筛选、归档或替换。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Owner | Follow-up ticket |
 |---|---|---|---|
 | PostgreSQL BYTEA 体积随模板增长 | 接受：V1 最多小规模精选素材，8MiB 硬限 | NanaFox backend | V2 asset storage migration trigger |
-| PostgreSQL 连接池与实例隔离 | 测试已限制为 10/2；生产仍使用不适配 100 连接上限的默认值，且测试/生产共享实例，阻止生产发布 | NanaFox ops | Production database connection budget |
+| PostgreSQL 连接池与实例隔离 | 测试已限制为 10/2；生产仍使用默认值，产品方确认先带风险发布，正式放量前必须分配连接预算 | NanaFox ops | Production database connection budget |
 | 前端运行时依赖公告 | DOMPurify / Mermaid 中危；当前图像 surface 可达性低，仍需升级回归 | NanaFox frontend | Dependency security refresh |
-| 支付密钥轮换 | 审计读取时发生一次意外暴露；不得继续沿用到生产发布 | NanaFox ops | Payment credential rotation |
+| 支付密钥轮换 | 审计读取时发生一次意外暴露；产品方确认先发布，仍须尽快轮换并复验支付回调 | NanaFox ops | Payment credential rotation |
 | Safari fragment/new-window 行为 | Chromium 真实测试已通过；Safari 的 V1 模板流仍待实机回归 | NanaFox frontend | Production Safari acceptance |
-| 开源提示词许可逐条核对 | 测试数据已记录来源并标记“商业权利未核验”；生产前仍须逐项完成 | NanaFox product | V1 content provenance checklist |
+| 开源提示词许可逐条核对 | 参考模板已按产品方确认同步生产；仍需在管理端逐项筛选、归档或替换，并保留来源记录 | NanaFox product | V1 content provenance checklist |
 | 用户软删除清理接点 | 待 Slice 1 随现有删除流程验证 | NanaFox backend | Slice 1 user cleanup contract |
