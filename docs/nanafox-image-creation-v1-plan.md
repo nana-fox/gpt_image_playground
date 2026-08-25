@@ -1,6 +1,6 @@
 # NanaFox 图像创作 V1 实施计划
 
-状态：V1 已完成测试环境验收并于 2026-08-25 发布生产。用户入口与管理员入口已在路由、票据、菜单和页面职责上分离；生产当前使用 Playground `179c8eb` 与 Sub2API `9d8ab6d7c`，后续工作按第 9 节的小步迭代顺序推进。
+状态：V1 已完成测试环境验收并于 2026-08-25 发布生产。用户入口与管理员入口已在路由、票据、菜单和页面职责上分离；生产当前使用 Playground `179c8eb` 与 Sub2API `9d8ab6d7c`，V1.0.1 正确性补丁已部署到隔离测试环境，后续工作按第 9 节的小步迭代顺序推进。
 
 本文件是图像创作 V1 的单一实施依据。旧的嵌入适配基线仍由 `docs/nanafox-embedded-plan.md:1` 约束；模板、灵感库、用户状态、管理端、嵌入会话和服务端增量以本文件为准。
 
@@ -26,7 +26,7 @@
 | 仓库 | 基线提交 | 本地分支 | 结果 |
 |---|---|---|---|
 | Playground | `47cd579`（生产静态制品 `179c8eb`） | `codex/image-creation-v1` | 普通/嵌入构建与 42 个测试文件 / 565 项测试在生产候选链通过；生产和测试使用独立静态指针 |
-| Sub2API | `9d8ab6d7c` | `feature/image-creation-v1` 独立 worktree | 最新生图 Key 资格与启动门禁补丁已通过后端针对性测试和前端 4 项 surface 测试；同一提交已部署测试和生产并推送到 `origin` 功能分支 |
+| Sub2API | 测试 `6966a8f5c`；生产 `9d8ab6d7c` | `feature/image-creation-v1` 独立 worktree | V1.0.1 的精选容量、生图 Key 资格和 iframe/新窗口错误分离已通过完整门禁并部署隔离测试环境；生产尚未升级；功能分支已推送到 NanaFox `origin`，未推送 `upstream` |
 
 Sub2API 功能工作树：`/Users/nio/project/nanafox/sub2api/.claude/worktrees/image-creation-v1`。原仓库的 `hotfix/ops-error-request-snapshots` 工作区保持不变。
 
@@ -664,6 +664,25 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 - 产品方决定本次不调整生产连接池，接受当前小流量发布风险；生产池仍需在正式放量前显式设置连接预算。第三方参考模板经产品方确认同步到生产，后续在管理端继续筛选、归档或替换。
 - 2026-08-25 最新补丁复核：生产和测试容器均运行 `9d8ab6d7c`、healthy、重启计数 0；生产静态指针保持 `179c8eb`，测试静态指针保持 `70fea87`；生产 `/health` 返回正常，近 30 分钟未发现 panic、fatal、连接耗尽、迁移失败或 HTTP 5xx。
 
+### 8.14 V1.0.1 正确性补丁测试部署（2026-08-25）
+
+本轮只升级隔离测试环境的 Sub2API 容器和测试数据库迁移；Playground 静态制品、生产容器、生产数据库和生产静态指针均未变更。
+
+| 项目 | 测试结果 | 回滚点 |
+|---|---|---|
+| Sub2API | `sub2api-test` 使用 `sub2api:test-image-creation-v1-6966a8f5c`，二进制为 `0.1.179 / 6966a8f5c`，healthy，重启计数 0 | 停止保留的 `sub2api-test-rollback-9d8ab6d7c-20260825T071330Z` |
+| 测试数据库 | 迁移 `239_expand_image_creation_featured_capacity.sql` 已应用；`home_position` 约束为 1–20 | 迁移前备份 `/srv/nanafox/image-playground/backups/test-before-6966a8f5c-20260825T070352Z.sql.gz`，SHA-256 `a497f29b9927c732c2802d0467767479f694a784c13e2cb82d32f32dc29bcbfc` |
+| Playground | 测试 `current` 仍为 `releases/70fea87` | 本轮未变更 |
+| 生产隔离 | `sub2api-prod` 仍使用 `sub2api:prod-image-creation-v1-9d8ab6d7c`，healthy，重启计数 0；`prod-current` 仍为 `releases/179c8eb` | 无生产变更 |
+
+实现与验证证据：
+
+- Playground 42 个测试文件 / 565 项、普通构建和 embedded 构建通过；Sub2API 后端 `go test ./...`、前端 258 个测试文件 / 1751 项和生产构建通过。
+- 首页精选容量通过增量迁移统一到 20；生图 Key 列表复用分组访问资格；iframe 会话错误和新窗口错误使用独立状态及重试动作。对应 Sub2API 提交范围为 `049d28c34..6966a8f5c`。
+- 测试 `/health`、站点根路由和 `/tools/image-playground/` 返回 200；旧 `/tools/image-studio/` 返回 410。新容器启动日志未发现 panic、fatal、迁移失败或 HTTP 5xx。
+- Chrome 扩展可以打开已登录的 `/custom/image-creation`，但对该嵌入页的 DOM 和截图读取连续超时；本轮未切换到其他浏览器，也没有把工具链失败冒充视觉通过。本任务打开的测试标签页已关闭，用户原有管理员页未关闭。
+- 因 Chrome 自动视觉读取未完成，普通用户、管理员、移动端和深色模式的最终实机视觉仍是本候选进入生产前的显式验收项；服务端、数据库、组件测试和构建门禁已经通过。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Owner | Follow-up ticket |
@@ -675,8 +694,8 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 | Safari fragment/new-window 行为 | Chromium 真实测试已通过；Safari 的 V1 模板流仍待实机回归 | NanaFox frontend | Production Safari acceptance |
 | 开源提示词许可逐条核对 | 参考模板已按产品方确认同步生产；仍需在管理端逐项筛选、归档或替换，并保留来源记录 | NanaFox product | V1 content provenance checklist |
 | 用户软删除清理接点 | 待 Slice 1 随现有删除流程验证 | NanaFox backend | Slice 1 user cleanup contract |
-| 首页精选容量声明漂移 | 服务层允许 20，但 V1.0 数据库仍限制位置 1–6；当前有效上限按 6 处理，V1.0.1 必须用增量迁移和三层测试统一到 20 | NanaFox backend/frontend | V1.0.1 featured capacity migration |
-| 生图 Key 资格与实际网关规则尚未完全共用 | 当前已过滤状态、有效期、额度和分组生图权限；仍需覆盖分组删除/禁用及用户分组访问撤销 | NanaFox backend | V1.0.1 canonical image-key eligibility |
+| 首页精选容量声明漂移 | 测试环境已用迁移 239 统一到 20 并完成三层测试；生产仍按旧约束运行，待本候选生产发布时应用迁移 | NanaFox backend/frontend | V1.0.1 featured capacity migration |
+| 生图 Key 资格与实际网关规则尚未完全共用 | 测试候选已收敛到分组访问资格并覆盖状态、有效期、额度和用户分组访问；待生产实机验收后发布 | NanaFox backend | V1.0.1 canonical image-key eligibility |
 
 ## 9. 统一后续路线
 
