@@ -5,6 +5,7 @@ import { mkdirSync } from 'node:fs'
 import { Readable } from 'node:stream'
 
 import { createStudioAuthApp } from './authApp.mjs'
+import { createQuotaStore } from './quotaStore.mjs'
 import { createRouterAuthClient } from './routerAuthClient.mjs'
 import { createSessionStore } from './sessionStore.mjs'
 
@@ -69,6 +70,7 @@ export function createStudioHttpServer(options) {
 export function createStudioRuntime(config = readStudioServerConfig()) {
   mkdirSync(dirname(config.database), { recursive: true })
   const store = createSessionStore({ filename: config.database })
+  const quota = createQuotaStore({ filename: config.database })
   const routerAuth = createRouterAuthClient({
     baseUrl: config.routerBaseUrl,
     keyId: config.routerKeyId,
@@ -78,6 +80,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     publicOrigin: config.publicOrigin,
     routerAuth,
     store,
+    quota,
   })
   const server = createStudioHttpServer({ publicOrigin: config.publicOrigin, app })
 
@@ -85,6 +88,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     server,
     close(callback) {
       server.close(() => {
+        quota.close()
         store.close()
         callback?.()
       })

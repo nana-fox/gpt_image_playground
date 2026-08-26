@@ -8,6 +8,7 @@ export function createStudioAuthApp(options = {}) {
   const publicOrigin = normalizeOrigin(options.publicOrigin)
   const routerAuth = options.routerAuth
   const store = options.store
+  const quota = options.quota
   if (!routerAuth || typeof routerAuth !== 'object') throw new Error('Router auth client is required')
   if (!store || typeof store !== 'object') throw new Error('Studio session store is required')
 
@@ -17,10 +18,14 @@ export function createStudioAuthApp(options = {}) {
     async handle(request) {
       const url = new URL(request.url)
 
-      if (request.method === 'GET' && url.pathname === '/api/auth/session') {
+      if (request.method === 'GET' && (url.pathname === '/api/auth/session' || url.pathname === '/api/quota')) {
         const token = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE]
         const session = token ? store.getSession(token) : null
         if (!session) return json({ ok: false, error: { reason: 'UNAUTHENTICATED', message: '请先登录' } }, 401)
+        if (url.pathname === '/api/quota') {
+          if (!quota) return json({ ok: false, error: { reason: 'QUOTA_UNAVAILABLE', message: '额度服务暂时不可用' } }, 503)
+          return json({ ok: true, data: quota.getBalance(session.user.id) })
+        }
         return json({ ok: true, data: session })
       }
 
