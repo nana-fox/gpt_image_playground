@@ -6,6 +6,10 @@ const MAX_BODY_BYTES = 32 * 1024
 
 export function createStudioAuthApp(options = {}) {
   const publicOrigin = normalizeOrigin(options.publicOrigin)
+  const publicBasePath = String(options.publicBasePath ?? '/')
+  if (!publicBasePath.startsWith('/') || !publicBasePath.endsWith('/') || /[\s;,]/.test(publicBasePath)) {
+    throw new Error('Studio public base path is invalid')
+  }
   const routerAuth = options.routerAuth
   const store = options.store
   const quota = options.quota
@@ -62,7 +66,7 @@ export function createStudioAuthApp(options = {}) {
           if (input.promoCode) registerInput.promoCode = String(input.promoCode).trim()
           if (input.invitationCode) registerInput.invitationCode = String(input.invitationCode).trim()
           if (input.affiliateCode) registerInput.affiliateCode = String(input.affiliateCode).trim()
-          return authenticated(await routerAuth.register(registerInput), store, secure)
+          return authenticated(await routerAuth.register(registerInput), store, secure, publicBasePath)
         }
 
         if (url.pathname === '/api/auth/login') {
@@ -72,14 +76,14 @@ export function createStudioAuthApp(options = {}) {
             if (!challenge) throw protocolError()
             return json({ ok: true, data: { requires2FA: true, challenge } })
           }
-          return authenticated(data, store, secure)
+          return authenticated(data, store, secure, publicBasePath)
         }
 
         if (url.pathname === '/api/auth/login/2fa') {
           const challenge = String(input.challenge ?? '').trim()
           if (!challenge || challenge.length > 4096) throw validationError('两步验证会话无效')
           const code = normalizeCode(input.code, '动态验证码')
-          return authenticated(await routerAuth.login2FA(challenge, code), store, secure)
+          return authenticated(await routerAuth.login2FA(challenge, code), store, secure, publicBasePath)
         }
 
         const cookies = parseCookies(request.headers.get('cookie'))
@@ -90,8 +94,8 @@ export function createStudioAuthApp(options = {}) {
         }
         store.deleteSession(sessionToken)
         const response = json({ ok: true, data: { loggedOut: true } })
-        response.headers.append('Set-Cookie', clearCookie(SESSION_COOKIE, true, secure))
-        response.headers.append('Set-Cookie', clearCookie(CSRF_COOKIE, false, secure))
+        response.headers.append('Set-Cookie', clearCookie(SESSION_COOKIE, true, secure, publicBasePath))
+        response.headers.append('Set-Cookie', clearCookie(CSRF_COOKIE, false, secure, publicBasePath))
         return response
       } catch (error) {
         if (error instanceof RouterAuthError) {
@@ -117,7 +121,7 @@ const AUTH_POST_PATHS = new Set([
   '/api/auth/logout',
 ])
 
-function authenticated(data, store, secure) {
+function authenticated(data, store, secure, path) {
   const user = data?.user
   if (!user || typeof user !== 'object' || !user.subject || !user.email) throw protocolError()
   const session = store.createSession(user)
@@ -128,8 +132,8 @@ function authenticated(data, store, secure) {
       expiresAt: session.expiresAt,
     },
   })
-  response.headers.append('Set-Cookie', cookie(SESSION_COOKIE, session.sessionToken, true, secure))
-  response.headers.append('Set-Cookie', cookie(CSRF_COOKIE, session.csrfToken, false, secure, 'Strict'))
+  response.headers.append('Set-Cookie', cookie(SESSION_COOKIE, session.sessionToken, true, secure, path))
+  response.headers.append('Set-Cookie', cookie(CSRF_COOKIE, session.csrfToken, false, secure, path, 'Strict'))
   return response
 }
 
@@ -175,15 +179,15 @@ function parseCookies(header) {
   return result
 }
 
-function cookie(name, value, httpOnly, secure, sameSite = 'Lax') {
-  const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/', `SameSite=${sameSite}`, 'Max-Age=2592000']
+function cookie(name, value, httpOnly, secure, path, sameSite = 'Lax') {
+  const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${path}`, `SameSite=${sameSite}`, 'Max-Age=2592000']
   if (httpOnly) parts.push('HttpOnly')
   if (secure) parts.push('Secure')
   return parts.join('; ')
 }
 
-function clearCookie(name, httpOnly, secure) {
-  const parts = [`${name}=`, 'Path=/', 'SameSite=Lax', 'Max-Age=0']
+function clearCookie(name, httpOnly, secure, path) {
+  const parts = [`${name}=`, `Path=${path}`, 'SameSite=Lax', 'Max-Age=0']
   if (httpOnly) parts.push('HttpOnly')
   if (secure) parts.push('Secure')
   return parts.join('; ')

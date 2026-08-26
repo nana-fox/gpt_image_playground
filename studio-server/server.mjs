@@ -132,6 +132,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   })
   const authApp = createStudioAuthApp({
     publicOrigin: config.publicOrigin,
+    publicBasePath: config.publicBasePath,
     routerAuth,
     store,
     quota,

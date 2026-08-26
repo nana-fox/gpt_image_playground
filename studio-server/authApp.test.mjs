@@ -103,6 +103,7 @@ test('login creates only a Studio session and session lookup returns the local u
   const store = createStore()
   const app = createStudioAuthApp({
     publicOrigin: origin,
+    publicBasePath: '/tools/image-studio/',
     store,
     quota: {
       getBalance(userId) {
@@ -136,6 +137,7 @@ test('login creates only a Studio session and session lookup returns the local u
   assert.match(login.headers.getSetCookie()[0], /HttpOnly/)
   assert.match(login.headers.getSetCookie()[0], /Secure/)
   assert.match(login.headers.getSetCookie()[0], /SameSite=Lax/)
+  assert.match(login.headers.getSetCookie()[0], /Path=\/tools\/image-studio\//)
 
   const session = await app.handle(new Request(`${origin}/api/auth/session`, {
     headers: { Cookie: sessionCookie },
@@ -208,7 +210,12 @@ test('2FA challenge does not create a Studio session until verification succeeds
 test('logout requires the matching Studio session and CSRF pair', async () => {
   const store = createStore()
   const created = store.createSession(identity)
-  const app = createStudioAuthApp({ publicOrigin: origin, store, routerAuth: {} })
+  const app = createStudioAuthApp({
+    publicOrigin: origin,
+    publicBasePath: '/tools/image-studio/',
+    store,
+    routerAuth: {},
+  })
   const cookies = `nanafox_studio_session=${created.sessionToken}; nanafox_studio_csrf=${created.csrfToken}`
 
   const rejected = await app.handle(jsonRequest('/api/auth/logout', {}, {
@@ -222,6 +229,7 @@ test('logout requires the matching Studio session and CSRF pair', async () => {
   assert.equal(logout.status, 200)
   assert.equal(store.getSession(created.sessionToken), null)
   assert.equal(logout.headers.getSetCookie().length, 2)
+  assert.equal(logout.headers.getSetCookie().every((item) => item.includes('Path=/tools/image-studio/')), true)
 })
 
 test('unsafe requests and Router failures return bounded errors', async () => {
