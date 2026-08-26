@@ -4,7 +4,10 @@ import test from 'node:test'
 
 test('Studio container builds the Studio flavor and runs without root or bundled secrets', async () => {
   const source = await readFile(new URL('../deploy/studio.Dockerfile', import.meta.url), 'utf8')
+  const vite = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8')
   assert.match(source, /npm run build:studio/)
+  assert.match(source, /ARG STUDIO_BASE_PATH/)
+  assert.match(vite, /VITE_STUDIO_BASE_PATH/)
   assert.match(source, /STUDIO_STATIC_ROOT=\/app\/dist/)
   assert.match(source, /USER studio/)
   assert.match(source, /HEALTHCHECK/)
