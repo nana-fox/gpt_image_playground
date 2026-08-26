@@ -45,6 +45,7 @@ async function embedDefaultConfig(value: string) {
 export default defineConfig(async ({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const embedded = isNanafoxEmbedded(env.VITE_DEPLOYMENT_FLAVOR)
+  const studio = mode === 'nanafox-studio'
   const defaultApiUrl = await embedDefaultConfig(process.env.VITE_DEFAULT_API_URL ?? env.VITE_DEFAULT_API_URL ?? '')
   if (defaultApiUrl.startsWith('embedded-config:')) process.env.VITE_DEFAULT_API_URL = defaultApiUrl
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
@@ -52,6 +53,16 @@ export default defineConfig(async ({ command, mode }) => {
   return {
     plugins: [
       react(),
+      ...(studio ? [{
+        name: 'nanafox-studio-index',
+        transformIndexHtml(html: string) {
+          return html
+            .replace('<title>GPT Image Playground</title>', '<title>NanaFox Studio</title>')
+            .replace(/\s*<link rel="manifest"[^>]*>/g, '')
+            .replace(/\s*<link rel="apple-touch-icon"[^>]*>/g, '')
+            .replace(/\s*<link rel="icon" href="\.\/pwa-icon\.svg"[^>]*>/g, '')
+        },
+      }] : []),
       ...(embedded ? [{
         name: 'nanafox-embedded-index',
         transformIndexHtml(html: string) {
@@ -79,7 +90,13 @@ export default defineConfig(async ({ command, mode }) => {
     server: {
       host: true,
       proxy:
-        devProxyConfig?.enabled
+        studio
+          ? {
+              '/api': {
+                target: `http://127.0.0.1:${env.STUDIO_SERVER_PORT || '8788'}`,
+              },
+            }
+          : devProxyConfig?.enabled
           ? {
               [devProxyConfig.prefix]: {
                 target: devProxyConfig.target,

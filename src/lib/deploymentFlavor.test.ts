@@ -54,6 +54,7 @@ describe('deployment flavor', () => {
     expect(isEmbeddedFeatureEnabled('agent', false)).toBe(true)
     expect(shouldRegisterServiceWorker(true)).toBe(false)
     expect(shouldRegisterServiceWorker(false)).toBe(true)
+    expect(shouldRegisterServiceWorker(false, true)).toBe(false)
   })
 
   it('removes remote font imports only from embedded CSS', () => {

@@ -8,7 +8,9 @@ describe('NanaFox Studio product shell', () => {
   it('loads only in the Studio deployment flavor', () => {
     expect(mainSource).toContain('isNanafoxStudio')
     expect(mainSource).toContain("import('./studio/StudioApp')")
+    expect(mainSource).toContain("document.title = 'NanaFox Studio'")
     expect(viteSource).toContain("mode === 'nanafox-studio'")
+    expect(viteSource).toContain('nanafox-studio-index')
     expect(viteSource).toContain("'/api'")
   })
 
@@ -34,5 +36,6 @@ describe('NanaFox Studio product shell', () => {
     expect(source).not.toContain('setTimeout')
     expect(source).not.toContain('生成成功')
     expect(source).toContain('创作服务正在接入此账户')
+    expect(source).toContain('账户服务暂时不可用，请稍后重试')
   })
 })

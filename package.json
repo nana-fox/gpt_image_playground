@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:studio": "vite --mode nanafox-studio",
     "dev:studio-server": "node --watch studio-server/server.mjs",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
+    "build:studio": "tsc -b && vite build --mode nanafox-studio",
     "build:embedded": "tsc -b && vite build --mode nanafox-embedded",
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run src",
+    "test:watch": "vitest src",
     "test:studio-server": "node --test --experimental-test-coverage studio-server/*.test.mjs"
   },
   "dependencies": {

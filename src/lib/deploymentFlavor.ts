@@ -50,8 +50,8 @@ export function isEmbeddedFeatureEnabled(_feature: EmbeddedFeature, embedded = i
   return !embedded
 }
 
-export function shouldRegisterServiceWorker(embedded = isNanafoxEmbedded()) {
-  return !embedded
+export function shouldRegisterServiceWorker(embedded = isNanafoxEmbedded(), studio = isNanafoxStudio()) {
+  return !embedded && !studio
 }
 
 export function stripEmbeddedRemoteCssImports(css: string, embedded = isNanafoxEmbedded()) {

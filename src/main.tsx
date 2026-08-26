@@ -12,7 +12,7 @@ import {
   getEmbeddedSessionState,
   initializeEmbeddedContext,
 } from './lib/embeddedSession'
-import { isNanafoxEmbedded, shouldRegisterServiceWorker } from './lib/deploymentFlavor'
+import { isNanafoxEmbedded, isNanafoxStudio, shouldRegisterServiceWorker } from './lib/deploymentFlavor'
 
 function configureServiceWorker() {
   if (!('serviceWorker' in navigator)) return
@@ -32,6 +32,18 @@ function configureServiceWorker() {
 }
 
 async function start() {
+  if (isNanafoxStudio()) {
+    document.title = 'NanaFox Studio'
+    configureServiceWorker()
+    const { default: StudioApp } = await import('./studio/StudioApp')
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <StudioApp />
+      </StrictMode>,
+    )
+    return
+  }
+
   const embeddedContext = initializeEmbeddedContext()
   if (embeddedContext?.theme !== 'dark' && embeddedContext?.theme !== 'light') {
     const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
