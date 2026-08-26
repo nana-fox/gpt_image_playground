@@ -53,6 +53,11 @@ export function createStudioApp(options) {
   return {
     handle(request) {
       const path = new URL(request.url).pathname
+      if (request.method === 'GET' && path === '/api/health') {
+        return Response.json({ ok: true, service: 'nanafox-studio' }, {
+          headers: { 'Cache-Control': 'no-store' },
+        })
+      }
       const generationPath = path === '/api/generations'
         || path.startsWith('/api/generations/')
         || path.startsWith('/api/artworks/')
