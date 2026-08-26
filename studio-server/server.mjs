@@ -20,6 +20,7 @@ export function readStudioServerConfig(env = process.env) {
   const routerKeyId = required(env.ROUTER_AUTH_KEY_ID, 'ROUTER_AUTH_KEY_ID')
   const routerSecret = required(env.ROUTER_AUTH_CURRENT_SECRET, 'ROUTER_AUTH_CURRENT_SECRET')
   const publicOrigin = required(env.STUDIO_PUBLIC_ORIGIN, 'STUDIO_PUBLIC_ORIGIN')
+  const publicBasePath = normalizeBasePath(env.STUDIO_PUBLIC_BASE_PATH ?? '/', 'STUDIO_PUBLIC_BASE_PATH')
   const database = required(env.STUDIO_SESSION_DATABASE, 'STUDIO_SESSION_DATABASE')
   const generationEnabled = parseBoolean(env.STUDIO_GENERATION_ENABLED, 'STUDIO_GENERATION_ENABLED')
   const port = env.STUDIO_PORT ? Number(env.STUDIO_PORT) : 8788
@@ -30,6 +31,7 @@ export function readStudioServerConfig(env = process.env) {
     routerKeyId,
     routerSecret,
     publicOrigin,
+    publicBasePath,
     database,
     generationEnabled,
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
@@ -165,6 +167,7 @@ function createGenerationRuntime(config, sessions, quota, tasks) {
   return {
     app: createStudioGenerationApp({
       publicOrigin: config.publicOrigin,
+      publicBasePath: config.publicBasePath,
       sessions,
       generations,
       tasks,
@@ -185,6 +188,14 @@ function parseBoolean(value, name) {
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   throw new Error(`${name} must be true or false`)
+}
+
+function normalizeBasePath(value, name) {
+  const path = String(value).trim()
+  if (!path.startsWith('/') || !path.endsWith('/') || path.includes('//') || path.includes('?') || path.includes('#')) {
+    throw new Error(`${name} must start and end with /`)
+  }
+  return path
 }
 
 async function serveStatic(root, pathname, method) {

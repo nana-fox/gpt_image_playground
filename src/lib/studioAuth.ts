@@ -1,3 +1,5 @@
+import { studioApiPath } from './studioApi'
+
 export interface StudioUser {
   id: string
   identitySubject: string
@@ -28,7 +30,7 @@ export class StudioAuthError extends Error {
 }
 
 export function sendStudioVerifyCode(email: string, request: typeof fetch = fetch) {
-  return post('/api/auth/send-verify-code', { email }, request)
+  return post(studioApiPath('auth/send-verify-code'), { email }, request)
 }
 
 export function registerStudio(input: {
@@ -36,11 +38,11 @@ export function registerStudio(input: {
   password: string
   verifyCode: string
 }, request: typeof fetch = fetch): Promise<StudioSession> {
-  return post('/api/auth/register', input, request).then(normalizeSession)
+  return post(studioApiPath('auth/register'), input, request).then(normalizeSession)
 }
 
 export function loginStudio(email: string, password: string, request: typeof fetch = fetch): Promise<StudioLoginResult> {
-  return post('/api/auth/login', { email, password }, request).then((data) => {
+  return post(studioApiPath('auth/login'), { email, password }, request).then((data) => {
     if (data.requires2FA === true && typeof data.challenge === 'string' && data.challenge) {
       return { requires2FA: true as const, challenge: data.challenge }
     }
@@ -49,16 +51,16 @@ export function loginStudio(email: string, password: string, request: typeof fet
 }
 
 export function loginStudio2FA(challenge: string, code: string, request: typeof fetch = fetch): Promise<StudioSession> {
-  return post('/api/auth/login/2fa', { challenge, code }, request).then(normalizeSession)
+  return post(studioApiPath('auth/login/2fa'), { challenge, code }, request).then(normalizeSession)
 }
 
 export function getStudioSession(request: typeof fetch = fetch): Promise<StudioSession> {
-  return call('/api/auth/session', { credentials: 'same-origin' }, request).then(normalizeSession)
+  return call(studioApiPath('auth/session'), { credentials: 'same-origin' }, request).then(normalizeSession)
 }
 
 export function logoutStudio(request: typeof fetch = fetch) {
   const csrf = readStudioCookie('nanafox_studio_csrf')
-  return post('/api/auth/logout', {}, request, csrf ? { 'X-CSRF-Token': csrf } : undefined)
+  return post(studioApiPath('auth/logout'), {}, request, csrf ? { 'X-CSRF-Token': csrf } : undefined)
 }
 
 async function post(

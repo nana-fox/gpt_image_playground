@@ -9,6 +9,7 @@ const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high'])
 
 export function createStudioGenerationApp(options = {}) {
   const publicOrigin = normalizeOrigin(options.publicOrigin)
+  const publicBasePath = normalizeBasePath(options.publicBasePath ?? '/')
   const sessions = options.sessions
   const generations = options.generations
   const tasks = options.tasks
@@ -23,14 +24,14 @@ export function createStudioGenerationApp(options = {}) {
 
       try {
         if (request.method === 'GET' && url.pathname === '/api/generations') {
-          return json({ ok: true, data: tasks.listTasks(session.user.id).map(publicTask) })
+          return json({ ok: true, data: tasks.listTasks(session.user.id).map((task) => publicTask(task, publicBasePath)) })
         }
 
         const taskMatch = url.pathname.match(/^\/api\/generations\/([A-Za-z0-9_-]+)$/)
         if (request.method === 'GET' && taskMatch) {
           const task = tasks.getTask(session.user.id, taskMatch[1])
           if (!task) return jsonError(404, 'NOT_FOUND', '找不到这个创作任务')
-          return json({ ok: true, data: publicTask(task) })
+          return json({ ok: true, data: publicTask(task, publicBasePath) })
         }
 
         const artworkMatch = url.pathname.match(/^\/api\/artworks\/([A-Za-z0-9_-]+)$/)
@@ -72,7 +73,7 @@ export function createStudioGenerationApp(options = {}) {
         const key = String(request.headers.get('idempotency-key') ?? '').trim()
         if (!key || key.length > 200) return jsonError(400, 'INVALID_IDEMPOTENCY_KEY', '创作请求标识无效')
         const task = await generations.generate(session.user, input, key)
-        return json({ ok: true, data: publicTask(task) }, 201)
+        return json({ ok: true, data: publicTask(task, publicBasePath) }, 201)
       } catch (error) {
         if (error instanceof GenerationError) return jsonError(error.status, error.reason, error.message)
         if (error instanceof TaskStoreError) return jsonError(409, error.reason, error.message)
@@ -124,7 +125,7 @@ function normalizeInput(value) {
   return input
 }
 
-function publicTask(task) {
+function publicTask(task, publicBasePath) {
   const value = {
     id: task.id,
     input: task.input,
@@ -135,7 +136,7 @@ function publicTask(task) {
     output: null,
   }
   if (task.output) {
-    value.output = { url: task.output.url }
+    value.output = { url: `${publicBasePath}api/artworks/${task.id}` }
     if (task.output.revisedPrompt) value.output.revisedPrompt = task.output.revisedPrompt
     if (task.output.usage) value.output.usage = task.output.usage
   }
@@ -181,6 +182,14 @@ function normalizeOrigin(value) {
     throw new Error('Studio public origin must be an origin')
   }
   return url.origin
+}
+
+function normalizeBasePath(value) {
+  const path = String(value).trim()
+  if (!path.startsWith('/') || !path.endsWith('/') || path.includes('//') || path.includes('?') || path.includes('#')) {
+    throw new Error('Studio public base path is invalid')
+  }
+  return path
 }
 
 function requestError(status, reason, message) {

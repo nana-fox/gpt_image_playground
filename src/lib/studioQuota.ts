@@ -1,3 +1,5 @@
+import { studioApiPath } from './studioApi'
+
 export interface StudioQuotaBalance {
   free: {
     eligible: boolean
@@ -14,7 +16,7 @@ export interface StudioQuotaBalance {
 export async function getStudioQuota(request: typeof fetch = fetch): Promise<StudioQuotaBalance> {
   let response
   try {
-    response = await request('/api/quota', { credentials: 'same-origin' })
+    response = await request(studioApiPath('quota'), { credentials: 'same-origin' })
   } catch {
     throw new Error('额度服务暂时不可用')
   }

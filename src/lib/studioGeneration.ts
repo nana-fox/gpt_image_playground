@@ -1,4 +1,5 @@
 import { readStudioCookie } from './studioAuth'
+import { studioApiPath } from './studioApi'
 
 export type StudioGenerationInput = {
   prompt: string
@@ -37,7 +38,7 @@ export function createStudioGeneration(
   idempotencyKey: string,
   request: typeof fetch = fetch,
 ) {
-  return call('/api/generations', {
+  return call(studioApiPath('generations'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -50,7 +51,7 @@ export function createStudioGeneration(
 }
 
 export function listStudioGenerations(request: typeof fetch = fetch) {
-  return call('/api/generations', { credentials: 'same-origin' }, request).then((data) => {
+  return call(studioApiPath('generations'), { credentials: 'same-origin' }, request).then((data) => {
     if (!Array.isArray(data)) throw protocolError()
     return data.map(normalizeTask)
   })
@@ -103,7 +104,7 @@ function normalizeTask(value: unknown): StudioGenerationTask {
     || !(task.errorReason === null || typeof task.errorReason === 'string')
     || typeof task.createdAt !== 'string'
     || typeof task.updatedAt !== 'string'
-    || !(output === null || (output && typeof output.url === 'string' && output.url.startsWith('/api/artworks/')))
+    || !(output === null || (output && typeof output.url === 'string' && output.url.startsWith(studioApiPath('artworks/'))))
   ) {
     throw protocolError()
   }
