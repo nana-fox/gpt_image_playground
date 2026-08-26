@@ -11,7 +11,8 @@
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:studio-server": "node --test --experimental-test-coverage studio-server/*.test.mjs"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.0",
