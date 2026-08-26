@@ -95,4 +95,43 @@ describe('parameter compatibility', () => {
 
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '2048x2048' }, settings).size).toBe('2048x2048')
   })
+
+  it('normalizes numeric image controls before submitting', () => {
+    const profile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [profile],
+      activeProfileId: profile.id,
+    })
+
+    expect(normalizeParamsForSettings({
+      ...DEFAULT_PARAMS,
+      output_format: 'jpeg',
+      output_compression: 120.6,
+      n: 2.8,
+    }, settings)).toMatchObject({
+      output_compression: 100,
+      n: 2,
+    })
+    expect(normalizeParamsForSettings({
+      ...DEFAULT_PARAMS,
+      output_format: 'webp',
+      output_compression: -4,
+    }, settings).output_compression).toBe(0)
+  })
+
+  it('disables transparent output when the selected format cannot carry it', () => {
+    const profile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [profile],
+      activeProfileId: profile.id,
+    })
+
+    expect(normalizeParamsForSettings({
+      ...DEFAULT_PARAMS,
+      output_format: 'jpeg',
+      transparent_output: true,
+    }, settings).transparent_output).toBe(false)
+  })
 })
