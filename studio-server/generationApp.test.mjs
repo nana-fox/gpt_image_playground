@@ -1,0 +1,163 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { createStudioGenerationApp } from './generationApp.mjs'
+import { GenerationError } from './generationService.mjs'
+
+const origin = 'https://studio.nanafox.com'
+const user = { id: 'local-user', email: 'creator@example.com', displayName: 'Creator' }
+const cookie = 'nanafox_studio_session=session-1; nanafox_studio_csrf=csrf-1'
+const task = {
+  id: 'task-1',
+  userId: user.id,
+  idempotencyKey: 'request-1',
+  input: { prompt: '月光下的银色狐狸', size: '1024x1024', quality: 'high' },
+  status: 'succeeded',
+  reservationId: 'reservation-1',
+  output: { key: `${user.id}/task-1.png`, url: '/api/artworks/task-1' },
+  errorReason: null,
+  createdAt: '2026-08-26T12:00:00.000Z',
+  updatedAt: '2026-08-26T12:01:00.000Z',
+}
+
+function createSessions() {
+  return {
+    getSession(token) {
+      return token === 'session-1' ? { user, expiresAt: '2026-09-26T12:00:00.000Z' } : null
+    },
+    verifyCsrf(token, value) {
+      return token === 'session-1' && value === 'csrf-1'
+    },
+  }
+}
+
+function createApp(overrides = {}) {
+  return createStudioGenerationApp({
+    publicOrigin: origin,
+    sessions: createSessions(),
+    generations: { generate: async () => task },
+    tasks: {
+      getTask: (userId, id) => userId === user.id && id === task.id ? task : null,
+      listTasks: (userId) => userId === user.id ? [task] : [],
+    },
+    outputs: {
+      read: async () => ({ bytes: Buffer.from('png-bytes'), mimeType: 'image/png' }),
+    },
+    ...overrides,
+  })
+}
+
+function request(path, options = {}) {
+  const headers = {
+    Cookie: cookie,
+    ...options.headers,
+  }
+  if (options.body !== undefined) {
+    headers.Origin = options.origin ?? origin
+    headers['Content-Type'] = 'application/json'
+    headers['X-CSRF-Token'] = options.csrf ?? 'csrf-1'
+  }
+  return new Request(`${origin}${path}`, {
+    method: options.method ?? (options.body === undefined ? 'GET' : 'POST'),
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  })
+}
+
+test('authenticated generation requests enforce CSRF and idempotency', async () => {
+  let captured
+  const app = createApp({
+    generations: {
+      async generate(actualUser, input, key) {
+        captured = { actualUser, input, key }
+        return task
+      },
+    },
+  })
+  const response = await app.handle(request('/api/generations', {
+    headers: { 'Idempotency-Key': 'request-1' },
+    body: task.input,
+  }))
+
+  assert.equal(response.status, 201)
+  assert.deepEqual(captured, { actualUser: user, input: task.input, key: 'request-1' })
+  const payload = await response.json()
+  assert.equal(payload.data.id, task.id)
+  assert.equal(JSON.stringify(payload).includes('reservation-1'), false)
+  assert.equal(JSON.stringify(payload).includes('local-user/task-1.png'), false)
+
+  const rejected = await app.handle(request('/api/generations', {
+    csrf: 'wrong',
+    headers: { 'Idempotency-Key': 'request-2' },
+    body: task.input,
+  }))
+  assert.equal(rejected.status, 403)
+})
+
+test('generation inputs and errors are bounded before reaching the provider', async () => {
+  const app = createApp({
+    generations: {
+      generate: async () => {
+        throw new GenerationError('额度不足', { status: 402, reason: 'QUOTA_EXHAUSTED' })
+      },
+    },
+  })
+
+  const invalid = await app.handle(request('/api/generations', {
+    headers: { 'Idempotency-Key': 'request-invalid' },
+    body: { prompt: 'test', size: '2048x2048', quality: 'high', model: 'browser-model' },
+  }))
+  assert.equal(invalid.status, 400)
+  assert.equal((await invalid.json()).error.reason, 'VALIDATION_ERROR')
+
+  const exhausted = await app.handle(request('/api/generations', {
+    headers: { 'Idempotency-Key': 'request-exhausted' },
+    body: task.input,
+  }))
+  assert.equal(exhausted.status, 402)
+  assert.deepEqual(await exhausted.json(), {
+    ok: false,
+    error: { reason: 'QUOTA_EXHAUSTED', message: '额度不足' },
+  })
+})
+
+test('task history and details expose only the authenticated user view', async () => {
+  const app = createApp()
+  const list = await app.handle(request('/api/generations'))
+  assert.equal(list.status, 200)
+  assert.deepEqual((await list.json()).data.map((item) => item.id), [task.id])
+
+  const detail = await app.handle(request('/api/generations/task-1'))
+  assert.equal(detail.status, 200)
+  assert.equal((await detail.json()).data.output.url, '/api/artworks/task-1')
+
+  const missing = await app.handle(request('/api/generations/task-other'))
+  assert.equal(missing.status, 404)
+})
+
+test('artwork bytes require ownership and a completed output', async () => {
+  let readOutput
+  const app = createApp({
+    outputs: {
+      async read(output) {
+        readOutput = output
+        return { bytes: Buffer.from('png-bytes'), mimeType: 'image/png' }
+      },
+    },
+  })
+  const response = await app.handle(request('/api/artworks/task-1'))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'image/png')
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'png-bytes')
+  assert.deepEqual(readOutput, task.output)
+
+  const missing = await app.handle(request('/api/artworks/task-other'))
+  assert.equal(missing.status, 404)
+})
+
+test('generation routes require a valid Studio session', async () => {
+  const app = createApp()
+  const response = await app.handle(new Request(`${origin}/api/generations`))
+  assert.equal(response.status, 401)
+  assert.equal((await response.json()).error.reason, 'UNAUTHENTICATED')
+})
