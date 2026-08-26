@@ -268,3 +268,47 @@ test('post-confirmation finalization failure never refunds a successful generati
   )
   assert.equal(events.some((event) => event[0] === 'fail'), false)
 })
+
+test('startup recovery finalizes charged outputs and removes released ones', async () => {
+  const events = []
+  const pending = [
+    { id: 'task-confirmed', reservationId: 'confirmed', output: { key: 'confirmed.png' } },
+    { id: 'task-reserved', reservationId: 'reserved', output: { key: 'reserved.png' } },
+    { id: 'task-released', reservationId: 'released', output: { key: 'released.png' } },
+  ]
+  const service = createGenerationService({
+    tasks: {
+      listFinalizationPending: () => pending,
+      succeed(id) {
+        events.push(['succeed', id])
+      },
+      fail(id, reason) {
+        events.push(['fail', id, reason])
+      },
+    },
+    quota: {
+      getReservation(id) {
+        return { id, source: 'free', status: id }
+      },
+      confirm(id) {
+        events.push(['confirm', id])
+        return { id, source: 'free', status: 'confirmed' }
+      },
+    },
+    images: {},
+    outputs: {
+      async remove(output) {
+        events.push(['remove', output.key])
+      },
+    },
+  })
+
+  await service.recoverPending()
+  assert.deepEqual(events, [
+    ['succeed', 'task-confirmed'],
+    ['confirm', 'reserved'],
+    ['succeed', 'task-reserved'],
+    ['remove', 'released.png'],
+    ['fail', 'task-released', 'GENERATION_FINALIZATION_EXPIRED'],
+  ])
+})
