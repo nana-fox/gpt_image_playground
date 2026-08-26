@@ -422,6 +422,31 @@ describe('mask draft lifecycle in store actions', () => {
     await clearImages()
   })
 
+  it('warns when explicit generation parameters differ from the actual output', async () => {
+    const { callImageApi } = await import('./lib/api')
+    vi.mocked(callImageApi).mockClear()
+    vi.mocked(callImageApi).mockResolvedValueOnce({
+      images: ['data:image/png;base64,actual-1122x1402'],
+      actualParams: { quality: 'auto' },
+      actualParamsList: [{ quality: 'auto' }],
+      revisedPrompts: [],
+    })
+    useStore.setState({
+      prompt: '做一个 iPhone 手机的超高清广告图',
+      params: { ...DEFAULT_PARAMS, size: '3840x2160', quality: 'high' },
+    })
+
+    await submitTask()
+    await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('done'))
+
+    expect(useStore.getState().showToast).toHaveBeenLastCalledWith(
+      '生成完成，共 1 张图片\n参数已调整：尺寸 3840x2160 → 1122x1402；质量 high → auto',
+      'info',
+    )
+    await clearTasks()
+    await clearImages()
+  })
+
   it('keeps API-returned actual size over decoded image size', async () => {
     const { callImageApi } = await import('./lib/api')
     vi.mocked(callImageApi).mockClear()
