@@ -17,10 +17,14 @@ export function normalizeParamsForSettings(
 ): TaskParams {
   const activeProfile = getActiveApiProfile(settings)
   const outputImageLimit = getOutputImageLimitForSettings(settings)
+  const outputCompression = params.output_compression == null || !Number.isFinite(params.output_compression)
+    ? DEFAULT_PARAMS.output_compression
+    : Math.min(100, Math.max(0, Math.round(params.output_compression)))
   const nextParams: TaskParams = {
     ...params,
     size: normalizeImageSize(params.size) || DEFAULT_PARAMS.size,
-    n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
+    output_compression: outputCompression,
+    n: Math.min(outputImageLimit, Math.max(1, Math.trunc(params.n || DEFAULT_PARAMS.n))),
   }
 
   if (isOpenAICompatibleProvider(settings, activeProfile.provider) && activeProfile.codexCli) {
@@ -37,6 +41,8 @@ export function normalizeParamsForSettings(
 
   if (nextParams.output_format === 'png') {
     nextParams.output_compression = DEFAULT_PARAMS.output_compression
+  } else {
+    nextParams.transparent_output = false
   }
 
   return nextParams
