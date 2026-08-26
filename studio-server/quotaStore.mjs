@@ -303,6 +303,12 @@ export function createQuotaStore(options = {}) {
       }
     },
 
+    getReservation(id) {
+      recoverExpired(clock().getTime())
+      const row = readReservation.get(String(id ?? ''))
+      return row ? mapReservation(row) : null
+    },
+
     confirm(id) {
       return finishReservation(db, readReservation, updateReservationStatus, restoreGrant, id, 'confirmed', clock().getTime())
     },

@@ -123,14 +123,15 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     store,
     quota,
   })
-  const generationApp = config.generationEnabled
+  const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
     : null
-  const app = createStudioApp({ authApp, generationApp })
+  const app = createStudioApp({ authApp, generationApp: generationRuntime?.app })
   const server = createStudioHttpServer({ publicOrigin: config.publicOrigin, app })
 
   return {
     server,
+    ready: generationRuntime?.ready ?? Promise.resolve(),
     close(callback) {
       server.close(() => {
         tasks.close()
@@ -150,13 +151,16 @@ function createGenerationRuntime(config, sessions, quota, tasks) {
     model: config.generation.model,
   })
   const generations = createGenerationService({ tasks, quota, images, outputs })
-  return createStudioGenerationApp({
-    publicOrigin: config.publicOrigin,
-    sessions,
-    generations,
-    tasks,
-    outputs,
-  })
+  return {
+    app: createStudioGenerationApp({
+      publicOrigin: config.publicOrigin,
+      sessions,
+      generations,
+      tasks,
+      outputs,
+    }),
+    ready: generations.recoverPending(),
+  }
 }
 
 function required(value, name) {
@@ -175,6 +179,7 @@ function parseBoolean(value, name) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const config = readStudioServerConfig()
   const runtime = createStudioRuntime(config)
+  await runtime.ready
   runtime.server.listen(config.port, config.host, () => {
     console.log(`NanaFox Studio server listening on ${config.host}:${config.port}`)
   })

@@ -75,6 +75,25 @@ export function createGenerationService(options = {}) {
         })
       }
     },
+
+    async recoverPending() {
+      for (const task of tasks.listFinalizationPending()) {
+        try {
+          const current = quota.getReservation(task.reservationId)
+          const reservation = current?.status === 'reserved'
+            ? quota.confirm(task.reservationId)
+            : current
+          if (reservation?.status === 'confirmed') {
+            tasks.succeed(task.id)
+            continue
+          }
+          await outputs.remove(task.output)
+          tasks.fail(task.id, 'GENERATION_FINALIZATION_EXPIRED')
+        } catch (error) {
+          console.error('Studio generation recovery failed', error)
+        }
+      }
+    },
   }
 }
 
