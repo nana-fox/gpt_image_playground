@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:studio-server": "node --watch studio-server/server.mjs",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
     "build:embedded": "tsc -b && vite build --mode nanafox-embedded",
