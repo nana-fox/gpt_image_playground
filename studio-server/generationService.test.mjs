@@ -58,6 +58,7 @@ test('generation service reserves, stores, confirms, then exposes a successful t
       },
       confirm(id) {
         events.push(['confirm', id])
+        return { id, source: 'free', status: 'confirmed' }
       },
       release: () => assert.fail('successful generation must not release quota'),
     },
@@ -244,6 +245,7 @@ test('post-confirmation finalization failure never refunds a successful generati
       reserve: () => ({ id: 'reservation-confirmed', source: 'free', status: 'reserved' }),
       confirm(id) {
         events.push(['confirm', id])
+        return { id, source: 'free', status: 'confirmed' }
       },
       release: () => assert.fail('confirmed generation must not be refunded'),
     },

@@ -42,7 +42,8 @@ export function createGenerationService(options = {}) {
           revisedPrompt: result.images[0].revisedPrompt,
           usage: result.usage,
         })
-        quota.confirm(reservation.id)
+        const confirmation = quota.confirm(reservation.id)
+        if (confirmation?.status !== 'confirmed') throw new Error('quota reservation was not confirmed')
         confirmed = true
         return tasks.succeed(created.task.id)
       } catch (error) {
