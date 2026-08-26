@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { dirname, extname, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
@@ -42,6 +43,7 @@ export function readStudioServerConfig(env = process.env) {
       artworkRoot: required(env.STUDIO_ARTWORK_ROOT, 'STUDIO_ARTWORK_ROOT'),
     }
   }
+  if (String(env.STUDIO_STATIC_ROOT ?? '').trim()) config.staticRoot = String(env.STUDIO_STATIC_ROOT).trim()
   return config
 }
 
@@ -77,6 +79,7 @@ export function createStudioApp(options) {
 export function createStudioHttpServer(options) {
   const app = options.app
   const publicOrigin = new URL(options.publicOrigin).origin
+  const staticRoot = options.staticRoot ? resolve(options.staticRoot) : null
 
   return createServer(async (incoming, outgoing) => {
     try {
@@ -91,7 +94,10 @@ export function createStudioHttpServer(options) {
         body: method === 'GET' || method === 'HEAD' ? undefined : Readable.toWeb(incoming),
         duplex: method === 'GET' || method === 'HEAD' ? undefined : 'half',
       })
-      const response = await app.handle(request)
+      const path = new URL(request.url).pathname
+      const response = staticRoot && (method === 'GET' || method === 'HEAD') && !path.startsWith('/api/')
+        ? await serveStatic(staticRoot, path, method)
+        : await app.handle(request)
       outgoing.statusCode = response.status
       response.headers.forEach((value, name) => {
         if (name !== 'set-cookie') outgoing.setHeader(name, value)
@@ -132,7 +138,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     ? createGenerationRuntime(config, store, quota, tasks)
     : null
   const app = createStudioApp({ authApp, generationApp: generationRuntime?.app })
-  const server = createStudioHttpServer({ publicOrigin: config.publicOrigin, app })
+  const server = createStudioHttpServer({ publicOrigin: config.publicOrigin, app, staticRoot: config.staticRoot })
 
   return {
     server,
@@ -179,6 +185,49 @@ function parseBoolean(value, name) {
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   throw new Error(`${name} must be true or false`)
+}
+
+async function serveStatic(root, pathname, method) {
+  let relative
+  try {
+    relative = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html'
+  } catch {
+    return new Response('Not found', { status: 404 })
+  }
+  const target = resolve(root, relative)
+  if (target !== root && !target.startsWith(`${root}${sep}`)) return new Response('Not found', { status: 404 })
+
+  try {
+    const bytes = await readFile(target)
+    return staticResponse(bytes, target, method)
+  } catch (error) {
+    if (error?.code !== 'ENOENT' || extname(relative)) return new Response('Not found', { status: 404 })
+    const index = resolve(root, 'index.html')
+    return staticResponse(await readFile(index), index, method)
+  }
+}
+
+function staticResponse(bytes, filename, method) {
+  const types = {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.jpg': 'image/jpeg',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ttf': 'font/ttf',
+    '.webp': 'image/webp',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+  }
+  const immutable = filename.includes(`${sep}assets${sep}`)
+  return new Response(method === 'HEAD' ? null : bytes, {
+    headers: {
+      'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-store',
+      'Content-Type': types[extname(filename).toLowerCase()] ?? 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
