@@ -63,7 +63,7 @@ export function hasActualSizeParam(params: ActualParams | undefined) {
 }
 
 export function addImageSizeParam(params: ActualParams | undefined, size: ImageSize | undefined): ActualParams | undefined {
-  if (hasActualSizeParam(params) || !size?.width || !size.height) return params
+  if (!size?.width || !size.height) return params
   return { ...(params ?? {}), size: `${size.width}x${size.height}` }
 }
 
@@ -85,7 +85,7 @@ export function deriveGalleryActualParams(
   const firstParams = firstActualParams(paramsList)
   return {
     ...resultParams,
-    size: resultParams?.size ?? firstParams?.size,
+    size: firstParams?.size ?? resultParams?.size,
     n: outputCount,
   }
 }

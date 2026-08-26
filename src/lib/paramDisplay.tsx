@@ -56,9 +56,9 @@ export function ActualValueBadge({ value, requestedValue, className = '', varian
       onTouchEnd={clearTouchTimer}
       onTouchCancel={clearTouchTimer}
     >
-      {requestedValue ? `${requestedValue} → ${value}` : value}
+      {value}
       <ViewportTooltip visible={tooltipVisible} className="whitespace-nowrap">
-        {requestedValue ? '请求值 → API 实际响应值' : 'API 实际响应值'}
+        {requestedValue ? `请求 ${requestedValue}，返回 ${value}` : 'API 实际响应值'}
       </ViewportTooltip>
     </span>
   )
