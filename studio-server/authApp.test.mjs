@@ -100,9 +100,21 @@ test('verification and registration stay behind the Studio backend', async () =>
 })
 
 test('login creates only a Studio session and session lookup returns the local user', async () => {
+  const store = createStore()
   const app = createStudioAuthApp({
     publicOrigin: origin,
-    store: createStore(),
+    store,
+    quota: {
+      getBalance(userId) {
+        assert.equal(userId, 'local-1')
+        return {
+          free: { eligible: true, enabled: true, limit: 3, used: 1, remaining: 2 },
+          credits: 0,
+          subscriber: false,
+          planId: null,
+        }
+      },
+    },
     routerAuth: {
       async login(email, password) {
         assert.equal(email, identity.email)
@@ -130,6 +142,33 @@ test('login creates only a Studio session and session lookup returns the local u
   }))
   assert.equal(session.status, 200)
   assert.equal((await session.json()).data.user.email, identity.email)
+
+  const quota = await app.handle(new Request(`${origin}/api/quota`, {
+    headers: { Cookie: sessionCookie },
+  }))
+  assert.equal(quota.status, 200)
+  assert.deepEqual(await quota.json(), {
+    ok: true,
+    data: {
+      free: { eligible: true, enabled: true, limit: 3, used: 1, remaining: 2 },
+      credits: 0,
+      subscriber: false,
+      planId: null,
+    },
+  })
+})
+
+test('quota balance requires a valid Studio session', async () => {
+  const app = createStudioAuthApp({
+    publicOrigin: origin,
+    store: createStore(),
+    routerAuth: {},
+    quota: { getBalance: () => assert.fail('quota store must not be called') },
+  })
+
+  const response = await app.handle(new Request(`${origin}/api/quota`))
+  assert.equal(response.status, 401)
+  assert.equal((await response.json()).error.reason, 'UNAUTHENTICATED')
 })
 
 test('2FA challenge does not create a Studio session until verification succeeds', async () => {
