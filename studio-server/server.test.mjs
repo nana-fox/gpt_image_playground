@@ -76,6 +76,15 @@ test('Studio app routes generation endpoints separately from account endpoints',
   assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation'])
 })
 
+test('Studio app exposes an unauthenticated health endpoint for deployment probes', async () => {
+  const app = createStudioApp({
+    authApp: { handle: async () => assert.fail('health must not reach account routes') },
+  })
+  const response = await app.handle(new Request('https://studio.nanafox.com/api/health'))
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { ok: true, service: 'nanafox-studio' })
+})
+
 test('HTTP adapter preserves Studio cookies and delegates the request', async (t) => {
   let captured
   const server = createStudioHttpServer({
