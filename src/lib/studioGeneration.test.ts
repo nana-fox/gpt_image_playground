@@ -10,7 +10,7 @@ import {
 
 const task = {
   id: 'task-1',
-  input: { prompt: '月光下的银色狐狸', size: '1024x1024', quality: 'high' },
+  input: { prompt: '月光下的银色狐狸', size: '1024x1024', quality: 'high' } as const,
   status: 'succeeded',
   errorReason: null,
   createdAt: '2026-08-26T12:00:00.000Z',

@@ -10,6 +10,13 @@ import {
   sendStudioVerifyCode,
   type StudioSession,
 } from '../lib/studioAuth'
+import {
+  createStudioGeneration,
+  listStudioGenerations,
+  StudioGenerationError,
+  type StudioGenerationInput,
+  type StudioGenerationTask,
+} from '../lib/studioGeneration'
 import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
 
 type AuthMode = 'login' | 'register' | '2fa'
@@ -198,18 +205,24 @@ function StudioAuthPage({
 }
 
 function StudioAccountReady({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
-  const [busy, setBusy] = useState(false)
+  const [prompt, setPrompt] = useState('')
+  const [size, setSize] = useState<StudioGenerationInput['size']>('1024x1024')
+  const [quality, setQuality] = useState<StudioGenerationInput['quality']>('medium')
+  const [generating, setGenerating] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState('')
   const [quota, setQuota] = useState<StudioQuotaBalance | null>()
+  const [tasks, setTasks] = useState<StudioGenerationTask[]>()
+  const [requestKey, setRequestKey] = useState('')
 
   useEffect(() => {
     let active = true
-    void getStudioQuota()
-      .then((value) => {
-        if (active) setQuota(value)
-      })
-      .catch(() => {
-        if (active) setQuota(null)
+    void Promise.allSettled([getStudioQuota(), listStudioGenerations()])
+      .then(([quotaResult, tasksResult]) => {
+        if (!active) return
+        setQuota(quotaResult.status === 'fulfilled' ? quotaResult.value : null)
+        setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : [])
+        if (tasksResult.status === 'rejected') setError('作品记录暂时无法读取')
       })
     return () => {
       active = false
@@ -217,7 +230,7 @@ function StudioAccountReady({ session, onLogout }: { session: StudioSession, onL
   }, [])
 
   const signOut = async () => {
-    setBusy(true)
+    setSigningOut(true)
     setError('')
     try {
       await logoutStudio()
@@ -225,46 +238,171 @@ function StudioAccountReady({ session, onLogout }: { session: StudioSession, onL
     } catch (err) {
       setError(err instanceof Error ? err.message : '退出失败')
     } finally {
-      setBusy(false)
+      setSigningOut(false)
     }
   }
 
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!prompt.trim()) return
+    setGenerating(true)
+    setError('')
+    const key = requestKey || crypto.randomUUID()
+    setRequestKey(key)
+    try {
+      const task = await createStudioGeneration({ prompt: prompt.trim(), size, quality }, key)
+      setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
+      setQuota(await getStudioQuota())
+      setRequestKey('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '这次创作没有完成，请稍后重试')
+      if (!(err instanceof StudioGenerationError) || err.reason !== 'NETWORK_ERROR') setRequestKey('')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const resetRequest = () => setRequestKey('')
+  const latest = tasks?.[0]
+
   return (
-    <main className="min-h-screen bg-[#05070a] text-white">
-      <header className="flex h-20 items-center justify-between border-b border-white/[0.08] px-6 sm:px-10">
-        <div className="flex items-center gap-3 text-lg font-semibold"><FoxMark />NanaFox <span className="-ml-2 font-normal text-white/60">Studio</span></div>
-        <button className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/[0.06]" type="button" onClick={() => void signOut()} disabled={busy}>退出登录</button>
-      </header>
-      <section className="mx-auto flex max-w-3xl flex-col items-center px-6 py-28 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-300/10 text-2xl text-emerald-300">✓</span>
-        <span className="mt-8 text-sm font-medium text-emerald-300">账户连接成功</span>
-        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em]">欢迎，{session.user.displayName || session.user.email}</h1>
-        <p className="mt-5 max-w-xl text-base leading-7 text-slate-400">登录、注册、邮箱验证和独立会话已经接通。创作服务正在接入此账户，完成额度与任务链路后才会开放生成入口。</p>
-        <div className="mt-10 grid w-full gap-4 text-left sm:grid-cols-2">
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">当前账户</span>
-            <p className="mt-2 truncate text-sm text-slate-200">{session.user.email}</p>
-          </div>
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">真实创作额度</span>
-            {quota === undefined ? (
-              <p className="mt-2 text-sm text-slate-400">正在读取真实额度…</p>
-            ) : quota === null ? (
-              <p className="mt-2 text-sm text-amber-200">额度暂时无法读取</p>
-            ) : quota.subscriber ? (
-              <p className="mt-2 text-sm text-slate-200">{quota.planId?.toUpperCase()} 套餐 · 剩余 {quota.credits} 次</p>
-            ) : quota.free.eligible && quota.free.enabled ? (
-              <p className="mt-2 text-sm text-slate-200">今日免费剩余 {quota.free.remaining}/{quota.free.limit} 次</p>
-            ) : (
-              <p className="mt-2 text-sm text-slate-200">免费体验暂未开放</p>
-            )}
-            {quota && !quota.subscriber && quota.credits > 0 && <p className="mt-1 text-xs text-slate-500">购买或订阅额度：{quota.credits} 次</p>}
-          </div>
+    <main data-studio-workspace className="min-h-screen bg-[#05070a] text-white">
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.08] bg-[#05070a]/90 px-4 backdrop-blur-xl sm:px-8">
+        <div className="flex items-center gap-3 text-base font-semibold sm:text-lg"><FoxMark />NanaFox <span className="-ml-2 font-normal text-white/60">Studio</span></div>
+        <nav className="hidden items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.035] p-1 text-sm sm:flex" aria-label="主导航">
+          <a className="rounded-lg bg-white/[0.09] px-4 py-2 text-white" href="#create">创作</a>
+          <a className="rounded-lg px-4 py-2 text-slate-400 transition hover:text-white" href="#works">作品</a>
+        </nav>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="hidden rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-300 sm:inline-flex">{quotaText(quota)}</span>
+          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-400 text-sm font-semibold text-slate-900 disabled:opacity-50" type="button" onClick={() => void signOut()} disabled={signingOut} title="退出登录" aria-label="退出登录">
+            {(session.user.displayName || session.user.email).slice(0, 1).toUpperCase()}
+          </button>
         </div>
-        {error && <p className="mt-5 text-sm text-red-300">{error}</p>}
+      </header>
+
+      <section id="create" className="mx-auto grid max-w-[1480px] gap-5 px-4 py-6 sm:px-8 lg:grid-cols-[390px_minmax(0,1fr)] lg:py-8">
+        <form className="rounded-3xl border border-white/[0.08] bg-[#0b0e13] p-5 shadow-2xl shadow-black/20 sm:p-6" onSubmit={submit}>
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#78a8ff]">Create</span>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">开始创作</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">描述你想看到的画面，模型与服务参数由后台统一管理。</p>
+          </div>
+
+          <label className="mt-7 block">
+            <span className="mb-2 block text-sm font-medium text-slate-300">画面描述</span>
+            <textarea className="min-h-40 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/50 focus:bg-white/[0.05] focus:ring-4 focus:ring-blue-400/10" value={prompt} onChange={(event) => { setPrompt(event.target.value); resetRequest() }} placeholder="例如：月光下的银色狐狸，站在安静的雪原上，电影感光影…" maxLength={10000} required />
+            <span className="mt-1 block text-right text-[11px] text-slate-600">{prompt.length}/10000</span>
+          </label>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-slate-300">画面比例</legend>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {([
+                ['1024x1024', '1:1', '方形'],
+                ['1536x1024', '3:2', '横图'],
+                ['1024x1536', '2:3', '竖图'],
+              ] as const).map(([value, ratio, label]) => (
+                <button key={value} className={`rounded-xl border px-3 py-3 text-left transition ${size === value ? 'border-blue-400/60 bg-blue-400/10 text-white' : 'border-white/[0.08] bg-white/[0.025] text-slate-400 hover:border-white/20'}`} type="button" onClick={() => { setSize(value); resetRequest() }}>
+                  <span className="block text-sm font-semibold">{ratio}</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-500">{label}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-slate-300">画面质量</legend>
+            <div className="mt-3 grid grid-cols-3 rounded-xl border border-white/[0.08] bg-white/[0.025] p-1">
+              {([['low', '快速'], ['medium', '标准'], ['high', '精细']] as const).map(([value, label]) => (
+                <button key={value} className={`rounded-lg px-3 py-2 text-sm transition ${quality === value ? 'bg-white/[0.1] text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`} type="button" onClick={() => { setQuality(value); resetRequest() }}>{label}</button>
+              ))}
+            </div>
+          </fieldset>
+
+          {error && <p className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
+
+          <button className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#78a8ff] to-[#8b77ff] font-semibold text-[#07090d] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45" type="submit" disabled={generating || !prompt.trim()}>
+            {generating && <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700/30 border-t-slate-900" />}
+            {generating ? '正在创作…' : '生成图像'}
+          </button>
+          <p className="mt-3 text-center text-xs text-slate-600">每次生成 1 张 · {quotaText(quota)}</p>
+        </form>
+
+        <div className="min-h-[560px] overflow-hidden rounded-3xl border border-white/[0.08] bg-[#090c11]">
+          {latest?.output ? (
+            <div className="relative flex h-full min-h-[560px] items-center justify-center bg-[radial-gradient(circle_at_50%_10%,rgba(90,126,255,0.12),transparent_44%)] p-4 sm:p-8">
+              <img className="max-h-[720px] w-auto max-w-full rounded-2xl object-contain shadow-2xl shadow-black/50" src={latest.output.url} alt={latest.input.prompt} />
+              <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-xl sm:inset-x-8 sm:bottom-8">
+                <p className="line-clamp-2 text-sm leading-6 text-slate-200">{latest.input.prompt}</p>
+                <p className="mt-1 text-xs text-slate-500">{latest.input.size} · {qualityName(latest.input.quality)}</p>
+              </div>
+            </div>
+          ) : latest && latest.status !== 'failed' ? (
+            <div className="flex min-h-[560px] flex-col items-center justify-center px-8 text-center">
+              <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-[#78a8ff]" />
+              <h2 className="mt-6 text-lg font-semibold">作品正在生成</h2>
+              <p className="mt-2 text-sm text-slate-500">完成后会自动保存在你的作品中。</p>
+            </div>
+          ) : (
+            <div className="relative flex min-h-[560px] flex-col items-center justify-center overflow-hidden px-8 text-center">
+              <div className="absolute h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+              <span className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-300/15 bg-blue-300/[0.07] text-3xl text-blue-200">✦</span>
+              <h2 className="relative mt-6 text-xl font-semibold">你的画布已经准备好</h2>
+              <p className="relative mt-2 max-w-sm text-sm leading-6 text-slate-500">写下一个具体的场景、主体与氛围，从第一张作品开始。</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section id="works" className="mx-auto max-w-[1480px] px-4 pb-16 pt-8 sm:px-8">
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#78a8ff]">Library</span>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">我的作品</h2>
+          </div>
+          <span className="text-xs text-slate-500">仅你自己可见</span>
+        </div>
+
+        {tasks === undefined ? (
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((item) => <div key={item} className="aspect-square animate-pulse rounded-2xl bg-white/[0.04]" />)}
+          </div>
+        ) : tasks.filter((task) => task.output).length ? (
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            {tasks.filter((task) => task.output).map((task) => (
+              <article key={task.id} className="group overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b0e13]">
+                <div className="aspect-square overflow-hidden bg-white/[0.025]"><img className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" src={task.output!.url} alt={task.input.prompt} loading="lazy" /></div>
+                <div className="p-3.5">
+                  <p className="line-clamp-1 text-sm text-slate-200">{task.input.prompt}</p>
+                  <p className="mt-1 text-[11px] text-slate-600">{new Date(task.createdAt).toLocaleDateString('zh-CN')} · {qualityName(task.input.quality)}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-6 rounded-2xl border border-dashed border-white/10 px-6 py-14 text-center text-sm text-slate-500">完成的作品会出现在这里。</div>
+        )}
       </section>
     </main>
   )
+}
+
+function quotaText(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '正在读取真实额度…'
+  if (quota === null) return '额度暂时无法读取'
+  if (quota.subscriber) return `${quota.planId?.toUpperCase()} 套餐 · 剩余 ${quota.credits} 次`
+  if (quota.free.eligible && quota.free.enabled) {
+    const paid = quota.credits > 0 ? ` · 购买或订阅额度 ${quota.credits} 次` : ''
+    return `今日免费剩余 ${quota.free.remaining}/${quota.free.limit} 次${paid}`
+  }
+  return quota.credits > 0 ? `购买或订阅额度 ${quota.credits} 次` : '免费体验暂未开放'
+}
+
+function qualityName(quality: StudioGenerationInput['quality']) {
+  if (quality === 'low') return '快速'
+  if (quality === 'high') return '精细'
+  return '标准'
 }
 
 function AuthField({ label, children }: { label: string, children: React.ReactNode }) {
