@@ -422,7 +422,7 @@ describe('mask draft lifecycle in store actions', () => {
     await clearImages()
   })
 
-  it('warns when explicit generation parameters differ from the actual output', async () => {
+  it('keeps successful completion feedback quiet when returned parameters differ', async () => {
     const { callImageApi } = await import('./lib/api')
     vi.mocked(callImageApi).mockClear()
     vi.mocked(callImageApi).mockResolvedValueOnce({
@@ -439,15 +439,12 @@ describe('mask draft lifecycle in store actions', () => {
     await submitTask()
     await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('done'))
 
-    expect(useStore.getState().showToast).toHaveBeenLastCalledWith(
-      '生成完成，共 1 张图片\n参数已调整：尺寸 3840x2160 → 1122x1402；质量 high → auto',
-      'info',
-    )
+    expect(useStore.getState().showToast).toHaveBeenLastCalledWith('生成完成，共 1 张图片', 'success')
     await clearTasks()
     await clearImages()
   })
 
-  it('keeps API-returned actual size over decoded image size', async () => {
+  it('keeps decoded image size over conflicting API metadata', async () => {
     const { callImageApi } = await import('./lib/api')
     vi.mocked(callImageApi).mockClear()
     vi.mocked(callImageApi).mockResolvedValueOnce({
@@ -465,8 +462,8 @@ describe('mask draft lifecycle in store actions', () => {
     await vi.waitFor(() => expect(useStore.getState().tasks[0]?.status).toBe('done'))
 
     const [task] = useStore.getState().tasks
-    expect(task.actualParams?.size).toBe('1024x1024')
-    expect(task.actualParamsByImage?.[task.outputImages[0]].size).toBe('1024x1024')
+    expect(task.actualParams?.size).toBe('1254x1254')
+    expect(task.actualParamsByImage?.[task.outputImages[0]].size).toBe('1254x1254')
     await clearTasks()
     await clearImages()
   })

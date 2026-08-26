@@ -79,12 +79,12 @@ describe('task lifecycle patches', () => {
 })
 
 describe('task actual params', () => {
-  it('fills missing sizes without overriding API-returned sizes', () => {
+  it('uses decoded image dimensions as the final size source of truth', () => {
     expect(addImageSizeParam({ output_format: 'png' }, { width: 1254, height: 1254 })).toEqual({
       output_format: 'png',
       size: '1254x1254',
     })
-    expect(addImageSizeParam({ size: '1024x1024' }, { width: 1254, height: 1254 })).toEqual({ size: '1024x1024' })
+    expect(addImageSizeParam({ size: '1024x1024' }, { width: 1254, height: 1254 })).toEqual({ size: '1254x1254' })
     expect(addImageSizeParam(undefined, { width: 0, height: 1254 })).toBeUndefined()
   })
 
@@ -104,7 +104,7 @@ describe('task actual params', () => {
       n: 1,
     })
     expect(deriveAgentImageActualParams({ size: '1024x1024' }, { width: 1536, height: 1024 })).toEqual({
-      size: '1024x1024',
+      size: '1536x1024',
       n: 1,
     })
   })
