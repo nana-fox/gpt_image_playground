@@ -54,7 +54,7 @@ test('free users receive three configurable daily generations by default', async
 test('operators can disable or change the daily free policy', async (t) => {
   const { quota, user } = await withQuota(t)
 
-  const updated = quota.setPolicy({ enabled: false, dailyLimit: 5, timezone: 'Asia/Shanghai' })
+  const updated = quota.setPolicy({ enabled: false, dailyLimit: 5, timezone: 'Asia/Shanghai', expectedVersion: 1 })
   assert.equal(updated.version, 2)
   assert.deepEqual(quota.getBalance(user.id).free, {
     eligible: true,
@@ -64,6 +64,11 @@ test('operators can disable or change the daily free policy', async (t) => {
     remaining: 0,
   })
   assert.throws(() => quota.reserve(user.id, 'disabled-free'), /额度不足/)
+  assert.throws(
+    () => quota.setPolicy({ enabled: true, dailyLimit: 9, timezone: 'Asia/Shanghai', expectedVersion: 1 }),
+    (error) => error instanceof QuotaError && error.reason === 'POLICY_VERSION_CONFLICT',
+  )
+  assert.equal(quota.getPolicy().dailyLimit, 5)
 })
 
 test('active subscribers consume subscription credits without stacking daily free uses', async (t) => {
@@ -129,6 +134,31 @@ test('reservations are idempotent and release restores the exact source', async 
   assert.equal(quota.getBalance(user.id).credits, 1)
 })
 
+test('credit references are idempotent but reject conflicting payment data', async (t) => {
+  const { quota, user } = await withQuota(t)
+  const first = quota.grantCredits(user.id, {
+    source: 'pack',
+    units: 10,
+    reference: 'payment-order-42',
+  })
+  const replay = quota.grantCredits(user.id, {
+    source: 'pack',
+    units: 10,
+    reference: 'payment-order-42',
+  })
+
+  assert.deepEqual(replay, first)
+  assert.equal(quota.getBalance(user.id).credits, 10)
+  assert.throws(
+    () => quota.grantCredits(user.id, {
+      source: 'pack',
+      units: 60,
+      reference: 'payment-order-42',
+    }),
+    (error) => error instanceof QuotaError && error.reason === 'CREDIT_GRANT_CONFLICT',
+  )
+})
+
 test('expired subscriptions and grants do not authorize a generation', async (t) => {
   const now = new Date('2026-08-26T12:00:00.000Z')
   const { quota, user } = await withQuota(t, { clock: () => now })
@@ -148,4 +178,25 @@ test('expired subscriptions and grants do not authorize a generation', async (t)
   assert.equal(quota.getBalance(user.id).subscriber, false)
   assert.equal(quota.getBalance(user.id).credits, 0)
   assert.throws(() => quota.reserve(user.id, 'expired-generation'), /额度不足/)
+})
+
+test('abandoned reservations expire and restore paid credits automatically', async (t) => {
+  let now = new Date('2026-08-26T12:00:00.000Z')
+  const { quota, user } = await withQuota(t, {
+    clock: () => now,
+    reservationTtlSeconds: 900,
+  })
+  quota.setPolicy({ enabled: false, dailyLimit: 3, timezone: 'Asia/Shanghai' })
+  quota.grantCredits(user.id, {
+    source: 'pack',
+    units: 2,
+    reference: 'timeout-pack',
+  })
+  const abandoned = quota.reserve(user.id, 'abandoned-generation')
+  assert.equal(quota.getBalance(user.id).credits, 1)
+
+  now = new Date('2026-08-26T12:15:01.000Z')
+  assert.equal(quota.getBalance(user.id).credits, 2)
+  assert.equal(quota.release(abandoned.id).status, 'released')
+  assert.equal(quota.reserve(user.id, 'next-generation').source, 'pack')
 })
