@@ -5,6 +5,7 @@ import {
   getDeploymentStorageName,
   isEmbeddedFeatureEnabled,
   isNanafoxEmbedded,
+  isNanafoxStudio,
   shouldRegisterServiceWorker,
   setEmbeddedStorageUserId,
   stripEmbeddedRemoteCssImports,
@@ -13,8 +14,16 @@ import {
 describe('deployment flavor', () => {
   it('keeps the upstream relative base by default', () => {
     expect(isNanafoxEmbedded('')).toBe(false)
+    expect(isNanafoxStudio('')).toBe(false)
     expect(getDeploymentBase('')).toBe('./')
     expect(getDeploymentStorageName('')).toBe('gpt-image-playground')
+  })
+
+  it('selects Studio without changing the embedded deployment', () => {
+    expect(isNanafoxStudio('nanafox-studio')).toBe(true)
+    expect(isNanafoxEmbedded('nanafox-studio')).toBe(false)
+    expect(getDeploymentBase('nanafox-studio')).toBe('/')
+    expect(getDeploymentStorageName('nanafox-studio')).toBe('nanafox-studio')
   })
 
   it('requires a trusted user before selecting embedded persistence', () => {
