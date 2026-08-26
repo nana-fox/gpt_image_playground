@@ -37,5 +37,8 @@ describe('NanaFox Studio product shell', () => {
     expect(source).not.toContain('生成成功')
     expect(source).toContain('创作服务正在接入此账户')
     expect(source).toContain('账户服务暂时不可用，请稍后重试')
+    expect(source).toContain('getStudioQuota')
+    expect(source).toContain('今日免费剩余')
+    expect(source).toContain('购买或订阅额度')
   })
 })
