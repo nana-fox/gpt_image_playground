@@ -57,7 +57,7 @@ export function getStudioSession(request: typeof fetch = fetch): Promise<StudioS
 }
 
 export function logoutStudio(request: typeof fetch = fetch) {
-  const csrf = readCookie('nanafox_studio_csrf')
+  const csrf = readStudioCookie('nanafox_studio_csrf')
   return post('/api/auth/logout', {}, request, csrf ? { 'X-CSRF-Token': csrf } : undefined)
 }
 
@@ -127,7 +127,7 @@ function normalizeSession(data: Record<string, unknown>): StudioSession {
   }
 }
 
-function readCookie(name: string) {
+export function readStudioCookie(name: string) {
   const prefix = `${name}=`
   return document.cookie
     .split(';')
