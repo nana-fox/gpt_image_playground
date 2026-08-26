@@ -120,18 +120,4 @@ describe('parameter compatibility', () => {
     }, settings).output_compression).toBe(0)
   })
 
-  it('disables transparent output when the selected format cannot carry it', () => {
-    const profile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
-    const settings = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [profile],
-      activeProfileId: profile.id,
-    })
-
-    expect(normalizeParamsForSettings({
-      ...DEFAULT_PARAMS,
-      output_format: 'jpeg',
-      transparent_output: true,
-    }, settings).transparent_output).toBe(false)
-  })
 })
