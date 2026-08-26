@@ -199,6 +199,38 @@ test('quota confirmation failure removes the orphaned output and releases the re
   assert.equal(events.some((event) => event[0] === 'fail'), true)
 })
 
+test('an expired reservation cannot publish an uncharged artwork', async () => {
+  const events = []
+  const service = createGenerationService({
+    tasks: createTaskStore(null, events),
+    quota: {
+      reserve: () => ({ id: 'reservation-expired', source: 'free', status: 'reserved' }),
+      confirm: () => ({ id: 'reservation-expired', source: 'free', status: 'released' }),
+      release(id) {
+        events.push(['release', id])
+      },
+    },
+    images: {
+      async generate() {
+        return { images: [{ base64: 'aW1hZ2U=', mimeType: 'image/png' }] }
+      },
+    },
+    outputs: {
+      async save() {
+        return { key: 'local-user/expired.png', url: '/api/artworks/expired' }
+      },
+      async remove(output) {
+        events.push(['remove', output.key])
+      },
+    },
+  })
+
+  await assert.rejects(service.generate(user, input, 'expired-reservation'), /没有扣除额度/)
+  assert.equal(events.some((event) => event[0] === 'remove'), true)
+  assert.equal(events.some((event) => event[0] === 'fail'), true)
+  assert.equal(events.some((event) => event[0] === 'succeed'), false)
+})
+
 test('post-confirmation finalization failure never refunds a successful generation', async () => {
   const events = []
   const tasks = createTaskStore(null, events)
