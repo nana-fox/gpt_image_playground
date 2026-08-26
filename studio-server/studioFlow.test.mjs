@@ -58,6 +58,8 @@ test('real HTTP flow logs in, consumes quota once, persists and serves the artwo
       artworkRoot: join(dir, 'artworks'),
     },
   })
+  assert.equal(runtime.ready instanceof Promise, true)
+  await runtime.ready
   await new Promise((resolve) => runtime.server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise((resolve) => runtime.close(resolve)))
   const address = runtime.server.address()
