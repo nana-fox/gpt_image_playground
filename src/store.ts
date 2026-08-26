@@ -55,6 +55,7 @@ import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
+import { getTaskParamMismatchSummary } from './lib/paramMismatch'
 import { createTransparentOutputMeta, getTransparentRequestParams, removeKeyedBackgroundFromDataUrl } from './lib/transparentImage'
 import { blobToDataUrl, fileToDataUrl } from './lib/dataUrl'
 import { cacheImage, cacheThumbnail, clearImageCaches, deleteCachedImage, deleteImageCacheEntry, ensureImageCached, scheduleThumbnailBackfill } from './lib/imageCache'
@@ -3676,8 +3677,12 @@ async function executeTask(taskId: string) {
     const completionMessage = failedCount > 0
       ? `生成完成：成功 ${outputIds.length} 张，失败 ${failedCount} 张`
       : `生成完成，共 ${outputIds.length} 张图片`
-    useStore.getState().showToast(completionMessage, failedCount > 0 ? 'error' : 'success')
-    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `${completionMessage}。`)
+    const mismatchSummary = getTaskParamMismatchSummary(task, actualParams)
+    const completionNotice = mismatchSummary
+      ? `${completionMessage}\n参数已调整：${mismatchSummary}`
+      : completionMessage
+    useStore.getState().showToast(completionNotice, failedCount > 0 ? 'error' : mismatchSummary ? 'info' : 'success')
+    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `${completionNotice}。`)
     const currentMask = useStore.getState().maskDraft
     if (
       maskDataUrl &&

@@ -13,11 +13,12 @@ interface ParamValueProps {
 
 interface ActualValueBadgeProps {
   value: string
+  requestedValue?: string
   className?: string
   variant?: 'highlight' | 'normal'
 }
 
-export function ActualValueBadge({ value, className = '', variant = 'highlight' }: ActualValueBadgeProps) {
+export function ActualValueBadge({ value, requestedValue, className = '', variant = 'highlight' }: ActualValueBadgeProps) {
   const [tooltipVisible, setTooltipVisible] = useState(false)
   const touchTimerRef = useRef<number | null>(null)
   const colorClass = variant === 'normal'
@@ -55,9 +56,9 @@ export function ActualValueBadge({ value, className = '', variant = 'highlight' 
       onTouchEnd={clearTouchTimer}
       onTouchCancel={clearTouchTimer}
     >
-      {value}
+      {requestedValue ? `${requestedValue} → ${value}` : value}
       <ViewportTooltip visible={tooltipVisible} className="whitespace-nowrap">
-        API 实际响应值
+        {requestedValue ? '请求值 → API 实际响应值' : 'API 实际响应值'}
       </ViewportTooltip>
     </span>
   )

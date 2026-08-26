@@ -11,7 +11,10 @@ function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
     inputImageIds: [],
     outputImages: [],
     status: 'done',
+    error: null,
     createdAt: 1,
+    finishedAt: 2,
+    elapsed: 1,
     ...overrides,
   }
 }
