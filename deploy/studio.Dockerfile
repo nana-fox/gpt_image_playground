@@ -1,5 +1,7 @@
 FROM node:24-alpine AS build
 
+ARG STUDIO_BASE_PATH=/
+ENV VITE_STUDIO_BASE_PATH=$STUDIO_BASE_PATH
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

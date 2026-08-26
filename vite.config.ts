@@ -46,6 +46,10 @@ export default defineConfig(async ({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const embedded = isNanafoxEmbedded(env.VITE_DEPLOYMENT_FLAVOR)
   const studio = mode === 'nanafox-studio'
+  const studioBase = env.VITE_STUDIO_BASE_PATH || '/'
+  if (studio && (!studioBase.startsWith('/') || !studioBase.endsWith('/'))) {
+    throw new Error('VITE_STUDIO_BASE_PATH must start and end with /')
+  }
   const defaultApiUrl = await embedDefaultConfig(process.env.VITE_DEFAULT_API_URL ?? env.VITE_DEFAULT_API_URL ?? '')
   if (defaultApiUrl.startsWith('embedded-config:')) process.env.VITE_DEFAULT_API_URL = defaultApiUrl
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
@@ -82,7 +86,7 @@ export default defineConfig(async ({ command, mode }) => {
       }] : []),
     ],
     publicDir: embedded ? false : 'public',
-    base: getDeploymentBase(env.VITE_DEPLOYMENT_FLAVOR),
+    base: studio ? studioBase : getDeploymentBase(env.VITE_DEPLOYMENT_FLAVOR),
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),
