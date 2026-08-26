@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
 import { createStudioApp, createStudioHttpServer, readStudioServerConfig } from './server.mjs'
@@ -128,4 +131,30 @@ test('HTTP adapter preserves Studio cookies and delegates the request', async (t
     'first=one; Path=/; HttpOnly',
     'second=two; Path=/',
   ])
+})
+
+test('HTTP adapter serves the built Studio frontend with SPA fallback', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'nanafox-studio-static-'))
+  await mkdir(join(root, 'assets'))
+  await writeFile(join(root, 'index.html'), '<main>NanaFox Studio</main>')
+  await writeFile(join(root, 'assets', 'app.js'), 'console.log("studio")')
+  t.after(async () => rm(root, { recursive: true, force: true }))
+  const server = createStudioHttpServer({
+    publicOrigin: 'http://127.0.0.1',
+    staticRoot: root,
+    app: { handle: async () => assert.fail('frontend requests must not reach the API app') },
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise((resolve) => server.close(resolve)))
+  const address = server.address()
+  const base = `http://127.0.0.1:${address.port}`
+
+  const home = await fetch(`${base}/`)
+  assert.equal(await home.text(), '<main>NanaFox Studio</main>')
+  assert.match(home.headers.get('content-type'), /text\/html/)
+  const asset = await fetch(`${base}/assets/app.js`)
+  assert.equal(await asset.text(), 'console.log("studio")')
+  assert.equal(asset.headers.get('cache-control'), 'public, max-age=31536000, immutable')
+  assert.equal(await (await fetch(`${base}/works/task-1`)).text(), '<main>NanaFox Studio</main>')
+  assert.equal((await fetch(`${base}/assets/missing.js`)).status, 404)
 })
