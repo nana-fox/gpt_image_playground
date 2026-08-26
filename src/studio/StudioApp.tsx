@@ -10,6 +10,7 @@ import {
   sendStudioVerifyCode,
   type StudioSession,
 } from '../lib/studioAuth'
+import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
 
 type AuthMode = 'login' | 'register' | '2fa'
 
@@ -199,6 +200,22 @@ function StudioAuthPage({
 function StudioAccountReady({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [quota, setQuota] = useState<StudioQuotaBalance | null>()
+
+  useEffect(() => {
+    let active = true
+    void getStudioQuota()
+      .then((value) => {
+        if (active) setQuota(value)
+      })
+      .catch(() => {
+        if (active) setQuota(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const signOut = async () => {
     setBusy(true)
     setError('')
@@ -223,9 +240,26 @@ function StudioAccountReady({ session, onLogout }: { session: StudioSession, onL
         <span className="mt-8 text-sm font-medium text-emerald-300">账户连接成功</span>
         <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em]">欢迎，{session.user.displayName || session.user.email}</h1>
         <p className="mt-5 max-w-xl text-base leading-7 text-slate-400">登录、注册、邮箱验证和独立会话已经接通。创作服务正在接入此账户，完成额度与任务链路后才会开放生成入口。</p>
-        <div className="mt-10 w-full rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5 text-left">
-          <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">当前账户</span>
-          <p className="mt-2 text-sm text-slate-200">{session.user.email}</p>
+        <div className="mt-10 grid w-full gap-4 text-left sm:grid-cols-2">
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5">
+            <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">当前账户</span>
+            <p className="mt-2 truncate text-sm text-slate-200">{session.user.email}</p>
+          </div>
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5">
+            <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">真实创作额度</span>
+            {quota === undefined ? (
+              <p className="mt-2 text-sm text-slate-400">正在读取真实额度…</p>
+            ) : quota === null ? (
+              <p className="mt-2 text-sm text-amber-200">额度暂时无法读取</p>
+            ) : quota.subscriber ? (
+              <p className="mt-2 text-sm text-slate-200">{quota.planId?.toUpperCase()} 套餐 · 剩余 {quota.credits} 次</p>
+            ) : quota.free.eligible && quota.free.enabled ? (
+              <p className="mt-2 text-sm text-slate-200">今日免费剩余 {quota.free.remaining}/{quota.free.limit} 次</p>
+            ) : (
+              <p className="mt-2 text-sm text-slate-200">免费体验暂未开放</p>
+            )}
+            {quota && !quota.subscriber && quota.credits > 0 && <p className="mt-1 text-xs text-slate-500">购买或订阅额度：{quota.credits} 次</p>}
+          </div>
         </div>
         {error && <p className="mt-5 text-sm text-red-300">{error}</p>}
       </section>
