@@ -816,6 +816,27 @@ describe('embedded gallery credential resolution', () => {
 
     expect(useStore.getState().tasks).toHaveLength(2)
   })
+
+  it('retries the requested controls instead of a previous adjusted result', async () => {
+    await loadEmbeddedKeys('12', vi.fn<typeof fetch>().mockResolvedValue(embeddedSessionResponse([
+      { id: 12, key: EMBEDDED_RUNTIME_KEY, name: 'Runtime Key' },
+    ])))
+    const sourceTask = task({
+      id: 'adjusted-task',
+      status: 'done',
+      params: { ...DEFAULT_PARAMS, size: '3840x2160', quality: 'high' },
+      actualParams: { size: '1122x1402', quality: 'auto' },
+    })
+    useStore.setState({ tasks: [sourceTask] })
+
+    await retryTask(sourceTask)
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+
+    expect(vi.mocked(callImageApi).mock.calls[0][0].params).toMatchObject({
+      size: '3840x2160',
+      quality: 'high',
+    })
+  })
 })
 
 describe('input persistence setting', () => {

@@ -49,7 +49,7 @@ describe('callImageApi', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('sends the approved embedded request to the same-origin Images endpoint with n=1', async () => {
+  it('sends approved embedded image controls unchanged to the same-origin Images endpoint', async () => {
     initializeEmbeddedContext(
       'https://router-test.nanafox.com/tools/image-playground/#launch=one-time-ticket',
       () => {},
@@ -71,7 +71,15 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: DEFAULT_SETTINGS,
       prompt: 'prompt',
-      params: { ...DEFAULT_PARAMS, n: 1 },
+      params: {
+        ...DEFAULT_PARAMS,
+        size: '3840x2160',
+        quality: 'high',
+        output_format: 'webp',
+        output_compression: 82,
+        moderation: 'low',
+        n: 1,
+      },
       inputImageDataUrls: [],
     })
 
@@ -84,6 +92,11 @@ describe('callImageApi', () => {
     )
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
     expect(body.model).toBe('gpt-image-2')
+    expect(body.size).toBe('3840x2160')
+    expect(body.quality).toBe('high')
+    expect(body.output_format).toBe('webp')
+    expect(body.output_compression).toBe(82)
+    expect(body.moderation).toBe('low')
     expect(body.n ?? 1).toBe(1)
   })
 
