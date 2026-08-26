@@ -1,6 +1,6 @@
 # NanaFox 图像创作 V1 实施计划
 
-状态：V1 已完成测试环境验收并于 2026-08-25 发布生产。用户入口与管理员入口已在路由、票据、菜单和页面职责上分离；生产当前使用 Playground `179c8eb` 与 Sub2API `6966a8f5c`，测试静态候选已于 2026-08-26 更新为 Playground `8bba7e8`。V1.0.1 正确性补丁已完成测试先行、生产备份、可回滚发布和服务端验收，后续工作按第 9 节的小步迭代顺序推进。
+状态：V1 已完成测试环境验收并于 2026-08-25 发布生产。用户入口与管理员入口已在路由、票据、菜单和页面职责上分离；生产与测试当前均使用 Playground `8bba7e8`，Sub2API 继续使用 `6966a8f5c`。V1.0.1 正确性补丁及生成结果参数展示补丁均已完成测试先行、可回滚发布和服务端验收，后续工作按第 9 节的小步迭代顺序推进。
 
 本文件是图像创作 V1 的单一实施依据。旧的嵌入适配基线仍由 `docs/nanafox-embedded-plan.md:1` 约束；模板、灵感库、用户状态、管理端、嵌入会话和服务端增量以本文件为准。
 
@@ -721,6 +721,24 @@ API 实测：普通用户 scoped session 返回 4 个首页模板和 24 个已�
 - 公网 `/tools/image-playground/`、新 JS/CSS 资源和测试 `/health` 返回 200；旧 `/tools/image-studio/` 返回 410；未认证用户与管理员模板接口返回 401。静态入口继续包含 CSP、`Referrer-Policy: no-referrer` 和 `X-Frame-Options: SAMEORIGIN`。
 - 发布前后测试、生产 Sub2API 容器 ID、镜像、启动时间和重启计数均未变化；生产 `/health` 返回 200，静态指针保持 `releases/179c8eb`。
 - Chrome 可以打开已登录的 `/custom/image-creation`，标题和路由正确，但嵌入页 DOM 与截图读取连续超时；没有把浏览器控制链路失败记作视觉验收通过。本次创建的测试标签页已关闭，人工视觉与真实生成仍作为进入生产前的显式验收项。
+
+### 8.17 生成结果参数展示补丁生产发布（2026-08-26）
+
+产品方完成测试环境人工生成验收并授权发布后，本轮只原子切换生产 Playground 静态指针；没有修改或重启 Sub2API，没有变更数据库、Caddy 和测试环境。
+
+| 项目 | 生产结果 | 回滚点 |
+|---|---|---|
+| Playground | `prod-current` → `releases/8bba7e8`；63 个文件、1,983,345 bytes，相对路径内容树 SHA-256 `68ab1bf98ea66936344f385d775d97b2d28f87929255ad18331137131943a76e` | `releases/179c8eb` |
+| Sub2API | `sub2api-prod` 继续使用 `sub2api:prod-image-creation-v1-6966a8f5c`，healthy，启动时间未变化，重启计数 0 | 本轮未变更 |
+| 测试隔离 | `current` 继续指向 `releases/8bba7e8`；`sub2api-test` healthy，启动时间未变化，重启计数 0 | 本轮未变更 |
+
+发布与验证证据：
+
+- 发布前重新执行 embedded 构建，生成 63 个文件；本地 `dist` 与服务器不可变制品的相对路径内容树 SHA-256 完全一致。
+- 生产 `/tools/image-playground/`、`index-oKyDd4FJ.js`、`index-D8tg7v8P.css` 和 `/health` 返回 200；旧 `/tools/image-studio/` 返回 410。
+- 未认证 `/api/v1/image-creation/templates` 与 `/api/v1/admin/image-creation/templates` 均返回 401；静态入口包含 CSP、`Referrer-Policy` 和 `X-Frame-Options`。
+- 发布前后测试、生产 Sub2API 容器 ID、启动时间和重启计数均未变化；没有执行生产付费生成，避免重复计费。
+- 原子切换的首次验证因脚本漏写 `/api/v1` 且使用绝对路径计算哈希而触发自动回滚；修正验证脚本后重新发布并全部通过，业务制品未发生变更。
 
 ## 剩余风险登记
 
