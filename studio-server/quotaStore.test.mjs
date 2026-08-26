@@ -200,3 +200,19 @@ test('abandoned reservations expire and restore paid credits automatically', asy
   assert.equal(quota.release(abandoned.id).status, 'released')
   assert.equal(quota.reserve(user.id, 'next-generation').source, 'pack')
 })
+
+test('reservation lookup applies expiry before generation recovery', async (t) => {
+  let now = new Date('2026-08-26T12:00:00.000Z')
+  const { quota, user } = await withQuota(t, {
+    clock: () => now,
+    reservationTtlSeconds: 900,
+  })
+  quota.setPolicy({ enabled: false, dailyLimit: 3, timezone: 'Asia/Shanghai' })
+  quota.grantCredits(user.id, { source: 'pack', units: 1, reference: 'recovery-pack' })
+  const reservation = quota.reserve(user.id, 'recovery-generation')
+  assert.equal(quota.getReservation(reservation.id).status, 'reserved')
+
+  now = new Date('2026-08-26T12:15:01.000Z')
+  assert.equal(quota.getReservation(reservation.id).status, 'released')
+  assert.equal(quota.getBalance(user.id).credits, 1)
+})
