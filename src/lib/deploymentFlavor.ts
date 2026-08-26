@@ -1,6 +1,7 @@
 import { readRuntimeEnv } from './runtimeEnv'
 
 export const NANAFOX_EMBEDDED_FLAVOR = 'nanafox-embedded'
+export const NANAFOX_STUDIO_FLAVOR = 'nanafox-studio'
 
 let embeddedStorageUserId = ''
 
@@ -11,11 +12,17 @@ export function isNanafoxEmbedded(flavor = readRuntimeEnv(import.meta.env?.VITE_
   return readRuntimeEnv(flavor) === NANAFOX_EMBEDDED_FLAVOR
 }
 
+export function isNanafoxStudio(flavor = readRuntimeEnv(import.meta.env?.VITE_DEPLOYMENT_FLAVOR)) {
+  return readRuntimeEnv(flavor) === NANAFOX_STUDIO_FLAVOR
+}
+
 export function getDeploymentBase(flavor = readRuntimeEnv(import.meta.env?.VITE_DEPLOYMENT_FLAVOR)) {
-  return isNanafoxEmbedded(flavor) ? '/tools/image-playground/' : './'
+  if (isNanafoxEmbedded(flavor)) return '/tools/image-playground/'
+  return isNanafoxStudio(flavor) ? '/' : './'
 }
 
 export function getDeploymentStorageName(flavor = readRuntimeEnv(import.meta.env?.VITE_DEPLOYMENT_FLAVOR)) {
+  if (isNanafoxStudio(flavor)) return 'nanafox-studio'
   if (!isNanafoxEmbedded(flavor)) return 'gpt-image-playground'
   if (!embeddedStorageUserId) throw new Error('嵌入存储缺少可信用户')
   return `gpt-image-playground-nanafox-embedded-u-${embeddedStorageUserId}`

@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('Studio auth client', () => {
   it('uses only same-origin Studio auth endpoints', async () => {
-    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+    const request = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({
       ok: true,
       data: { user, expiresAt: '2026-09-25T12:00:00.000Z' },
     }))
