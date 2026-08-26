@@ -31,12 +31,34 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     routerKeyId: 'studio-current',
     routerSecret: signingMaterial,
     publicOrigin: 'https://studio.nanafox.com',
+    publicBasePath: '/',
     database: '/var/lib/nanafox-studio/session.db',
     generationEnabled: false,
     host: '127.0.0.1',
     port: 8788,
   })
   assert.equal('VITE_ROUTER_AUTH_CURRENT_SECRET' in config, false)
+})
+
+test('Studio server accepts an isolated public base path', () => {
+  const config = readStudioServerConfig({
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://router-test.nanafox.com',
+    STUDIO_PUBLIC_BASE_PATH: '/tools/image-studio/',
+    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/session.db',
+  })
+
+  assert.equal(config.publicBasePath, '/tools/image-studio/')
+  assert.throws(() => readStudioServerConfig({
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://router-test.nanafox.com',
+    STUDIO_PUBLIC_BASE_PATH: 'tools/image-studio',
+    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/session.db',
+  }), /STUDIO_PUBLIC_BASE_PATH/)
 })
 
 test('enabled generation configuration fails closed without provider storage settings', () => {

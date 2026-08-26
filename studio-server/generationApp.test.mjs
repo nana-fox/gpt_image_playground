@@ -135,6 +135,13 @@ test('task history and details expose only the authenticated user view', async (
   assert.equal(missing.status, 404)
 })
 
+test('public artwork URLs stay inside the Studio deployment path', async () => {
+  const app = createApp({ publicBasePath: '/tools/image-studio/' })
+  const detail = await app.handle(request('/api/generations/task-1'))
+
+  assert.equal((await detail.json()).data.output.url, '/tools/image-studio/api/artworks/task-1')
+})
+
 test('artwork bytes require ownership and a completed output', async () => {
   let readOutput
   const app = createApp({
