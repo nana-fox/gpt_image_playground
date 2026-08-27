@@ -129,3 +129,47 @@ test('rejects invalid create keys before touching the store', async () => {
     (error) => error instanceof PaymentError && error.reason === 'VALIDATION_ERROR',
   )
 })
+
+test('polling reconciles a paid provider order when the callback was missed', async () => {
+  const pending = {
+    id: 'order-1',
+    userId: 'user-1',
+    outTradeNo: 'studio_order1',
+    status: 'pending',
+    provider: 'wxpay_native',
+    plan,
+    amountCents: 2900,
+    currency: 'CNY',
+    codeUrl: 'weixin://pay',
+    expiresAt: '2026-08-28T08:15:00.000Z',
+  }
+  const calls = []
+  const service = createPaymentService({
+    enabled: true,
+    provider: {
+      queryOrder: async (outTradeNo) => {
+        calls.push(['queryOrder', outTradeNo])
+        return {
+          status: 'success',
+          outTradeNo,
+          transactionId: 'wx-transaction-1',
+          amountCents: 2900,
+          currency: 'CNY',
+          appId: 'wx-studio-app',
+          mchId: '1900000001',
+        }
+      },
+    },
+    store: {
+      getUserOrder: async () => pending,
+      fulfillOrder: async (notification) => {
+        calls.push(['fulfillOrder', notification])
+        return { ...pending, status: 'completed', completedAt: now.toISOString() }
+      },
+    },
+  })
+
+  assert.equal((await service.getOrder('user-1', 'order-1')).status, 'completed')
+  assert.deepEqual(calls[0], ['queryOrder', 'studio_order1'])
+  assert.equal(calls[1][1].eventId, 'query:wx-transaction-1')
+})

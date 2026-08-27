@@ -105,6 +105,54 @@ test('verifies and decrypts a successful WeChat callback', () => {
   })
 })
 
+test('queries a merchant order and normalizes a successful transaction', async () => {
+  const body = JSON.stringify({
+    appid: 'wx-studio-app',
+    mchid: '1900000001',
+    out_trade_no: 'studio_20260828_order1',
+    transaction_id: '4200000000202608280000000001',
+    trade_state: 'SUCCESS',
+    amount: { total: 2900, currency: 'CNY' },
+  })
+  const nonce = 'fixed-query-response'
+  const signature = sign('RSA-SHA256', Buffer.from(`${timestamp}\n${nonce}\n${body}\n`), platform.privateKey).toString('base64')
+  const client = createWxpayClient({
+    appId: 'wx-studio-app',
+    mchId: '1900000001',
+    serialNo: 'MERCHANT-SERIAL',
+    privateKey: merchant.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    platformPublicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
+    platformSerialNo: 'PLATFORM-SERIAL',
+    apiV3Key,
+    notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+    clock: () => now,
+    nonce: () => 'fixed-query-nonce',
+    request: async (url, init) => {
+      assert.equal(init.method, 'GET')
+      assert.equal(new URL(url).pathname, '/v3/pay/transactions/out-trade-no/studio_20260828_order1')
+      assert.equal(new URL(url).searchParams.get('mchid'), '1900000001')
+      return new Response(body, {
+        headers: {
+          'Wechatpay-Timestamp': timestamp,
+          'Wechatpay-Nonce': nonce,
+          'Wechatpay-Serial': 'PLATFORM-SERIAL',
+          'Wechatpay-Signature': signature,
+        },
+      })
+    },
+  })
+
+  assert.deepEqual(await client.queryOrder('studio_20260828_order1'), {
+    status: 'success',
+    outTradeNo: 'studio_20260828_order1',
+    transactionId: '4200000000202608280000000001',
+    amountCents: 2900,
+    currency: 'CNY',
+    appId: 'wx-studio-app',
+    mchId: '1900000001',
+  })
+})
+
 test('rejects stale or unsigned callbacks before decrypting them', () => {
   const client = createClient()
   assert.throws(() => client.verifyNotification('{}', {}), (error) => error instanceof WxpayError && error.reason === 'PAYMENT_SIGNATURE_INVALID')
