@@ -329,7 +329,7 @@ function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addT
       if (task.output) setSelectedTask(task)
     } catch (err) {
       setError(err instanceof Error ? err.message : '这次创作没有完成，请稍后重试')
-      if (!(err instanceof StudioGenerationError) || err.reason !== 'NETWORK_ERROR') setRequestKey('')
+      if (!(err instanceof StudioGenerationError) || (err.reason !== 'NETWORK_ERROR' && err.reason !== 'GENERATION_FINALIZATION_PENDING')) setRequestKey('')
     } finally {
       setGenerating(false)
     }

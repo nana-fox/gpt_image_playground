@@ -37,14 +37,14 @@ export function createStudioGenerationApp(options = {}) {
         const artworkMatch = url.pathname.match(/^\/api\/artworks\/([A-Za-z0-9_-]+)$/)
         if (request.method === 'GET' && artworkMatch) {
           const task = await tasks.getTask(session.user.id, artworkMatch[1])
-          if (!task?.output || !['output_stored', 'succeeded'].includes(task.status)) {
+          if (!task?.output || task.status !== 'succeeded') {
             return jsonError(404, 'NOT_FOUND', '找不到这个作品')
           }
           try {
             const artwork = await outputs.read(task.output)
             return new Response(artwork.bytes, {
               headers: {
-                'Cache-Control': 'private, max-age=3600',
+                'Cache-Control': 'private, no-store',
                 'Content-Type': artwork.mimeType,
                 'Content-Length': String(artwork.bytes.length),
                 'X-Content-Type-Options': 'nosniff',
@@ -135,7 +135,7 @@ function publicTask(task, publicBasePath) {
     updatedAt: task.updatedAt,
     output: null,
   }
-  if (task.output) {
+  if (task.output && task.status === 'succeeded') {
     value.output = { url: `${publicBasePath}api/artworks/${task.id}` }
     if (task.output.revisedPrompt) value.output.revisedPrompt = task.output.revisedPrompt
     if (task.output.usage) value.output.usage = task.output.usage

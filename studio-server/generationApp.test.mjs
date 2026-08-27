@@ -155,6 +155,7 @@ test('artwork bytes require ownership and a completed output', async () => {
   const response = await app.handle(request('/api/artworks/task-1'))
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('content-type'), 'image/png')
+  assert.equal(response.headers.get('cache-control'), 'private, no-store')
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'png-bytes')
   assert.deepEqual(readOutput, task.output)
 
