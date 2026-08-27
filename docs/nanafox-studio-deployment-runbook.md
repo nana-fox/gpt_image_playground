@@ -234,17 +234,17 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
-| PostgreSQL 代码迁移 | 已完成并部署测试环境 | 71 个服务器测试中 PostgreSQL 用例未跳过且全部通过 |
+| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 003 已应用；支付与额度 PostgreSQL 集成测试通过 |
 | R2 Store 代码 | 已完成并部署测试环境 | 私有 PUT/GET/幂等/冲突/DELETE 合约通过 |
 | Cloudflare R2 订阅与测试 Bucket | 已完成 | 补未完成 multipart upload 清理，不设置全桶 30 天删除 |
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-9b7ce84-path` 运行于 8788；旧 `test-3f1cb6f` 容器保留为回滚点 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-25eb8d3-path` 运行于 8788；`9cb4617` 容器保留为当前回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
 | 浏览器验收 | 桌面与移动登录/注册通过 | 待使用真实 Router 账户完成登录、3 次额度、作品历史人工验收 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | 已实现 subject 白名单、CSRF、每日免费次数、用户查询、幂等加额和同事务审计；待登录管理员做页面级 200 人工验收 |
-| 支付、订阅与加量包 | 代码已完成，测试环境待更新 | 三个套餐默认停用、支付默认关闭；配置测试商户并完成真实小额验收后才能开放 |
+| 支付、订阅与加量包 | 代码与测试环境部署已完成 | 三个套餐默认停用、支付默认关闭；配置测试商户并完成真实小额验收后才能开放 |
 | 灵感运营配置 | 未实现 | 当前灵感为前端静态内容，收藏刷新会丢失；不把“每周更新”当真实运营能力 |
 | Router 身份接口限流 | 生产阻断 | Studio 注册、验证码、登录公开前补边缘限流与集中式账号/IP 限流 |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
@@ -274,3 +274,13 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 公网页面、静态资源、`/api/health`、`/api/ready` 为 200；未登录 `/api/admin/me`、`/api/auth/session` 为 401；容器以 `studio` 非 root 用户运行。
 - 真实浏览器在 1280×720 与 390×844 验证登录和注册布局；无效外部字体请求已删除，控制台只保留未登录 Session 探测的预期 401。
 - 管理员真实 Session 的页面级 200、一次每日额度修改和一次幂等加额仍需人工验收；当次版本未包含支付和套餐管理。后续版本即使代码已实现，在真实商户小额支付验收前仍不得声称商业闭环已完成。
+
+### 11.3 2026-08-28 支付基础版测试发布证据
+
+- Git commit：`25eb8d3`；容器镜像：`nanafox-studio:test-25eb8d3-path`；切换前版本保存为停止容器 `nanafox-studio-test-rollback-9cb4617-20260828`。
+- 切换前 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-payment-20260828-1645/`；SHA-256 与 `pg_restore -l` 校验通过。
+- 前端 normal/studio 构建通过，50 个文件、594 个测试通过；Studio 服务 95 个通过、1 个本地 R2 合约跳过，真实 PostgreSQL 行覆盖率 91.34%；运行镜像生产依赖审计为 0 个已知漏洞。
+- 暗部署先在 8790 完成 migration 003、健康/就绪、未登录权限和套餐草稿检查；真实 R2 PUT/GET/冲突/DELETE 合约 1/1 通过后才切换 8788。
+- 切换后原有 2 个测试用户、1 个生成任务、0 个额度记录保持不变；支付订单为 0，Plus/Pro/加量包均为停用草稿，`STUDIO_PAYMENT_ENABLED=false`。
+- 公网页面和静态资源、`/api/health`、`/api/ready` 为 200；未登录 Session、套餐和运营接口为 401；关闭渠道的微信回调为 503。Sub2API test/prod、PostgreSQL、Redis 未重启且保持 healthy。
+- Chrome 已确认目标 URL 与 `NanaFox Studio` 标题；扩展的截图/DOM 通道连续超时，因此本次不把桌面、移动和登录后套餐页记为视觉通过。真实商户小额支付及该视觉复验仍是开放收费前门禁。
