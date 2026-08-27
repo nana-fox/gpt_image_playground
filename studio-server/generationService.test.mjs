@@ -182,7 +182,7 @@ test('failed idempotent replays return the stable failure', async () => {
   )
 })
 
-test('quota confirmation failure removes the orphaned output and releases the reservation', async () => {
+test('ambiguous quota confirmation preserves the output for recovery', async () => {
   const events = []
   const service = createGenerationService({
     tasks: createTaskStore(null, events),
@@ -190,6 +190,10 @@ test('quota confirmation failure removes the orphaned output and releases the re
       reserve: () => ({ id: 'reservation-confirm-failure', source: 'pack', status: 'reserved' }),
       confirm() {
         throw new Error('database unavailable')
+      },
+      getReservation(id) {
+        events.push(['getReservation', id])
+        return { id, source: 'pack', status: 'reserved' }
       },
       release(id) {
         events.push(['release', id])
@@ -210,10 +214,12 @@ test('quota confirmation failure removes the orphaned output and releases the re
     },
   })
 
-  await assert.rejects(service.generate(user, input, 'confirm-failure'), /没有扣除额度/)
-  assert.equal(events.some((event) => event[0] === 'release'), true)
-  assert.equal(events.some((event) => event[0] === 'remove'), true)
-  assert.equal(events.some((event) => event[0] === 'fail'), true)
+  await assert.rejects(
+    service.generate(user, input, 'confirm-failure'),
+    (error) => error instanceof GenerationError && error.reason === 'GENERATION_FINALIZATION_PENDING',
+  )
+  assert.equal(events.some((event) => event[0] === 'getReservation'), true)
+  assert.equal(events.some((event) => ['release', 'remove', 'fail'].includes(event[0])), false)
 })
 
 test('an expired reservation cannot publish an uncharged artwork', async () => {

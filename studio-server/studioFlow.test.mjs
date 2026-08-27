@@ -57,7 +57,10 @@ test('real HTTP flow logs in, consumes quota once, persists and serves the artwo
       baseUrl: `${upstreamOrigin}/v1`,
       apiKey: ['sk', 'studio', 'flow', 'material'].join('-'),
       model: 'gpt-image-2',
-      artworkRoot: join(dir, 'artworks'),
+      storage: {
+        type: 'filesystem',
+        root: join(dir, 'artworks'),
+      },
     },
   })
   assert.equal(runtime.ready instanceof Promise, true)

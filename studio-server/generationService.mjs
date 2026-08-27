@@ -27,6 +27,7 @@ export function createGenerationService(options = {}) {
       let reservation = null
       let output = null
       let confirmed = false
+      let finalizationPending = false
       try {
         reservation = await quota.reserve(userId, key)
         await tasks.markReserved(created.task.id, reservation.id)
@@ -42,12 +43,28 @@ export function createGenerationService(options = {}) {
           revisedPrompt: result.images[0].revisedPrompt,
           usage: result.usage,
         })
-        const confirmation = await quota.confirm(reservation.id)
+        let confirmation
+        try {
+          confirmation = await quota.confirm(reservation.id)
+        } catch (error) {
+          let current = null
+          try {
+            current = await quota.getReservation(reservation.id)
+          } catch (lookupError) {
+            console.error('Studio quota confirmation lookup failed', lookupError)
+          }
+          if (current?.status === 'confirmed') {
+            confirmation = current
+          } else {
+            finalizationPending = !['released', 'expired'].includes(current?.status)
+            throw error
+          }
+        }
         if (confirmation?.status !== 'confirmed') throw new Error('quota reservation was not confirmed')
         confirmed = true
         return await tasks.succeed(created.task.id)
       } catch (error) {
-        if (confirmed) {
+        if (confirmed || finalizationPending) {
           throw new GenerationError('作品已生成，正在完成入库，请稍后刷新', {
             status: 503,
             reason: 'GENERATION_FINALIZATION_PENDING',

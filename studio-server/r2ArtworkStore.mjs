@@ -40,7 +40,7 @@ export function createR2ArtworkStore(options = {}) {
         return artworkMetadata(key, task, bytes, normalizeEtag(result.ETag))
       } catch (error) {
         if (error?.$metadata?.httpStatusCode !== 412) throw storageError(error)
-        const existing = await readObject(client, bucket, key)
+        const existing = await readObject(client, bucket, key, maxBytes)
         if (!existing.bytes.equals(bytes)) {
           throw new ArtworkStoreError('同一创作任务不能覆盖不同作品', 'OUTPUT_CONFLICT')
         }
@@ -49,7 +49,7 @@ export function createR2ArtworkStore(options = {}) {
     },
 
     async read(output) {
-      const result = await readObject(client, bucket, validateArtworkKey(output?.key))
+      const result = await readObject(client, bucket, validateArtworkKey(output?.key), maxBytes)
       return { bytes: result.bytes, mimeType: result.mimeType }
     },
 
@@ -65,12 +65,15 @@ export function createR2ArtworkStore(options = {}) {
   }
 }
 
-async function readObject(client, bucket, key) {
+async function readObject(client, bucket, key, maxBytes) {
   try {
     const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
     if (!result.Body?.transformToByteArray) throw new Error('R2 object body is missing')
+    if (Number(result.ContentLength) > maxBytes) throw new ArtworkStoreError('作品大小超出限制')
+    const bytes = Buffer.from(await result.Body.transformToByteArray())
+    if (bytes.length > maxBytes) throw new ArtworkStoreError('作品大小超出限制')
     return {
-      bytes: Buffer.from(await result.Body.transformToByteArray()),
+      bytes,
       mimeType: result.ContentType === 'image/png' ? result.ContentType : 'image/png',
       etag: normalizeEtag(result.ETag),
     }

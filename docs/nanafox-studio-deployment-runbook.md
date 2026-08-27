@@ -21,21 +21,21 @@
 ### 2.1 PostgreSQL
 
 - [ ] 只读核对现有实例版本、磁盘、备份、`max_connections` 和当前连接峰值。
-- [ ] 创建测试 database 与 role；role 只能连接 `nanafox_studio_test`。
+- [x] 创建测试 database `nanafox_studio_test` 与 role `nanafox_studio_test_app`；role 只拥有 Studio database 内对象，不拥有 Sub2API 表权限。
 - [ ] 创建生产 database 与 role；role 只能连接 `nanafox_studio`。
 - [ ] 为两个 role 分别生成随机密码，写入服务器 Secret 文件，不复制到仓库或工单。
 - [ ] 明确 PostgreSQL 容器/主机的备份目录和 NAS 加密同步目录。
 - [ ] 先在测试 database 运行 migration；核对 `studio_schema_migrations` 和表数量。
 
-不在 Studio migration 中创建 database/role；这些属于基础设施权限，由数据库管理员在发布时创建。Studio 应用只拥有自己数据库内 DML 和受控 DDL 权限。
+不在 Studio migration 中创建 database/role；这些属于基础设施权限，由数据库管理员在发布时创建。共享实例保留 PostgreSQL 默认 `PUBLIC CONNECT`，不为一句“只能连接”全局撤权影响 Sub2API；安全边界是 Studio role 不拥有其他 database/schema/table 对象权限。
 
 ### 2.2 Cloudflare R2
 
-- [ ] 创建私有 Standard Bucket `nanafox-studio-artworks-test`，Location Hint 选 APAC。
+- [x] 创建私有 Standard Bucket `nanafox-studio-artworks-test`；Cloudflare 自动位置确认为亚太地区。
 - [ ] 确认 `r2.dev` 关闭、没有公共自定义域名、没有宽泛 CORS。
 - [ ] 测试 Bucket 设置 30 天删除生命周期；默认 7 天清理未完成 multipart upload。
-- [ ] 创建 Account API Token `nanafox-studio-test-app`：仅 `Object Read & Write`，仅测试 Bucket。
-- [ ] 把 Access Key ID 与 Secret Access Key 直接写入测试服务器 Secret；Secret 只显示一次，不粘贴到聊天、文档或 Git。
+- [x] 创建 Account API Token `nanafox-studio-test-app`：仅 `Object Read & Write`，仅测试 Bucket。
+- [x] 把 Access Key ID 与 Secret Access Key 直接写入测试服务器 Secret；Secret 只显示一次，不粘贴到聊天、文档或 Git。
 - [ ] 真实执行 PUT/GET/条件覆盖失败/DELETE 测试，校验 PNG SHA-256。
 - [ ] 生产发布前重复创建生产 Bucket 与独立 Token；不复用测试 Token。
 - [ ] 为 NAS 备份另建只读 Token，只允许对应 Bucket 的 `Object Read`。
@@ -84,6 +84,13 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 
 Secret 文件权限必须为 `0600`，属主为 Studio 服务账号。不得使用 `Environment=` 把 Secret 展开进公开的进程列表、CI 输出或镜像层；部署完成后检查日志未回显连接串、Cookie 或 Key。
 
+测试服务器当前使用用户级 Secret，避免要求 `nio` 获得免密 sudo：
+
+- `/home/nio/.config/nanafox/secrets/nanafox-studio-test.env`：R2 配置，`0600`。
+- `/home/nio/.config/nanafox/secrets/nanafox-studio-test-db.env`：PostgreSQL 连接串，`0600`。
+
+Docker 使用两个 `--env-file` 读取；不得复制到 `/srv`、仓库或镜像。生产应由正式服务账号或主机 Secret 管理接管。
+
 ## 4. 构建和门禁
 
 在 Studio worktree 执行：
@@ -112,11 +119,11 @@ npm run test:studio-server
 4. 如果现有测试数据需要保留，执行一次性导入并逐表核对数量；否则明确记录为可丢弃测试数据。
 5. 创建 R2 测试 Bucket 与 Token，写入测试 Secret。
 6. 暗部署新 Studio 服务到独立端口，先保持 `STUDIO_GENERATION_ENABLED=false`。
-7. 验证 `/api/health`、数据库 readiness、Router 身份接口和静态资源。
+7. 验证 `/api/health` 进程存活、`/api/ready` PostgreSQL readiness、Router 身份接口和静态资源。
 8. 打开真实生图，完成一笔最小生成：预占、Provider、R2、任务成功、额度确认全部一致。
 9. 重启 Studio 服务，确认 Session、额度、任务和作品仍可读取。
 10. 执行权限负向：未登录、CSRF、他人 task id、无额度、重复幂等键、R2 不存在对象。
-11. 验证管理员可修改每日免费次数、套餐配置和单用户幂等加额。
+11. 管理 API 完成后验证管理员可修改每日免费次数、套餐配置和单用户幂等加额；当前 Store 已有能力，但受保护 API 和真实管理端闭环尚未实现。
 12. 执行 PostgreSQL 恢复演练和 R2/NAS 抽样校验。
 13. 观察至少 24 小时后再形成生产候选。
 
@@ -203,10 +210,15 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
 | PostgreSQL 代码迁移 | 已完成 | 创建隔离测试 database，运行未跳过的集成测试 |
-| R2 Store 代码 | 已完成 | 创建测试 Bucket/Token，运行真实 PUT/GET/DELETE |
-| Cloudflare R2 订阅 | 已完成 | 创建私有测试 Bucket |
-| R2 API Token | 未创建 | 完成 Bucket 后在动作前向用户确认 |
+| R2 Store 代码 | 已完成 | 用已创建测试 Bucket/Token 运行真实 PUT/GET/冲突/DELETE |
+| Cloudflare R2 订阅与测试 Bucket | 已完成 | 设置生命周期并运行真实合约测试 |
+| R2 API Token | 已创建并安全写入测试服务器 | 用服务器 Secret 完成真实 PUT/GET/冲突/DELETE |
+| 测试 PostgreSQL database/role | 已创建 | 运行 migration 和未跳过集成测试 |
+| 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
 | 测试服务器切换 | 未执行 | PostgreSQL/R2 资源就绪后部署 |
+| 管理员受保护 API/真实页面 | 未实现 | 测试部署稳定后补齐，不把 mock UI 当完成 |
+| PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
+| Caddy Studio 路由持久化 | 待核对 | 动态路由已生效；确认 `/etc/caddy/Caddyfile` 后再 reload/reboot |
 | NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
 | 生产发布 | 未授权 | 通过所有门禁后单独请求授权 |

@@ -1,6 +1,6 @@
 # NanaFox Studio PostgreSQL + R2 落地计划
 
-> 状态：PostgreSQL 与 R2 Store 代码已完成；测试服务器尚未切换，真实 R2 Bucket/Token 尚未创建。产品边界见 `docs/nanafox-studio-architecture.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`。
+> 状态：PostgreSQL/R2 Store、测试 database/role、私有 R2 test Bucket 与单桶 Token 已准备；公网测试容器尚未切换，真实 R2 合约测试和完整 PostgreSQL 集成测试待执行。产品边界见 `docs/nanafox-studio-architecture.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`。
 
 ## 结论与边界
 
@@ -122,10 +122,10 @@
 
 | 失败模式 | 日志 | 指标 | 告警规则 | 可区分状态? |
 |---------|-----|-----|--------|------------|
-| PostgreSQL 不可连接 | `studio.database_unavailable` | health 503 | 连续 3 次失败 | 是 |
-| migration 失败 | `studio.migration_failed` | readiness false | 每次触发告警 | 是 |
-| R2 上传失败 | `studio.artwork_upload_failed` | 按状态码计数 | 5 分钟 > 3 | 是 |
-| 额度最终确认失败 | `studio.finalization_pending` | pending 数量 | 15 分钟仍存在 | 是 |
+| PostgreSQL 不可连接 | 请求错误日志 | `/api/ready` 返回 503 | 告警待部署配置 | 是 |
+| migration 失败 | 启动失败日志 | 服务不会进入 ready | 告警待部署配置 | 是 |
+| R2 上传失败 | 统一作品存储错误 | 指标尚未实现 | 5 分钟阈值待实现 | 仅日志 |
+| 额度最终确认失败 | 保留 `output_stored` 并返回 `GENERATION_FINALIZATION_PENDING` | pending 指标尚未实现 | 15 分钟阈值待实现 | 数据库可查 |
 
 ## L2-ops.2 兼容灰度
 
@@ -141,10 +141,11 @@
 
 1. [x] PostgreSQL 1:1 迁移现有表和行为，完成异步化与并发集成测试代码。
 2. [x] 实现 R2 私有 Store、条件写入、对象元数据和同源后端代理读取。
-3. [ ] 创建 R2 test Bucket 和最小权限 Token，完成真实 PUT/GET/DELETE 集成测试。
-4. [ ] 测试站切 PostgreSQL/R2，验证登录、3 次免费额度、管理员加额、真实生图、重启持久化。
-5. [ ] 增加用户删除/恢复闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
-6. [ ] 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
+3. [x] 创建 R2 test Bucket 和最小权限 Token，凭据安全写入测试服务器。
+4. [ ] 完成真实 PUT/GET/条件冲突/DELETE 集成测试。
+5. [ ] 测试站切 PostgreSQL/R2，验证登录、3 次免费额度、真实生图、重启持久化；管理员闭环在管理 API 完成后验收。
+6. [ ] 增加用户删除/恢复闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
+7. [ ] 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
 
 ## 剩余风险登记
 

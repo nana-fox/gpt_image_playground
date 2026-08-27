@@ -144,6 +144,28 @@ test('Studio app exposes an unauthenticated health endpoint for deployment probe
   assert.deepEqual(await response.json(), { ok: true, service: 'nanafox-studio' })
 })
 
+test('Studio readiness reflects PostgreSQL availability', async () => {
+  const ready = createStudioApp({
+    authApp: { handle: async () => assert.fail('readiness must not reach account routes') },
+    readiness: async () => {},
+  })
+  const readyResponse = await ready.handle(new Request('https://studio.nanafox.com/api/ready'))
+  assert.equal(readyResponse.status, 200)
+  assert.deepEqual(await readyResponse.json(), { ok: true, service: 'nanafox-studio' })
+
+  const unavailable = createStudioApp({
+    authApp: { handle: async () => assert.fail('readiness must not reach account routes') },
+    readiness: async () => { throw new Error('database unavailable') },
+  })
+  const unavailableResponse = await unavailable.handle(new Request('https://studio.nanafox.com/api/ready'))
+  assert.equal(unavailableResponse.status, 503)
+  assert.deepEqual(await unavailableResponse.json(), {
+    ok: false,
+    service: 'nanafox-studio',
+    error: { reason: 'DATABASE_UNAVAILABLE' },
+  })
+})
+
 test('HTTP adapter preserves Studio cookies and delegates the request', async (t) => {
   let captured
   const server = createStudioHttpServer({

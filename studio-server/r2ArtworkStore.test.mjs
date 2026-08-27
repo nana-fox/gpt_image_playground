@@ -72,3 +72,30 @@ test('R2 artwork references and bucket names fail closed', async () => {
   const store = createR2ArtworkStore({ bucket: 'nanafox-studio-artworks-test', client: { send() {} } })
   await assert.rejects(store.read({ key: '../../private.png' }), /reference/)
 })
+
+test('R2 artwork reads reject oversized objects before buffering', async () => {
+  let transformed = false
+  const store = createR2ArtworkStore({
+    bucket: 'nanafox-studio-artworks-test',
+    maxBytes: 1024,
+    client: {
+      async send() {
+        return {
+          Body: {
+            async transformToByteArray() {
+              transformed = true
+              return Buffer.alloc(2048)
+            },
+          },
+          ContentLength: 2048,
+        }
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.read({ key: `${userId}/${taskId}.png` }),
+    (error) => error instanceof ArtworkStoreError && error.reason === 'OUTPUT_STORAGE_FAILED',
+  )
+  assert.equal(transformed, false)
+})

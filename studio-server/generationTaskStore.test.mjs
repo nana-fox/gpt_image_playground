@@ -51,6 +51,43 @@ test('generation tasks persist the successful lifecycle without image bytes', { 
   assert.equal(JSON.stringify(succeeded).includes('base64'), false)
 })
 
+test('R2 output metadata survives a PostgreSQL JSONB round trip', { skip: !testConnectionString }, async (t) => {
+  const { database, user } = await withDatabase(t)
+  const first = createGenerationTaskStore({ database })
+  const task = (await first.createTask(user.id, input, 'r2-metadata')).task
+  await first.markReserved(task.id, 'reservation-r2-metadata')
+  await first.markRunning(task.id)
+  const output = {
+    key: `${user.id}/${task.id}.png`,
+    url: `/api/artworks/${task.id}`,
+    etag: '68b329da9893e34099c7d8ad5cb9c940',
+    sha256: 'a'.repeat(64),
+    bytes: 1024,
+    mimeType: 'image/png',
+  }
+  await first.storeOutput(task.id, output)
+
+  const reopened = createGenerationTaskStore({ database })
+  assert.deepEqual((await reopened.getTask(user.id, task.id)).output, output)
+})
+
+test('R2 output metadata is validated before persistence', () => {
+  const tasks = createGenerationTaskStore({ database: { query() {} } })
+  const output = {
+    key: 'user/task.png',
+    url: '/api/artworks/task',
+    etag: 'etag-1',
+    sha256: 'a'.repeat(64),
+    bytes: 1024,
+    mimeType: 'image/png',
+  }
+
+  assert.throws(() => tasks.storeOutput('task', { ...output, sha256: 'not-a-hash' }), /output metadata/)
+  assert.throws(() => tasks.storeOutput('task', { ...output, bytes: 0 }), /output metadata/)
+  assert.throws(() => tasks.storeOutput('task', { ...output, mimeType: 'image/jpeg' }), /output metadata/)
+  assert.throws(() => tasks.storeOutput('task', { ...output, etag: ' '.repeat(3) }), /output metadata/)
+})
+
 test('generation task idempotency rejects a changed request', { skip: !testConnectionString }, async (t) => {
   const { database, user } = await withDatabase(t)
   const tasks = createGenerationTaskStore({ database })

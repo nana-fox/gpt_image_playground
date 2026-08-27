@@ -67,15 +67,34 @@ export function readStudioServerConfig(env = process.env) {
 export function createStudioApp(options) {
   const authApp = options.authApp
   const generationApp = options.generationApp
+  const readiness = options.readiness
   if (!authApp) throw new Error('Studio auth app is required')
 
   return {
-    handle(request) {
+    async handle(request) {
       const path = new URL(request.url).pathname
       if (request.method === 'GET' && path === '/api/health') {
         return Response.json({ ok: true, service: 'nanafox-studio' }, {
           headers: { 'Cache-Control': 'no-store' },
         })
+      }
+      if (request.method === 'GET' && path === '/api/ready') {
+        try {
+          if (!readiness) throw new Error('Readiness check is missing')
+          await readiness()
+          return Response.json({ ok: true, service: 'nanafox-studio' }, {
+            headers: { 'Cache-Control': 'no-store' },
+          })
+        } catch {
+          return Response.json({
+            ok: false,
+            service: 'nanafox-studio',
+            error: { reason: 'DATABASE_UNAVAILABLE' },
+          }, {
+            status: 503,
+            headers: { 'Cache-Control': 'no-store' },
+          })
+        }
       }
       const generationPath = path === '/api/generations'
         || path.startsWith('/api/generations/')
@@ -155,7 +174,11 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
     : null
-  const app = createStudioApp({ authApp, generationApp: generationRuntime?.app })
+  const app = createStudioApp({
+    authApp,
+    generationApp: generationRuntime?.app,
+    readiness: async () => database.query('SELECT 1'),
+  })
   const server = createStudioHttpServer({ publicOrigin: config.publicOrigin, app, staticRoot: config.staticRoot })
 
   return {

@@ -19,6 +19,8 @@ ENV NODE_ENV=production \
 
 RUN addgroup -S studio && adduser -S -G studio studio && mkdir -p /app /data/artworks && chown -R studio:studio /app /data
 WORKDIR /app
+COPY --from=build /app/package.json /app/package-lock.json ./
+RUN npm ci --omit=dev
 COPY --from=build --chown=studio:studio /app/dist ./dist
 COPY --from=build --chown=studio:studio /app/studio-server ./studio-server
 

@@ -173,6 +173,24 @@ function normalizeOutput(output) {
     if (JSON.stringify(usage).length > 50000) throw new Error('Studio generation usage is too large')
     value.usage = usage
   }
+  const hasMetadata = ['etag', 'sha256', 'bytes', 'mimeType'].some((key) => output?.[key] !== undefined)
+  if (hasMetadata) {
+    const etag = output.etag === null ? null : String(output.etag ?? '').trim()
+    const sha256 = String(output.sha256 ?? '').trim()
+    const bytes = output.bytes
+    const mimeType = String(output.mimeType ?? '').trim()
+    if (
+      (etag !== null && (!etag || etag.length > 200 || /\s/.test(etag)))
+      || !/^[a-f0-9]{64}$/.test(sha256)
+      || !Number.isInteger(bytes)
+      || bytes < 1
+      || bytes > 100 * 1024 * 1024
+      || mimeType !== 'image/png'
+    ) {
+      throw new Error('Studio generation output metadata is invalid')
+    }
+    Object.assign(value, { etag, sha256, bytes, mimeType })
+  }
   return value
 }
 

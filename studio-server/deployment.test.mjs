@@ -9,6 +9,8 @@ test('Studio container builds the Studio flavor and runs without root or bundled
   assert.match(source, /ARG STUDIO_BASE_PATH/)
   assert.match(vite, /VITE_STUDIO_BASE_PATH/)
   assert.match(source, /STUDIO_STATIC_ROOT=\/app\/dist/)
+  assert.match(source, /COPY --from=build \/app\/package\.json \/app\/package-lock\.json \.\//)
+  assert.match(source, /npm ci --omit=dev/)
   assert.match(source, /USER studio/)
   assert.match(source, /HEALTHCHECK/)
   assert.match(source, /studio-server\/server\.mjs/)
