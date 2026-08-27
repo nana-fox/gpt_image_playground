@@ -2,17 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createStudioDatabase } from './database.mjs'
+import { createPostgresTestConnection } from './postgresTest.mjs'
 
 const connectionString = process.env.STUDIO_TEST_DATABASE_URL
 
-test('migrates a PostgreSQL database with the Studio defaults', { skip: !connectionString }, async () => {
-  const database = createStudioDatabase({ connectionString })
+test('migrates a PostgreSQL database with the Studio defaults', { skip: !connectionString }, async (t) => {
+  const postgres = await createPostgresTestConnection()
+  const database = createStudioDatabase({ connectionString: postgres.connectionString })
+  t.after(async () => {
+    await database.close()
+    await postgres.cleanup()
+  })
   await database.ready
 
   const tables = await database.query(`
     SELECT tablename
     FROM pg_tables
-    WHERE schemaname = 'public' AND tablename LIKE 'studio_%'
+    WHERE schemaname = current_schema() AND tablename LIKE 'studio_%'
     ORDER BY tablename
   `)
   assert.deepEqual(tables.rows.map((row) => row.tablename), [
@@ -33,6 +39,4 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     WHERE id = 1
   `)
   assert.deepEqual(policy.rows, [{ enabled: true, daily_limit: 3, timezone: 'Asia/Shanghai', version: 1 }])
-
-  await database.close()
 })

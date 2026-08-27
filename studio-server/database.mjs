@@ -65,13 +65,15 @@ async function migrate(pool) {
         applied_at BIGINT NOT NULL
       )
     `)
-    const applied = await client.query('SELECT version FROM studio_schema_migrations WHERE version = 1')
-    if (!applied.rowCount) {
-      const sql = await readFile(new URL('./migrations/001_initial.sql', import.meta.url), 'utf8')
+    for (const migration of ['001_initial.sql', '002_admin_operations.sql']) {
+      const version = Number(migration.slice(0, 3))
+      const applied = await client.query('SELECT version FROM studio_schema_migrations WHERE version = $1', [version])
+      if (applied.rowCount) continue
+      const sql = await readFile(new URL(`./migrations/${migration}`, import.meta.url), 'utf8')
       await client.query(sql)
       await client.query(
-        'INSERT INTO studio_schema_migrations (version, applied_at) VALUES (1, $1)',
-        [Date.now()],
+        'INSERT INTO studio_schema_migrations (version, applied_at) VALUES ($1, $2)',
+        [version, Date.now()],
       )
     }
     await client.query('COMMIT')

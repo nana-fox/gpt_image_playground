@@ -94,6 +94,31 @@ export function createSessionStore(options = {}) {
       const result = await database.query('DELETE FROM studio_sessions WHERE token_hash = $1', [hash(sessionToken)])
       return result.rowCount > 0
     },
+
+    async getUser(userId) {
+      const result = await database.query(`
+        SELECT id, email, display_name
+        FROM studio_users
+        WHERE id = $1
+      `, [String(userId ?? '')])
+      return result.rowCount ? mapPublicUser(result.rows[0]) : null
+    },
+
+    async searchUsers(query, limit = 20) {
+      const value = String(query ?? '').trim()
+      const size = Number(limit)
+      if (value.length > 200 || !Number.isInteger(size) || size < 1 || size > 50) {
+        throw new Error('Studio user search is invalid')
+      }
+      const result = await database.query(`
+        SELECT id, email, display_name
+        FROM studio_users
+        WHERE $1 = '' OR email ILIKE $2 OR display_name ILIKE $2
+        ORDER BY updated_at DESC
+        LIMIT $3
+      `, [value, `%${value}%`, size])
+      return result.rows.map(mapPublicUser)
+    },
   }
 }
 
@@ -105,6 +130,14 @@ function mapUser(row) {
   return {
     id: row.id,
     identitySubject: row.identity_subject,
+    email: row.email,
+    displayName: row.display_name,
+  }
+}
+
+function mapPublicUser(row) {
+  return {
+    id: row.id,
     email: row.email,
     displayName: row.display_name,
   }

@@ -59,7 +59,7 @@ export function createQuotaStore(options = {}) {
   return {
     getPolicy,
 
-    async setPolicy(policy) {
+    async setPolicy(policy, audit) {
       const enabled = policy?.enabled === true
       const dailyLimit = Number(policy?.dailyLimit)
       const timezone = String(policy?.timezone ?? '').trim()
@@ -67,19 +67,24 @@ export function createQuotaStore(options = {}) {
         throw new Error('Studio daily free limit is invalid')
       }
       validateTimezone(timezone)
-      const current = await getPolicy()
-      const expectedVersion = policy.expectedVersion === undefined ? current.version : Number(policy.expectedVersion)
-      if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw new Error('Studio quota policy version is invalid')
-      const result = await database.query(`
-        UPDATE studio_quota_policy
-        SET enabled = $1, daily_limit = $2, timezone = $3, version = version + 1, updated_at = $4
-        WHERE id = 1 AND version = $5
-        RETURNING enabled, daily_limit, timezone, version
-      `, [enabled, dailyLimit, timezone, clock().getTime(), expectedVersion])
-      if (!result.rowCount) {
-        throw new QuotaError('免费额度配置已被其他人更新，请刷新后重试', 'POLICY_VERSION_CONFLICT')
-      }
-      return mapPolicy(result.rows[0])
+      return database.transaction(async (client) => {
+        const current = await getPolicy(client)
+        const expectedVersion = policy.expectedVersion === undefined ? current.version : Number(policy.expectedVersion)
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw new Error('Studio quota policy version is invalid')
+        const now = clock().getTime()
+        const result = await client.query(`
+          UPDATE studio_quota_policy
+          SET enabled = $1, daily_limit = $2, timezone = $3, version = version + 1, updated_at = $4
+          WHERE id = 1 AND version = $5
+          RETURNING enabled, daily_limit, timezone, version
+        `, [enabled, dailyLimit, timezone, now, expectedVersion])
+        if (!result.rowCount) {
+          throw new QuotaError('免费额度配置已被其他人更新，请刷新后重试', 'POLICY_VERSION_CONFLICT')
+        }
+        const updated = mapPolicy(result.rows[0])
+        if (audit) await writeAudit(client, audit, null, null, current, updated, now)
+        return updated
+      })
     },
 
     async setSubscription(userId, subscription) {
@@ -101,7 +106,7 @@ export function createQuotaStore(options = {}) {
       return { userId, planId, status, periodEnd: new Date(periodEnd).toISOString() }
     },
 
-    async grantCredits(userId, grant) {
+    async grantCredits(userId, grant, audit) {
       const source = String(grant?.source ?? '').trim()
       const units = Number(grant?.units)
       const reference = String(grant?.reference ?? '').trim()
@@ -112,11 +117,12 @@ export function createQuotaStore(options = {}) {
       if (!Number.isInteger(units) || units < 1 || units > 100000) throw new Error('Studio credit units are invalid')
       if (!reference || reference.length > 200) throw new Error('Studio credit reference is invalid')
       return database.transaction(async (client) => {
-        await client.query(`
+        const inserted = await client.query(`
           INSERT INTO studio_credit_grants
             (id, user_id, source, total, remaining, expires_at, reference, created_at)
           VALUES ($1, $2, $3, $4, $4, $5, $6, $7)
           ON CONFLICT(user_id, reference) DO NOTHING
+          RETURNING id
         `, [randomUUID(), userId, source, units, expiresAt, reference, clock().getTime()])
         const result = await client.query(`
           SELECT id, source, total, remaining, expires_at, reference
@@ -128,7 +134,11 @@ export function createQuotaStore(options = {}) {
         if (!row || row.source !== source || Number(row.total) !== units || nullableNumber(row.expires_at) !== expiresAt) {
           throw new QuotaError('额度发放记录与原订单不一致', 'CREDIT_GRANT_CONFLICT')
         }
-        return mapGrant(row)
+        const mapped = mapGrant(row)
+        if (audit && inserted.rowCount) {
+          await writeAudit(client, audit, userId, reference, null, mapped, clock().getTime())
+        }
+        return mapped
       })
     },
 
@@ -253,6 +263,19 @@ export function createQuotaStore(options = {}) {
       return finishReservation(database, id, 'released', clock().getTime())
     },
   }
+}
+
+async function writeAudit(client, audit, targetUserId, reference, before, after, now) {
+  const actorSubject = String(audit?.actorSubject ?? '').trim()
+  const action = String(audit?.action ?? '').trim()
+  if (!actorSubject || actorSubject.length > 128 || !action || action.length > 100) {
+    throw new Error('Studio operations audit identity is invalid')
+  }
+  await client.query(`
+    INSERT INTO studio_admin_audit_log
+      (id, actor_subject, action, target_user_id, reference, before_json, after_json, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `, [randomUUID(), actorSubject, action, targetUserId, reference, before, after, now])
 }
 
 async function finishReservation(database, id, target, now) {

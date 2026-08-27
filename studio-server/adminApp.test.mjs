@@ -48,13 +48,13 @@ function createDependencies(subject = adminSubject) {
 function request(path, options = {}) {
   const headers = {
     Cookie: 'nanafox_studio_session=session-token; nanafox_studio_csrf=csrf-token',
-    ...options.headers,
   }
   if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json'
     headers.Origin = origin
     headers['X-CSRF-Token'] = 'csrf-token'
   }
+  Object.assign(headers, options.headers)
   return new Request(`${origin}${path}`, {
     method: options.method ?? 'GET',
     headers,

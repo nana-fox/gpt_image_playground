@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 import { createArtworkStore } from './artworkStore.mjs'
+import { createStudioAdminApp } from './adminApp.mjs'
 import { createStudioAuthApp } from './authApp.mjs'
 import { createStudioDatabase } from './database.mjs'
 import { createStudioGenerationApp } from './generationApp.mjs'
@@ -35,6 +36,7 @@ export function readStudioServerConfig(env = process.env) {
     publicBasePath,
     databaseUrl,
     generationEnabled,
+    adminSubjects: parseAdminSubjects(env.STUDIO_ADMIN_SUBJECTS),
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
     port,
   }
@@ -66,6 +68,7 @@ export function readStudioServerConfig(env = process.env) {
 
 export function createStudioApp(options) {
   const authApp = options.authApp
+  const adminApp = options.adminApp
   const generationApp = options.generationApp
   const readiness = options.readiness
   if (!authApp) throw new Error('Studio auth app is required')
@@ -95,6 +98,16 @@ export function createStudioApp(options) {
             headers: { 'Cache-Control': 'no-store' },
           })
         }
+      }
+      if (path === '/api/admin' || path.startsWith('/api/admin/')) {
+        if (adminApp) return adminApp.handle(request)
+        return Response.json({
+          ok: false,
+          error: { reason: 'ADMIN_UNAVAILABLE', message: '运营服务暂时不可用' },
+        }, {
+          status: 503,
+          headers: { 'Cache-Control': 'no-store' },
+        })
       }
       const generationPath = path === '/api/generations'
         || path.startsWith('/api/generations/')
@@ -171,11 +184,18 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     store,
     quota,
   })
+  const adminApp = createStudioAdminApp({
+    publicOrigin: config.publicOrigin,
+    adminSubjects: config.adminSubjects,
+    sessions: store,
+    quota,
+  })
   const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
     : null
   const app = createStudioApp({
     authApp,
+    adminApp,
     generationApp: generationRuntime?.app,
     readiness: async () => database.query('SELECT 1'),
   })
@@ -227,6 +247,14 @@ function parseBoolean(value, name) {
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   throw new Error(`${name} must be true or false`)
+}
+
+function parseAdminSubjects(value) {
+  const subjects = String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
+  if (subjects.some((subject) => !/^[A-Za-z0-9._:@/-]{1,128}$/.test(subject))) {
+    throw new Error('STUDIO_ADMIN_SUBJECTS is invalid')
+  }
+  return [...new Set(subjects)]
 }
 
 function normalizeBasePath(value, name) {
