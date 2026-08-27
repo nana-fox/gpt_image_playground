@@ -1,0 +1,192 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { createStudioAdminApp } from './adminApp.mjs'
+
+const origin = 'https://studio.nanafox.com'
+const adminSubject = '019c0000-0000-7000-8000-000000000001'
+const userId = '019c0000-0000-7000-8000-000000000042'
+
+function createDependencies(subject = adminSubject) {
+  const calls = []
+  const session = {
+    expiresAt: '2026-09-27T12:00:00.000Z',
+    user: {
+      id: 'admin-user',
+      identitySubject: subject,
+      email: 'admin@nanafox.com',
+      displayName: 'NanaFox Admin',
+    },
+  }
+  return {
+    calls,
+    sessions: {
+      getSession: (token) => token === 'session-token' ? session : null,
+      verifyCsrf: (token, csrf) => token === 'session-token' && csrf === 'csrf-token',
+      searchUsers: (query, limit) => {
+        calls.push(['searchUsers', query, limit])
+        return [{ id: userId, email: 'member@example.com', displayName: 'Member' }]
+      },
+      getUser: (id) => id === userId
+        ? { id: userId, email: 'member@example.com', displayName: 'Member' }
+        : null,
+    },
+    quota: {
+      getPolicy: () => ({ enabled: true, dailyLimit: 3, timezone: 'Asia/Shanghai', version: 1 }),
+      setPolicy: (policy, audit) => {
+        calls.push(['setPolicy', policy, audit])
+        return { ...policy, version: 2 }
+      },
+      grantCredits: (id, grant, audit) => {
+        calls.push(['grantCredits', id, grant, audit])
+        return { id: 'grant-1', source: grant.source, total: grant.units, remaining: grant.units, expiresAt: grant.expiresAt, reference: grant.reference }
+      },
+    },
+  }
+}
+
+function request(path, options = {}) {
+  const headers = {
+    Cookie: 'nanafox_studio_session=session-token; nanafox_studio_csrf=csrf-token',
+    ...options.headers,
+  }
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    headers.Origin = origin
+    headers['X-CSRF-Token'] = 'csrf-token'
+  }
+  return new Request(`${origin}${path}`, {
+    method: options.method ?? 'GET',
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  })
+}
+
+test('only configured Router subjects can access Studio operations', async () => {
+  const allowed = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: allowed.sessions,
+    quota: allowed.quota,
+  })
+
+  const me = await app.handle(request('/api/admin/me'))
+  assert.equal(me.status, 200)
+  assert.deepEqual(await me.json(), {
+    ok: true,
+    data: {
+      admin: true,
+      user: { id: 'admin-user', email: 'admin@nanafox.com', displayName: 'NanaFox Admin' },
+    },
+  })
+
+  const deniedDependencies = createDependencies('not-an-admin')
+  const deniedApp = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: deniedDependencies.sessions,
+    quota: deniedDependencies.quota,
+  })
+  const denied = await deniedApp.handle(request('/api/admin/me'))
+  assert.equal(denied.status, 403)
+  assert.equal((await denied.json()).error.reason, 'ADMIN_FORBIDDEN')
+
+  const anonymous = await app.handle(new Request(`${origin}/api/admin/me`))
+  assert.equal(anonymous.status, 401)
+  assert.equal((await anonymous.json()).error.reason, 'UNAUTHENTICATED')
+})
+
+test('operators can inspect and update the daily free policy', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+  })
+
+  const current = await app.handle(request('/api/admin/quota-policy'))
+  assert.deepEqual((await current.json()).data, {
+    enabled: true,
+    dailyLimit: 3,
+    timezone: 'Asia/Shanghai',
+    version: 1,
+  })
+
+  const updated = await app.handle(request('/api/admin/quota-policy', {
+    method: 'PATCH',
+    body: { enabled: false, dailyLimit: 5, timezone: 'Asia/Shanghai', expectedVersion: 1 },
+  }))
+  assert.equal(updated.status, 200)
+  assert.equal((await updated.json()).data.version, 2)
+  assert.deepEqual(dependencies.calls[0], [
+    'setPolicy',
+    { enabled: false, dailyLimit: 5, timezone: 'Asia/Shanghai', expectedVersion: 1 },
+    { actorSubject: adminSubject, action: 'quota_policy.update' },
+  ])
+})
+
+test('operators can find a user and grant idempotent credits with an audit actor', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+  })
+
+  const users = await app.handle(request('/api/admin/users?query=member&limit=10'))
+  assert.equal(users.status, 200)
+  assert.deepEqual((await users.json()).data, [{ id: userId, email: 'member@example.com', displayName: 'Member' }])
+  assert.deepEqual(dependencies.calls[0], ['searchUsers', 'member', 10])
+
+  const granted = await app.handle(request(`/api/admin/users/${userId}/credits`, {
+    method: 'POST',
+    body: {
+      units: 12,
+      reference: 'manual-support-20260827-001',
+      expiresAt: '2026-09-27T12:00:00.000Z',
+    },
+  }))
+  assert.equal(granted.status, 201)
+  assert.equal((await granted.json()).data.remaining, 12)
+  assert.deepEqual(dependencies.calls[1], [
+    'grantCredits',
+    userId,
+    {
+      source: 'admin',
+      units: 12,
+      reference: 'manual-support-20260827-001',
+      expiresAt: '2026-09-27T12:00:00.000Z',
+    },
+    { actorSubject: adminSubject, action: 'credits.grant' },
+  ])
+})
+
+test('admin writes require same-origin JSON and the Studio CSRF pair', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+  })
+
+  const wrongOrigin = await app.handle(request('/api/admin/quota-policy', {
+    method: 'PATCH',
+    body: { enabled: true, dailyLimit: 3, timezone: 'Asia/Shanghai', expectedVersion: 1 },
+    headers: { Origin: 'https://evil.example' },
+  }))
+  assert.equal(wrongOrigin.status, 403)
+  assert.equal((await wrongOrigin.json()).error.reason, 'ORIGIN_REJECTED')
+
+  const wrongCsrf = await app.handle(request(`/api/admin/users/${userId}/credits`, {
+    method: 'POST',
+    body: { units: 1, reference: 'manual-1' },
+    headers: { 'X-CSRF-Token': 'wrong' },
+  }))
+  assert.equal(wrongCsrf.status, 403)
+  assert.equal((await wrongCsrf.json()).error.reason, 'CSRF_REJECTED')
+  assert.deepEqual(dependencies.calls, [])
+})

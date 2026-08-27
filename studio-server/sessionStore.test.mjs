@@ -90,3 +90,20 @@ test('invalid Router identity data is rejected before persistence', { skip: !tes
   await assert.rejects(() => store.createSession({ ...identity, subject: '' }), /subject/)
   await assert.rejects(() => store.createSession({ ...identity, email: 'not-an-email' }), /email/)
 })
+
+test('operators can search Studio users without exposing Router subjects', { skip: !testConnectionString }, async (t) => {
+  const { store } = await withStore(t)
+  const user = (await store.createSession(identity)).user
+
+  assert.deepEqual(await store.getUser(user.id), {
+    id: user.id,
+    email: identity.email,
+    displayName: identity.display_name,
+  })
+  assert.deepEqual(await store.searchUsers('studio@', 10), [{
+    id: user.id,
+    email: identity.email,
+    displayName: identity.display_name,
+  }])
+  assert.deepEqual(await store.searchUsers('missing', 10), [])
+})

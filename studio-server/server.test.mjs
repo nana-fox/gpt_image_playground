@@ -34,10 +34,32 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     publicBasePath: '/',
     databaseUrl: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     generationEnabled: false,
+    adminSubjects: [],
     host: '127.0.0.1',
     port: 8788,
   })
   assert.equal('VITE_ROUTER_AUTH_CURRENT_SECRET' in config, false)
+})
+
+test('Studio server accepts only explicit Router subjects for operations access', () => {
+  const config = readStudioServerConfig({
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
+    STUDIO_ADMIN_SUBJECTS: 'router-user-1, router-user-2,router-user-1',
+  })
+
+  assert.deepEqual(config.adminSubjects, ['router-user-1', 'router-user-2'])
+  assert.throws(() => readStudioServerConfig({
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
+    STUDIO_ADMIN_SUBJECTS: 'contains spaces',
+  }), /STUDIO_ADMIN_SUBJECTS/)
 })
 
 test('Studio server accepts an isolated public base path', () => {
@@ -126,13 +148,15 @@ test('Studio app routes generation endpoints separately from account endpoints',
   const app = createStudioApp({
     authApp: { handle: async () => { calls.push('auth'); return new Response('auth') } },
     generationApp: { handle: async () => { calls.push('generation'); return new Response('generation') } },
+    adminApp: { handle: async () => { calls.push('admin'); return new Response('admin') } },
   })
 
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/auth/session'))).text(), 'auth')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/quota'))).text(), 'auth')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/generations'))).text(), 'generation')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/artworks/task-1'))).text(), 'generation')
-  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation'])
+  assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/admin/me'))).text(), 'admin')
+  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation', 'admin'])
 })
 
 test('Studio app exposes an unauthenticated health endpoint for deployment probes', async () => {
