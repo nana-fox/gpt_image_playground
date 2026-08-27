@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 import mainSource from '../main.tsx?raw'
 import viteSource from '../../vite.config.ts?raw'
@@ -70,5 +71,10 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).toContain('searchStudioUsers')
     expect(adminSource).toContain('grantStudioCredits')
     expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
+  })
+
+  it('does not request fonts that the Studio content policy blocks', () => {
+    const globalStyles = readFileSync(new URL('../index.css', import.meta.url), 'utf8')
+    expect(globalStyles).not.toContain('@import url(\'http')
   })
 })
