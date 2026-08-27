@@ -1,6 +1,9 @@
 import { readStudioCookie } from './studioAuth'
 import { studioApiPath } from './studioApi'
 
+const GENERATION_POLL_INTERVAL_MS = 1000
+const GENERATION_POLL_ATTEMPTS = 120
+
 export type StudioGenerationInput = {
   prompt: string
   size: '1024x1024' | '1536x1024' | '1024x1536'
@@ -33,12 +36,12 @@ export class StudioGenerationError extends Error {
   }
 }
 
-export function createStudioGeneration(
+export async function createStudioGeneration(
   input: StudioGenerationInput,
   idempotencyKey: string,
   request: typeof fetch = fetch,
 ) {
-  return call(studioApiPath('generations'), {
+  let task = normalizeTask(await call(studioApiPath('generations'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -47,7 +50,20 @@ export function createStudioGeneration(
       'X-CSRF-Token': readStudioCookie('nanafox_studio_csrf'),
     },
     body: JSON.stringify(input),
-  }, request).then(normalizeTask)
+  }, request))
+
+  for (let attempt = 0; attempt < GENERATION_POLL_ATTEMPTS && task.status !== 'succeeded' && task.status !== 'failed'; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, GENERATION_POLL_INTERVAL_MS))
+    task = normalizeTask(await call(studioApiPath(`generations/${encodeURIComponent(task.id)}`), {
+      credentials: 'same-origin',
+    }, request))
+  }
+
+  if (task.status === 'succeeded') return task
+  if (task.status === 'failed') {
+    throw new StudioGenerationError('这次没有生成成功，也没有扣除额度，请稍后重试', 502, task.errorReason || 'GENERATION_FAILED')
+  }
+  throw new StudioGenerationError('创作任务仍在处理中，请稍后重试', 0, 'NETWORK_ERROR')
 }
 
 export function listStudioGenerations(request: typeof fetch = fetch) {

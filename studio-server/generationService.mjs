@@ -98,16 +98,10 @@ export function createGenerationService(options = {}) {
 }
 
 function replay(task) {
-  if (task.status === 'succeeded') return task
-  if (task.status === 'failed') {
-    throw new GenerationError(publicMessage(task.errorReason), {
-      status: task.errorReason === 'QUOTA_EXHAUSTED' ? 402 : 502,
-      reason: 'GENERATION_FAILED',
-    })
-  }
-  throw new GenerationError('创作任务正在处理中', {
-    status: 409,
-    reason: 'GENERATION_IN_PROGRESS',
+  if (task.status !== 'failed') return task
+  throw new GenerationError(publicMessage(task.errorReason), {
+    status: task.errorReason === 'QUOTA_EXHAUSTED' ? 402 : 502,
+    reason: 'GENERATION_FAILED',
   })
 }
 
