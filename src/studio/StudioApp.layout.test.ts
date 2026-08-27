@@ -45,4 +45,17 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('购买或订阅额度')
     expect(source).not.toContain('创作服务正在接入此账户')
   })
+
+  it('implements the approved Demo product shell instead of an alternate workspace', () => {
+    expect(source).toContain("import './studio.css'")
+    expect(source).toContain('首页')
+    expect(source).toContain('灵感')
+    expect(source).toContain('作品')
+    expect(source).toContain('今天想做什么')
+    expect(source).toContain('从灵感开始')
+    expect(source).toContain('最近创作')
+    expect(source).toContain('先找到感觉，再开始创作')
+    expect(source).toContain('作品库')
+    expect(source).not.toContain("lg:grid-cols-[390px_minmax(0,1fr)]")
+  })
 })
