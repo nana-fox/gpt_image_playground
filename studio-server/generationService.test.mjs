@@ -144,26 +144,42 @@ test('successful idempotent replays never reserve quota or call the provider twi
   assert.deepEqual(await service.generate(user, input, 'request-existing'), existing)
 })
 
-test('in-flight and failed idempotent replays return stable task errors', async () => {
-  for (const [status, reason] of [['running', 'GENERATION_IN_PROGRESS'], ['failed', 'GENERATION_FAILED']]) {
-    const service = createGenerationService({
-      tasks: createTaskStore({
-        id: `task-${status}`,
-        userId: user.id,
-        idempotencyKey: `request-${status}`,
-        status,
-        errorReason: status === 'failed' ? 'IMAGE_PROVIDER_TIMEOUT' : null,
-      }),
-      quota: {},
-      images: {},
-      outputs: {},
-    })
-
-    await assert.rejects(
-      service.generate(user, input, `request-${status}`),
-      (error) => error instanceof GenerationError && error.reason === reason,
-    )
+test('in-flight idempotent replays return the existing task without starting another generation', async () => {
+  const existing = {
+    id: 'task-running',
+    userId: user.id,
+    idempotencyKey: 'request-running',
+    status: 'running',
+    errorReason: null,
   }
+  const service = createGenerationService({
+    tasks: createTaskStore(existing),
+    quota: { reserve: () => assert.fail('replay must not reserve quota') },
+    images: { generate: () => assert.fail('replay must not call provider') },
+    outputs: { save: () => assert.fail('replay must not store output') },
+  })
+
+  assert.deepEqual(await service.generate(user, input, 'request-running'), existing)
+})
+
+test('failed idempotent replays return the stable failure', async () => {
+  const service = createGenerationService({
+    tasks: createTaskStore({
+      id: 'task-failed',
+      userId: user.id,
+      idempotencyKey: 'request-failed',
+      status: 'failed',
+      errorReason: 'IMAGE_PROVIDER_TIMEOUT',
+    }),
+    quota: {},
+    images: {},
+    outputs: {},
+  })
+
+  await assert.rejects(
+    service.generate(user, input, 'request-failed'),
+    (error) => error instanceof GenerationError && error.reason === 'GENERATION_FAILED',
+  )
 })
 
 test('quota confirmation failure removes the orphaned output and releases the reservation', async () => {

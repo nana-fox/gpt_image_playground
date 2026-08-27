@@ -47,6 +47,23 @@ describe('Studio generation client', () => {
     await expect(listStudioGenerations(malformed)).rejects.toMatchObject({ reason: 'PROTOCOL_ERROR' })
   })
 
+  it('waits for an in-flight idempotent replay and returns the completed artwork', async () => {
+    vi.useFakeTimers()
+    const running = { ...task, status: 'running' as const, output: null }
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ ok: true, data: running }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ ok: true, data: task }))
+
+    const result = createStudioGeneration(task.input, 'request-running', request)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    await expect(result).resolves.toEqual(task)
+    expect(request).toHaveBeenNthCalledWith(2, '/api/generations/task-1', {
+      credentials: 'same-origin',
+    })
+    vi.useRealTimers()
+  })
+
   it('preserves bounded API errors for quota and retry handling', async () => {
     const request = vi.fn(async () => Response.json({
       ok: false,
