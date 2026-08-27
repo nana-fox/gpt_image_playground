@@ -5,15 +5,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { createPostgresTestConnection, testConnectionString } from './postgresTest.mjs'
 import { createStudioRuntime } from './server.mjs'
 
 const origin = 'http://127.0.0.1'
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01])
 const loginValue = ['Password', '123!'].join('')
 
-test('real HTTP flow logs in, consumes quota once, persists and serves the artwork', async (t) => {
+test('real HTTP flow logs in, consumes quota once, persists and serves the artwork', { skip: !testConnectionString }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'nanafox-studio-flow-'))
   t.after(async () => rm(dir, { recursive: true, force: true }))
+  const postgres = await createPostgresTestConnection()
   let imageCalls = 0
   const upstream = createServer((request, response) => {
     if (request.url === '/internal/v1/studio-auth/login') {
@@ -49,7 +51,7 @@ test('real HTTP flow logs in, consumes quota once, persists and serves the artwo
     routerKeyId: 'studio-test',
     routerSecret: 's'.repeat(48),
     publicOrigin: origin,
-    database: join(dir, 'studio.db'),
+    databaseUrl: postgres.connectionString,
     generationEnabled: true,
     generation: {
       baseUrl: `${upstreamOrigin}/v1`,
@@ -61,7 +63,10 @@ test('real HTTP flow logs in, consumes quota once, persists and serves the artwo
   assert.equal(runtime.ready instanceof Promise, true)
   await runtime.ready
   await new Promise((resolve) => runtime.server.listen(0, '127.0.0.1', resolve))
-  t.after(() => new Promise((resolve) => runtime.close(resolve)))
+  t.after(async () => {
+    await new Promise((resolve) => runtime.close(resolve))
+    await postgres.cleanup()
+  })
   const address = runtime.server.address()
   const serverOrigin = `http://127.0.0.1:${address.port}`
 

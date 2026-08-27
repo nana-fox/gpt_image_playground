@@ -16,14 +16,14 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     ROUTER_AUTH_KEY_ID: 'studio-current',
     ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
     STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-  }), /STUDIO_SESSION_DATABASE/)
+  }), /STUDIO_DATABASE_URL/)
 
   const config = readStudioServerConfig({
     ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
     ROUTER_AUTH_KEY_ID: 'studio-current',
     ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
     STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/session.db',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
   })
 
   assert.deepEqual(config, {
@@ -32,7 +32,7 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     routerSecret: signingMaterial,
     publicOrigin: 'https://studio.nanafox.com',
     publicBasePath: '/',
-    database: '/var/lib/nanafox-studio/session.db',
+    databaseUrl: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     generationEnabled: false,
     host: '127.0.0.1',
     port: 8788,
@@ -47,7 +47,7 @@ test('Studio server accepts an isolated public base path', () => {
     ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
     STUDIO_PUBLIC_ORIGIN: 'https://router-test.nanafox.com',
     STUDIO_PUBLIC_BASE_PATH: '/tools/image-studio/',
-    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/session.db',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
   })
 
   assert.equal(config.publicBasePath, '/tools/image-studio/')
@@ -57,7 +57,7 @@ test('Studio server accepts an isolated public base path', () => {
     ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
     STUDIO_PUBLIC_ORIGIN: 'https://router-test.nanafox.com',
     STUDIO_PUBLIC_BASE_PATH: 'tools/image-studio',
-    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/session.db',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
   }), /STUDIO_PUBLIC_BASE_PATH/)
 })
 
@@ -67,7 +67,7 @@ test('enabled generation configuration fails closed without provider storage set
     ROUTER_AUTH_KEY_ID: 'studio-current',
     ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
     STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-    STUDIO_SESSION_DATABASE: '/var/lib/nanafox-studio/studio.db',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     STUDIO_GENERATION_ENABLED: 'true',
   }
   assert.throws(() => readStudioServerConfig(base), /ROUTER_IMAGE_BASE_URL/)
