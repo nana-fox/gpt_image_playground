@@ -9,6 +9,7 @@ export function createStudioAdminApp(options = {}) {
   const adminSubjects = new Set(options.adminSubjects ?? [])
   const sessions = options.sessions
   const quota = options.quota
+  const payments = options.payments
   if (!sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
     throw new Error('Studio operations dependencies are required')
   }
@@ -36,6 +37,10 @@ export function createStudioAdminApp(options = {}) {
         }
         if (request.method === 'GET' && url.pathname === '/api/admin/quota-policy') {
           return json({ ok: true, data: await quota.getPolicy() })
+        }
+        if (request.method === 'GET' && url.pathname === '/api/admin/payment-plans') {
+          if (!payments) return jsonError(503, 'PAYMENT_UNAVAILABLE', '套餐服务暂时不可用')
+          return json({ ok: true, data: await payments.listAdminPlans() })
         }
         if (request.method === 'GET' && url.pathname === '/api/admin/users') {
           const query = String(url.searchParams.get('query') ?? '').trim()
@@ -72,6 +77,19 @@ export function createStudioAdminApp(options = {}) {
               action: 'credits.grant',
             }),
           }, 201)
+        }
+
+        const planMatch = url.pathname.match(/^\/api\/admin\/payment-plans\/([a-z0-9_-]{1,64})$/)
+        if (request.method === 'PATCH' && planMatch) {
+          if (!payments) return jsonError(503, 'PAYMENT_UNAVAILABLE', '套餐服务暂时不可用')
+          await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
+          const plan = normalizePlan(await readJson(request))
+          return json({
+            ok: true,
+            data: await payments.updatePlan(planMatch[1], plan, {
+              actorSubject: session.user.identitySubject,
+            }),
+          })
         }
 
         return jsonError(404, 'NOT_FOUND', '接口不存在')
@@ -141,6 +159,38 @@ function normalizeGrant(input) {
   }
   if (expiresAt && !Number.isFinite(Date.parse(expiresAt))) throw validationError('额度有效期无效')
   return { source: 'admin', units, reference, expiresAt }
+}
+
+function normalizePlan(input) {
+  const keys = ['name', 'description', 'priceCents', 'credits', 'durationDays', 'enabled', 'sortOrder', 'expectedVersion']
+  if (Object.keys(input).some((key) => !keys.includes(key))) throw validationError('套餐配置无效')
+  const plan = {
+    name: String(input.name ?? '').trim(),
+    description: String(input.description ?? '').trim(),
+    priceCents: Number(input.priceCents),
+    credits: Number(input.credits),
+    durationDays: Number(input.durationDays),
+    enabled: input.enabled,
+    sortOrder: Number(input.sortOrder),
+    expectedVersion: Number(input.expectedVersion),
+  }
+  if (
+    !plan.name
+    || plan.name.length > 100
+    || plan.description.length > 300
+    || !Number.isInteger(plan.priceCents)
+    || plan.priceCents < 1
+    || !Number.isInteger(plan.credits)
+    || plan.credits < 1
+    || !Number.isInteger(plan.durationDays)
+    || plan.durationDays < 1
+    || typeof plan.enabled !== 'boolean'
+    || !Number.isInteger(plan.sortOrder)
+    || plan.sortOrder < 0
+    || !Number.isInteger(plan.expectedVersion)
+    || plan.expectedVersion < 1
+  ) throw validationError('套餐配置无效')
+  return plan
 }
 
 function publicUser(user) {

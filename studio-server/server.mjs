@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -12,10 +13,14 @@ import { createStudioGenerationApp } from './generationApp.mjs'
 import { createGenerationService } from './generationService.mjs'
 import { createGenerationTaskStore } from './generationTaskStore.mjs'
 import { createImageProviderClient } from './imageProviderClient.mjs'
+import { createStudioPaymentApp } from './paymentApp.mjs'
+import { createPaymentService } from './paymentService.mjs'
+import { createPaymentStore } from './paymentStore.mjs'
 import { createQuotaStore } from './quotaStore.mjs'
 import { createR2ArtworkStore } from './r2ArtworkStore.mjs'
 import { createRouterAuthClient } from './routerAuthClient.mjs'
 import { createSessionStore } from './sessionStore.mjs'
+import { createWxpayClient } from './wxpayClient.mjs'
 
 export function readStudioServerConfig(env = process.env) {
   const routerBaseUrl = required(env.ROUTER_AUTH_BASE_URL, 'ROUTER_AUTH_BASE_URL')
@@ -25,6 +30,7 @@ export function readStudioServerConfig(env = process.env) {
   const publicBasePath = normalizeBasePath(env.STUDIO_PUBLIC_BASE_PATH ?? '/', 'STUDIO_PUBLIC_BASE_PATH')
   const databaseUrl = required(env.STUDIO_DATABASE_URL, 'STUDIO_DATABASE_URL')
   const generationEnabled = parseBoolean(env.STUDIO_GENERATION_ENABLED, 'STUDIO_GENERATION_ENABLED')
+  const paymentEnabled = parseBoolean(env.STUDIO_PAYMENT_ENABLED, 'STUDIO_PAYMENT_ENABLED')
   const port = env.STUDIO_PORT ? Number(env.STUDIO_PORT) : 8788
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STUDIO_PORT is invalid')
 
@@ -36,6 +42,7 @@ export function readStudioServerConfig(env = process.env) {
     publicBasePath,
     databaseUrl,
     generationEnabled,
+    paymentEnabled,
     adminSubjects: parseAdminSubjects(env.STUDIO_ADMIN_SUBJECTS),
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
     port,
@@ -62,6 +69,18 @@ export function readStudioServerConfig(env = process.env) {
           },
     }
   }
+  if (paymentEnabled) {
+    config.payment = {
+      appId: required(env.STUDIO_WXPAY_APP_ID, 'STUDIO_WXPAY_APP_ID'),
+      mchId: required(env.STUDIO_WXPAY_MCH_ID, 'STUDIO_WXPAY_MCH_ID'),
+      serialNo: required(env.STUDIO_WXPAY_MERCHANT_SERIAL_NO, 'STUDIO_WXPAY_MERCHANT_SERIAL_NO'),
+      privateKeyFile: required(env.STUDIO_WXPAY_PRIVATE_KEY_FILE, 'STUDIO_WXPAY_PRIVATE_KEY_FILE'),
+      platformPublicKeyFile: required(env.STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE, 'STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE'),
+      platformSerialNo: required(env.STUDIO_WXPAY_PLATFORM_SERIAL_NO, 'STUDIO_WXPAY_PLATFORM_SERIAL_NO'),
+      apiV3Key: required(env.STUDIO_WXPAY_API_V3_KEY, 'STUDIO_WXPAY_API_V3_KEY'),
+      notifyUrl: new URL(`${publicBasePath}api/payments/webhooks/wechat`, `${publicOrigin}/`).toString(),
+    }
+  }
   if (String(env.STUDIO_STATIC_ROOT ?? '').trim()) config.staticRoot = String(env.STUDIO_STATIC_ROOT).trim()
   return config
 }
@@ -70,6 +89,7 @@ export function createStudioApp(options) {
   const authApp = options.authApp
   const adminApp = options.adminApp
   const generationApp = options.generationApp
+  const paymentApp = options.paymentApp
   const readiness = options.readiness
   if (!authApp) throw new Error('Studio auth app is required')
 
@@ -104,6 +124,16 @@ export function createStudioApp(options) {
         return Response.json({
           ok: false,
           error: { reason: 'ADMIN_UNAVAILABLE', message: '运营服务暂时不可用' },
+        }, {
+          status: 503,
+          headers: { 'Cache-Control': 'no-store' },
+        })
+      }
+      if (path === '/api/payments' || path.startsWith('/api/payments/')) {
+        if (paymentApp) return paymentApp.handle(request)
+        return Response.json({
+          ok: false,
+          error: { reason: 'PAYMENT_UNAVAILABLE', message: '支付服务暂时不可用' },
         }, {
           status: 503,
           headers: { 'Cache-Control': 'no-store' },
@@ -171,6 +201,12 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   const database = createStudioDatabase({ connectionString: config.databaseUrl })
   const store = createSessionStore({ database })
   const quota = createQuotaStore({ database })
+  const paymentStore = createPaymentStore({
+    database,
+    providerIdentity: config.payment
+      ? { appId: config.payment.appId, mchId: config.payment.mchId }
+      : {},
+  })
   const tasks = createGenerationTaskStore({ database })
   const routerAuth = createRouterAuthClient({
     baseUrl: config.routerBaseUrl,
@@ -184,11 +220,34 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     store,
     quota,
   })
+  const paymentProvider = config.paymentEnabled
+    ? createWxpayClient({
+        appId: config.payment.appId,
+        mchId: config.payment.mchId,
+        serialNo: config.payment.serialNo,
+        privateKey: readFileSync(config.payment.privateKeyFile, 'utf8'),
+        platformPublicKey: readFileSync(config.payment.platformPublicKeyFile, 'utf8'),
+        platformSerialNo: config.payment.platformSerialNo,
+        apiV3Key: config.payment.apiV3Key,
+        notifyUrl: config.payment.notifyUrl,
+      })
+    : null
+  const payments = createPaymentService({
+    enabled: config.paymentEnabled,
+    store: paymentStore,
+    provider: paymentProvider,
+  })
+  const paymentApp = createStudioPaymentApp({
+    publicOrigin: config.publicOrigin,
+    sessions: store,
+    payments,
+  })
   const adminApp = createStudioAdminApp({
     publicOrigin: config.publicOrigin,
     adminSubjects: config.adminSubjects,
     sessions: store,
     quota,
+    payments: paymentStore,
   })
   const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
@@ -196,6 +255,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   const app = createStudioApp({
     authApp,
     adminApp,
+    paymentApp,
     generationApp: generationRuntime?.app,
     readiness: async () => database.query('SELECT 1'),
   })
