@@ -34,6 +34,7 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     publicBasePath: '/',
     databaseUrl: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     generationEnabled: false,
+    paymentEnabled: false,
     adminSubjects: [],
     host: '127.0.0.1',
     port: 8788,
@@ -81,6 +82,40 @@ test('Studio server accepts an isolated public base path', () => {
     STUDIO_PUBLIC_BASE_PATH: 'tools/image-studio',
     STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
   }), /STUDIO_PUBLIC_BASE_PATH/)
+})
+
+test('WeChat payment is disabled by default and enabled only with server-side credentials', () => {
+  const base = {
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
+    STUDIO_PAYMENT_ENABLED: 'true',
+  }
+  assert.throws(() => readStudioServerConfig(base), /STUDIO_WXPAY_APP_ID/)
+  const config = readStudioServerConfig({
+    ...base,
+    STUDIO_PUBLIC_BASE_PATH: '/tools/image-studio/',
+    STUDIO_WXPAY_APP_ID: 'wx-studio-app',
+    STUDIO_WXPAY_MCH_ID: '1900000001',
+    STUDIO_WXPAY_MERCHANT_SERIAL_NO: 'MERCHANT-SERIAL',
+    STUDIO_WXPAY_PRIVATE_KEY_FILE: '/run/secrets/wxpay-private-key.pem',
+    STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE: '/run/secrets/wxpay-platform-public-key.pem',
+    STUDIO_WXPAY_PLATFORM_SERIAL_NO: 'PLATFORM-SERIAL',
+    STUDIO_WXPAY_API_V3_KEY: '0123456789abcdef0123456789abcdef',
+  })
+  assert.equal(config.paymentEnabled, true)
+  assert.deepEqual(config.payment, {
+    appId: 'wx-studio-app',
+    mchId: '1900000001',
+    serialNo: 'MERCHANT-SERIAL',
+    privateKeyFile: '/run/secrets/wxpay-private-key.pem',
+    platformPublicKeyFile: '/run/secrets/wxpay-platform-public-key.pem',
+    platformSerialNo: 'PLATFORM-SERIAL',
+    apiV3Key: '0123456789abcdef0123456789abcdef',
+    notifyUrl: 'https://studio.nanafox.com/tools/image-studio/api/payments/webhooks/wechat',
+  })
 })
 
 test('enabled generation configuration fails closed without provider storage settings', () => {
@@ -149,6 +184,7 @@ test('Studio app routes generation endpoints separately from account endpoints',
     authApp: { handle: async () => { calls.push('auth'); return new Response('auth') } },
     generationApp: { handle: async () => { calls.push('generation'); return new Response('generation') } },
     adminApp: { handle: async () => { calls.push('admin'); return new Response('admin') } },
+    paymentApp: { handle: async () => { calls.push('payment'); return new Response('payment') } },
   })
 
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/auth/session'))).text(), 'auth')
@@ -156,7 +192,8 @@ test('Studio app routes generation endpoints separately from account endpoints',
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/generations'))).text(), 'generation')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/artworks/task-1'))).text(), 'generation')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/admin/me'))).text(), 'admin')
-  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation', 'admin'])
+  assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/payments/plans'))).text(), 'payment')
+  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation', 'admin', 'payment'])
 })
 
 test('Studio app exposes an unauthenticated health endpoint for deployment probes', async () => {

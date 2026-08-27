@@ -42,6 +42,13 @@ function createDependencies(subject = adminSubject) {
         return { id: 'grant-1', source: grant.source, total: grant.units, remaining: grant.units, expiresAt: grant.expiresAt, reference: grant.reference }
       },
     },
+    payments: {
+      listAdminPlans: () => [{ id: 'plus', name: '创作 Plus', version: 1 }],
+      updatePlan: (id, plan, audit) => {
+        calls.push(['updatePlan', id, plan, audit])
+        return { id, ...plan, version: plan.expectedVersion + 1 }
+      },
+    },
   }
 }
 
@@ -69,6 +76,7 @@ test('only configured Router subjects can access Studio operations', async () =>
     adminSubjects: [adminSubject],
     sessions: allowed.sessions,
     quota: allowed.quota,
+    payments: allowed.payments,
   })
 
   const me = await app.handle(request('/api/admin/me'))
@@ -87,6 +95,7 @@ test('only configured Router subjects can access Studio operations', async () =>
     adminSubjects: [adminSubject],
     sessions: deniedDependencies.sessions,
     quota: deniedDependencies.quota,
+    payments: deniedDependencies.payments,
   })
   const denied = await deniedApp.handle(request('/api/admin/me'))
   assert.equal(denied.status, 403)
@@ -104,6 +113,7 @@ test('operators can inspect and update the daily free policy', async () => {
     adminSubjects: [adminSubject],
     sessions: dependencies.sessions,
     quota: dependencies.quota,
+    payments: dependencies.payments,
   })
 
   const current = await app.handle(request('/api/admin/quota-policy'))
@@ -134,6 +144,7 @@ test('operators can find a user and grant idempotent credits with an audit actor
     adminSubjects: [adminSubject],
     sessions: dependencies.sessions,
     quota: dependencies.quota,
+    payments: dependencies.payments,
   })
 
   const users = await app.handle(request('/api/admin/users?query=member&limit=10'))
@@ -171,6 +182,7 @@ test('admin writes require same-origin JSON and the Studio CSRF pair', async () 
     adminSubjects: [adminSubject],
     sessions: dependencies.sessions,
     quota: dependencies.quota,
+    payments: dependencies.payments,
   })
 
   const wrongOrigin = await app.handle(request('/api/admin/quota-policy', {
@@ -189,4 +201,42 @@ test('admin writes require same-origin JSON and the Studio CSRF pair', async () 
   assert.equal(wrongCsrf.status, 403)
   assert.equal((await wrongCsrf.json()).error.reason, 'CSRF_REJECTED')
   assert.deepEqual(dependencies.calls, [])
+})
+
+test('operators inspect and update payment plans without changing their kind', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    adminSubjects: [adminSubject],
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    payments: dependencies.payments,
+  })
+
+  const plans = await app.handle(request('/api/admin/payment-plans'))
+  assert.equal(plans.status, 200)
+  assert.deepEqual((await plans.json()).data, [{ id: 'plus', name: '创作 Plus', version: 1 }])
+
+  const input = {
+    name: '创作 Plus',
+    description: '适合持续内容创作',
+    priceCents: 2900,
+    credits: 100,
+    durationDays: 30,
+    enabled: true,
+    sortOrder: 10,
+    expectedVersion: 1,
+  }
+  const updated = await app.handle(request('/api/admin/payment-plans/plus', {
+    method: 'PATCH',
+    body: input,
+  }))
+  assert.equal(updated.status, 200)
+  assert.equal((await updated.json()).data.version, 2)
+  assert.deepEqual(dependencies.calls, [[
+    'updatePlan',
+    'plus',
+    input,
+    { actorSubject: adminSubject },
+  ]])
 })
