@@ -32,11 +32,11 @@
 ### 2.2 Cloudflare R2
 
 - [x] 创建私有 Standard Bucket `nanafox-studio-artworks-test`；Cloudflare 自动位置确认为亚太地区。
-- [ ] 确认 `r2.dev` 关闭、没有公共自定义域名、没有宽泛 CORS。
-- [ ] 测试 Bucket 设置 30 天删除生命周期；默认 7 天清理未完成 multipart upload。
+- [x] 确认 Bucket 未公开；应用只使用 S3 endpoint，不给浏览器返回 R2 地址。
+- [ ] 配置未完成 multipart upload 清理。暂不设置 Bucket-wide 30 天删除规则，避免误删用户成功作品；用户级保留策略完成后由应用按任务状态删除。
 - [x] 创建 Account API Token `nanafox-studio-test-app`：仅 `Object Read & Write`，仅测试 Bucket。
 - [x] 把 Access Key ID 与 Secret Access Key 直接写入测试服务器 Secret；Secret 只显示一次，不粘贴到聊天、文档或 Git。
-- [ ] 真实执行 PUT/GET/条件覆盖失败/DELETE 测试，校验 PNG SHA-256。
+- [x] 真实执行 PUT/GET/条件覆盖失败/DELETE 测试，校验 PNG SHA-256。
 - [ ] 生产发布前重复创建生产 Bucket 与独立 Token；不复用测试 Token。
 - [ ] 为 NAS 备份另建只读 Token，只允许对应 Bucket 的 `Object Read`。
 
@@ -88,8 +88,9 @@ Secret 文件权限必须为 `0600`，属主为 Studio 服务账号。不得使�
 
 - `/home/nio/.config/nanafox/secrets/nanafox-studio-test.env`：R2 配置，`0600`。
 - `/home/nio/.config/nanafox/secrets/nanafox-studio-test-db.env`：PostgreSQL 连接串，`0600`。
+- `/home/nio/.config/nanafox/secrets/nanafox-studio-test-runtime.env`：Router 身份、生图和非 Secret 运行参数，`0600`。
 
-Docker 使用两个 `--env-file` 读取；不得复制到 `/srv`、仓库或镜像。生产应由正式服务账号或主机 Secret 管理接管。
+Docker 使用三个 `--env-file` 读取；不得复制到 `/srv`、仓库或镜像。生产应由正式服务账号或主机 Secret 管理接管。
 
 ## 4. 构建和门禁
 
@@ -101,6 +102,17 @@ npm run build:studio
 npm test
 npm run test:studio-server
 ```
+
+测试 path 部署必须把 Vite base path 烘焙进静态制品，不能只设置服务端 Cookie Path：
+
+```bash
+docker build \
+  --build-arg STUDIO_BASE_PATH=/tools/image-studio/ \
+  -f deploy/studio.Dockerfile \
+  -t nanafox-studio:test-<commit>-path .
+```
+
+生产域名根路径使用默认 `STUDIO_BASE_PATH=/`，不得直接复用测试 path 静态制品。
 
 门禁要求：
 
@@ -209,16 +221,29 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
-| PostgreSQL 代码迁移 | 已完成 | 创建隔离测试 database，运行未跳过的集成测试 |
-| R2 Store 代码 | 已完成 | 用已创建测试 Bucket/Token 运行真实 PUT/GET/冲突/DELETE |
-| Cloudflare R2 订阅与测试 Bucket | 已完成 | 设置生命周期并运行真实合约测试 |
-| R2 API Token | 已创建并安全写入测试服务器 | 用服务器 Secret 完成真实 PUT/GET/冲突/DELETE |
-| 测试 PostgreSQL database/role | 已创建 | 运行 migration 和未跳过集成测试 |
+| PostgreSQL 代码迁移 | 已完成并部署测试环境 | 71 个服务器测试中 PostgreSQL 用例未跳过且全部通过 |
+| R2 Store 代码 | 已完成并部署测试环境 | 私有 PUT/GET/幂等/冲突/DELETE 合约通过 |
+| Cloudflare R2 订阅与测试 Bucket | 已完成 | 补未完成 multipart upload 清理，不设置全桶 30 天删除 |
+| R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
+| 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 未执行 | PostgreSQL/R2 资源就绪后部署 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-9b7ce84-path` 运行于 8788；旧 `test-3f1cb6f` 容器保留为回滚点 |
+| 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
+| 浏览器验收 | 桌面与移动登录/注册通过 | 待使用真实 Router 账户完成登录、3 次额度、作品历史人工验收 |
 | 管理员受保护 API/真实页面 | 未实现 | 测试部署稳定后补齐，不把 mock UI 当完成 |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
-| Caddy Studio 路由持久化 | 待核对 | 动态路由已生效；确认 `/etc/caddy/Caddyfile` 后再 reload/reboot |
+| Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
 | NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
 | 生产发布 | 未授权 | 通过所有门禁后单独请求授权 |
+
+### 11.1 2026-08-27 测试发布证据
+
+- Git commit：`9b7ce84`；容器镜像：`nanafox-studio:test-9b7ce84-path`。
+- 生产依赖审计：0 个已知漏洞；前端：48 个文件、586 个测试通过。
+- Studio 服务：71/71 通过，包含真实 PostgreSQL 和私有 R2 合约；部署约束另测 1/1 通过。
+- 公网：页面、子路径静态资源、`/api/health`、`/api/ready` 均为 200；未登录 Session/生图均为 401。
+- Caddy 持久配置包含 `/tools/image-studio/*` 到 `127.0.0.1:8788` 的 `handle_path`；生产 vhost 仍保持该旧 path 为 410，没有修改生产路由。
+- 重启后 PostgreSQL readiness、页面和子路径资源继续通过；Sub2API test/prod、PostgreSQL、Redis 容器保持 healthy，Router test root 与 `/health` 为 200。
+- Playwright 在 1440×1000 与 390×844 检查登录和注册页面。两条外部字体 CSS 被 CSP 主动阻止并回退系统字体；未登录 Session 的 401 为预期，不是业务 5xx。
+- 旧 SQLite/本地作品没有导入 PostgreSQL/R2；测试备份保留在 `/home/nio/backups/nanafox-studio-test/pre-postgres-r2-20260827/`。因此旧测试 Session 会失效，旧测试作品暂不显示，但可回滚恢复。

@@ -1,6 +1,6 @@
 # NanaFox Studio PostgreSQL + R2 落地计划
 
-> 状态：PostgreSQL/R2 Store、测试 database/role、私有 R2 test Bucket 与单桶 Token 已准备；公网测试容器尚未切换，真实 R2 合约测试和完整 PostgreSQL 集成测试待执行。产品边界见 `docs/nanafox-studio-architecture.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`。
+> 状态：PostgreSQL/R2 Store 已在 `9b7ce84` 公网测试容器启用；真实 PostgreSQL 集成测试、私有 R2 合约、供应商生成写入读回和重启探针已通过。真实 Router 账户人工闭环、管理 API、备份自动化和生产资源仍待完成。产品边界见 `docs/nanafox-studio-architecture.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`。
 
 ## 结论与边界
 
@@ -142,8 +142,8 @@
 1. [x] PostgreSQL 1:1 迁移现有表和行为，完成异步化与并发集成测试代码。
 2. [x] 实现 R2 私有 Store、条件写入、对象元数据和同源后端代理读取。
 3. [x] 创建 R2 test Bucket 和最小权限 Token，凭据安全写入测试服务器。
-4. [ ] 完成真实 PUT/GET/条件冲突/DELETE 集成测试。
-5. [ ] 测试站切 PostgreSQL/R2，验证登录、3 次免费额度、真实生图、重启持久化；管理员闭环在管理 API 完成后验收。
+4. [x] 完成真实 PUT/GET/条件冲突/DELETE 集成测试。
+5. [ ] 测试站已切 PostgreSQL/R2，真实供应商生图与重启探针通过；仍需真实 Router 账户验证登录、3 次免费额度、作品历史，管理员闭环在管理 API 完成后验收。
 6. [ ] 增加用户删除/恢复闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
 7. [ ] 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
 
@@ -153,5 +153,5 @@
 |----|----------------|------|-----------------|
 | R2 APAC 不保证日本落点 | 已知；若产品需要日本驻留则换 OSS/S3 Tokyo | Product/Infra | 上线前数据驻留确认 |
 | 后端代理承担图片带宽 | 已知；记录 GET 字节和延迟 | Engineering | P95/带宽达到架构文档阈值后再引入媒体边缘层 |
-| SQLite 测试数据是否保留 | 切换前核对并一次性迁移 | Engineering | PostgreSQL cutover |
+| SQLite 测试数据是否保留 | 已备份但未导入；接受旧测试 Session 失效和旧测试作品暂不可见 | Engineering | 回滚窗口结束后再决定归档或迁移 |
 | 付费渠道尚未确定 | 当前先保留订阅/额度内部模型 | Product | Payment integration |
