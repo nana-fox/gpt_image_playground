@@ -1,5 +1,7 @@
 # NanaFox Studio PostgreSQL + R2 落地计划
 
+> 状态：PostgreSQL 与 R2 Store 代码已完成；测试服务器尚未切换，真实 R2 Bucket/Token 尚未创建。产品边界见 `docs/nanafox-studio-architecture.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`。
+
 ## 结论与边界
 
 - Studio 复用现有 PostgreSQL 服务实例，但使用独立数据库 `nanafox_studio`、独立账号和独立连接串。
@@ -11,12 +13,13 @@
 
 | 符号 | 证据 (file:line) | 签名 | 用途 |
 |-----|-----------------|-----|-----|
-| `readStudioServerConfig` | `studio-server/server.mjs:18` | `(env = process.env) -> config` | 将 SQLite 文件配置改为 PostgreSQL 连接配置 |
-| `createStudioRuntime` | `studio-server/server.mjs:123` | `(config = readStudioServerConfig()) -> runtime` | 建立连接池、执行迁移并组装 Store |
+| `readStudioServerConfig` | `studio-server/server.mjs:19` | `(env = process.env) -> config` | PostgreSQL/R2 配置只从服务器环境读取 |
+| `createStudioRuntime` | `studio-server/server.mjs:138` | `(config = readStudioServerConfig()) -> runtime` | 建立连接池、执行迁移并组装 Store |
 | `createSessionStore` | `studio-server/sessionStore.mjs:6` | `(options = {}) -> store` | 用户和会话持久化 |
 | `createQuotaStore` | `studio-server/quotaStore.mjs:12` | `(options = {}) -> store` | 免费额度、订阅、加量包和预占事务 |
 | `createGenerationTaskStore` | `studio-server/generationTaskStore.mjs:12` | `(options = {}) -> store` | 任务幂等和状态机 |
-| `createArtworkStore` | `studio-server/artworkStore.mjs:16` | `(options = {}) -> store` | 由本地文件实现替换为 R2 实现 |
+| `createR2ArtworkStore` | `studio-server/r2ArtworkStore.mjs:8` | `(options = {}) -> store` | R2 私有条件写入、读取和删除 |
+| `createStudioGenerationApp` | `studio-server/generationApp.mjs:10` | `(options = {}) -> app` | 作品所有权校验后由后端代理对象 |
 
 ## L1.2 同类路径对照
 
@@ -36,8 +39,9 @@
 | 时间存储 | Unix 毫秒整数 | PostgreSQL `BIGINT`，API 仍输出 ISO 时间 | 首次迁移保持行为一致，减少范围 |
 | Store API | 同步方法 | 改为 Promise，调用点显式 `await` | `pg` 是异步客户端 |
 | Schema 变更 | Store 启动时建表 | 有序 SQL migrations + advisory lock | 多实例启动安全、可审计 |
-| 作品访问 | 后端读取本地文件 | 后端鉴权后返回短时签名 URL/重定向 | 不暴露长期公开地址和凭证 |
+| 作品访问 | 后端读取本地文件 | 后端鉴权并代理读取 R2 | 中国内地浏览器不直连 R2 S3 域名 |
 | R2 环境 | 无 | test/prod 独立 Bucket 和 Token | 降低误删和凭证泄漏影响面 |
+| R2 存储级别 | 无 | Standard + APAC location hint | 当前频繁读取；hint 不等于日本驻留保证 |
 
 ## L1.4 Return 语义
 
@@ -48,7 +52,7 @@
 | `Promise<reservation>` | 额度已在同一事务中预占 | `serializes concurrent quota reservations` |
 | rejected `QuotaError` | 额度不足或状态冲突，不生成图片 | `does not overspend a single credit concurrently` |
 | `Promise<task>` | 合法任务状态迁移完成 | `preserves generation task idempotency` |
-| rejected storage error | 不确认额度，任务失败并释放预占 | `releases quota when R2 upload fails` |
+| rejected storage error | 不确认额度，任务失败并释放预占 | `releases quota when output storage fails` |
 
 ## L1.5 负向断言
 
@@ -58,7 +62,7 @@
 | 两个并发请求消费最后 1 次额度 | 仅一个成功 | 一个 reserved、一个 `QUOTA_EXHAUSTED` |
 | 相同幂等键但提示词不同 | 稳定冲突 | `IDEMPOTENCY_CONFLICT` |
 | R2 返回非成功状态 | 不确认额度 | reservation 为 released |
-| 用户访问他人作品 | 404/403，不签发 URL | 未调用签名函数 |
+| 用户访问他人作品 | 404，不读取 R2 | 未调用 storage read |
 | R2 Key 不满足对象路径规则 | 拒绝读取/删除 | storage validation error |
 
 ## L1.6 回滚
@@ -66,11 +70,11 @@
 | 类别 | 变更 | 回滚动作 | 顺序 |
 |-----|-----|--------|------|
 | 代码 | Store 异步化、PostgreSQL/R2 实现 | 切回保留的上一版 Studio 镜像 | 1 |
-| 配置 | `STUDIO_DATABASE_URL`、R2 凭证 | 恢复旧容器的 SQLite Volume 配置 | 2 |
+| 配置 | `STUDIO_DATABASE_URL`、R2 凭证 | 测试可恢复旧 SQLite Volume；生产只切上一 PostgreSQL 兼容配置 | 2 |
 | 数据 | 新建 Studio database 和 R2 test Bucket | 保留只读用于排障；确认无新数据后再清理 | 3 |
 | 告警 | PostgreSQL/R2 健康检查 | 随回滚镜像移除对应探针 | 4 |
 
-回滚后可接受状态：测试站回到 SQLite 和本地作品 Volume；Router、Playground、Sub2API 均不重启、不改表。生产未切换前不存在生产回滚数据差异。
+回滚后可接受状态：测试切换期可回到 SQLite 和本地作品 Volume；Router、Playground、Sub2API 均不重启、不改表。生产一旦接受 PostgreSQL/R2 写入，禁止回退 SQLite，只能回到上一 PostgreSQL 兼容镜像并保留新数据。
 
 ---
 
@@ -80,7 +84,8 @@
 |-----|--------|-----|--------------|
 | 现有 PostgreSQL 实例可创建独立 database/role | 只读检查版本、连接数和磁盘，再建 test DB | test | 使用独立 PostgreSQL 容器，不共用实例 |
 | `pg` 连接池可覆盖当前单实例负载 | 并发额度集成测试 + 连接池指标 | isolated test DB | 降低 pool size，不增加应用实例 |
-| R2 S3 API 可从日本服务器稳定访问 | Bucket 级 PUT/GET/DELETE 小文件测试 | test Bucket | 改用 OSS Tokyo，不改 Store 上层契约 |
+| R2 S3 API 可从日本服务器稳定访问 | Bucket 级 PUT/GET/DELETE 与持续延迟测试 | test Bucket | 改用 OSS Tokyo，不改 Store 上层契约 |
+| 中国内地浏览器不可靠直连 R2 | 当前网络 3 次 TLS 探测均 5 秒超时 + Cloudflare China Network 文档 | client | 首发强制同源后端代理，不返回 R2 URL |
 | 现有 SQLite 仅测试数据 | 导出用户/任务/额度行数核对 | test | 执行一次性导入脚本后再切换 |
 
 ## L2.2 状态机
@@ -107,10 +112,11 @@
 |-----|-----|-----|
 | 身份来源 | Router 签名身份换取 Studio Session | `studio-server/authApp.mjs:124` |
 | 授权边界 | Studio 数据库仅接受 Studio role；作品查询必须带 user_id | `studio-server/generationApp.mjs:32` |
-| 凭证泄漏面 | PostgreSQL/R2 Secret 仅在服务器环境变量，不进前端和仓库 | deployment secret injection |
+| 凭证泄漏面 | PostgreSQL/R2 Secret 仅在服务器 Secret 环境，不进前端、仓库、镜像和日志 | `studio-server/server.mjs:19` |
 | SSRF | R2 endpoint 由部署配置固定，不接受用户输入 | server config |
 | 租户隔离 | 所有用户任务/作品读取同时匹配 user_id | `studio-server/generationTaskStore.mjs:96` |
 | 日志脱敏 | 不记录连接串、Token、Secret、签名 URL | structured error logging |
+| 对象覆盖 | task key 使用 `If-None-Match: *`，冲突时只接受相同字节 | `studio-server/r2ArtworkStore.mjs:25` |
 
 ## L2-ops.1 可观测性
 
@@ -126,23 +132,25 @@
 | 维度 | 问题 | 处理 |
 |-----|-----|-----|
 | 老调用方 | 前端 API 是否变化 | 保持现有响应结构和 Cookie 行为 |
-| 第三方 shape 漂移 | R2/S3 错误不同 | 统一为作品存储错误并记录 request id |
+| 第三方 shape 漂移 | R2/S3 错误不同 | 统一为作品存储错误；404 映射为 ENOENT |
 | feature flag | 是否双写 SQLite | 不双写；测试站一次性切换 |
 | 新旧对比 | 如何比较 | 同一套服务端测试分别跑旧 Store 和 PostgreSQL Store |
 | 回滚污染 | 新数据如何处理 | 测试期允许回滚后新数据暂不可见，保留 PostgreSQL/R2 不删除 |
 
 ## 分阶段实现
 
-1. PostgreSQL 1:1 迁移现有表和行为，完成异步化与并发集成测试。
-2. 测试站切 PostgreSQL，验证登录、3 次免费额度、管理员加额、真实生图、重启持久化。
-3. 开通 R2 test Bucket 和最小权限 Token，替换本地作品存储。
-4. 增加 `studio_artworks` 元数据表、短时签名访问和删除闭环。
-5. 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
+1. [x] PostgreSQL 1:1 迁移现有表和行为，完成异步化与并发集成测试代码。
+2. [x] 实现 R2 私有 Store、条件写入、对象元数据和同源后端代理读取。
+3. [ ] 创建 R2 test Bucket 和最小权限 Token，完成真实 PUT/GET/DELETE 集成测试。
+4. [ ] 测试站切 PostgreSQL/R2，验证登录、3 次免费额度、管理员加额、真实生图、重启持久化。
+5. [ ] 增加用户删除/恢复闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
+6. [ ] 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
 
 ## 剩余风险登记
 
 | 项 | 接受/已知/待后续 | Owner | Follow-up ticket |
 |----|----------------|------|-----------------|
 | R2 APAC 不保证日本落点 | 已知；若产品需要日本驻留则换 OSS/S3 Tokyo | Product/Infra | 上线前数据驻留确认 |
+| 后端代理承担图片带宽 | 已知；记录 GET 字节和延迟 | Engineering | P95/带宽达到架构文档阈值后再引入媒体边缘层 |
 | SQLite 测试数据是否保留 | 切换前核对并一次性迁移 | Engineering | PostgreSQL cutover |
 | 付费渠道尚未确定 | 当前先保留订阅/额度内部模型 | Product | Payment integration |
