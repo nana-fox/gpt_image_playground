@@ -11,7 +11,7 @@
 
 | 符号 | 证据 (file:line) | 签名 | 用途 |
 |-----|-----------------|-----|-----|
-| `readStudioServerConfig` | `studio-server/server.mjs:19` | `(env = process.env) -> config` | 将 SQLite 文件配置改为 PostgreSQL 连接配置 |
+| `readStudioServerConfig` | `studio-server/server.mjs:18` | `(env = process.env) -> config` | 将 SQLite 文件配置改为 PostgreSQL 连接配置 |
 | `createStudioRuntime` | `studio-server/server.mjs:123` | `(config = readStudioServerConfig()) -> runtime` | 建立连接池、执行迁移并组装 Store |
 | `createSessionStore` | `studio-server/sessionStore.mjs:6` | `(options = {}) -> store` | 用户和会话持久化 |
 | `createQuotaStore` | `studio-server/quotaStore.mjs:12` | `(options = {}) -> store` | 免费额度、订阅、加量包和预占事务 |
@@ -20,7 +20,7 @@
 
 ## L1.2 同类路径对照
 
-参考实现：`studio-server/quotaStore.mjs:178-184`
+参考实现：`studio-server/quotaStore.mjs:176-233`
 
 - [x] 事务内释放过期预占；PostgreSQL 使用同一 client，不跨连接。
 - [x] 额度选择和扣减并发保护；使用 `FOR UPDATE SKIP LOCKED` 或条件更新。
@@ -105,11 +105,11 @@
 
 | 维度 | 回答 | 证据 |
 |-----|-----|-----|
-| 身份来源 | Router 签名身份换取 Studio Session | `studio-server/authApp.mjs:113` |
+| 身份来源 | Router 签名身份换取 Studio Session | `studio-server/authApp.mjs:124` |
 | 授权边界 | Studio 数据库仅接受 Studio role；作品查询必须带 user_id | `studio-server/generationApp.mjs:32` |
 | 凭证泄漏面 | PostgreSQL/R2 Secret 仅在服务器环境变量，不进前端和仓库 | deployment secret injection |
 | SSRF | R2 endpoint 由部署配置固定，不接受用户输入 | server config |
-| 租户隔离 | 所有用户任务/作品读取同时匹配 user_id | `studio-server/generationTaskStore.mjs:48` |
+| 租户隔离 | 所有用户任务/作品读取同时匹配 user_id | `studio-server/generationTaskStore.mjs:96` |
 | 日志脱敏 | 不记录连接串、Token、Secret、签名 URL | structured error logging |
 
 ## L2-ops.1 可观测性
