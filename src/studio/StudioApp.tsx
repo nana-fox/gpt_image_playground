@@ -31,6 +31,7 @@ import {
   sendStudioVerifyCode,
   type StudioSession,
 } from '../lib/studioAuth'
+import { getStudioAdminSession, type StudioAdminSession } from '../lib/studioAdmin'
 import { studioAssetPath } from '../lib/studioApi'
 import {
   createStudioGeneration,
@@ -40,10 +41,11 @@ import {
   type StudioGenerationTask,
 } from '../lib/studioGeneration'
 import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
+import StudioAdminPage from './StudioAdminPage'
 import './studio.css'
 
 type AuthMode = 'login' | 'register' | '2fa'
-type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings'
+type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'
 
 type InspirationItem = {
   id: string
@@ -68,7 +70,7 @@ const inspirationItems: InspirationItem[] = [
 
 function getRoute(): StudioRoute {
   const route = window.location.hash.replace(/^#\/?/, '')
-  if (route === 'inspiration' || route === 'works' || route === 'points' || route === 'settings') return route
+  if (route === 'inspiration' || route === 'works' || route === 'points' || route === 'settings' || route === 'admin') return route
   return 'create'
 }
 
@@ -209,6 +211,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
   const [selectedInspiration, setSelectedInspiration] = useState('')
   const [quota, setQuota] = useState<StudioQuotaBalance | null>()
   const [tasks, setTasks] = useState<StudioGenerationTask[]>()
+  const [admin, setAdmin] = useState<StudioAdminSession | null>()
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -222,11 +225,12 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
 
   useEffect(() => {
     let active = true
-    void Promise.allSettled([getStudioQuota(), listStudioGenerations()])
-      .then(([quotaResult, tasksResult]) => {
+    void Promise.allSettled([getStudioQuota(), listStudioGenerations(), getStudioAdminSession()])
+      .then(([quotaResult, tasksResult, adminResult]) => {
         if (!active) return
         setQuota(quotaResult.status === 'fulfilled' ? quotaResult.value : null)
         setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : [])
+        setAdmin(adminResult.status === 'fulfilled' ? adminResult.value : null)
         if (tasksResult.status === 'rejected') setLoadError('作品记录暂时无法读取')
       })
     return () => {
@@ -258,19 +262,25 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
         ? <QuotaPage quota={quota} navigate={navigate} />
         : route === 'settings'
           ? <SettingsPage session={session} onLogout={onLogout} />
-          : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
+          : route === 'admin'
+            ? admin === undefined
+              ? <div className="page-frame recent-loading">正在确认运营权限…</div>
+              : admin
+                ? <StudioAdminPage admin={admin} onExit={() => navigate('create')} />
+                : <div className="page-frame empty-state"><Gear size={30} /><h3>当前账户没有运营权限</h3><p>运营权限只按服务端配置的 Router 用户标识开放。</p><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></div>
+            : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
 
   return (
     <main className="app-shell" data-studio-workspace>
-      <AppHeader route={route} quota={quota} session={session} navigate={navigate} onLogout={onLogout} />
+      <AppHeader route={route} quota={quota} session={session} isAdmin={Boolean(admin)} navigate={navigate} onLogout={onLogout} />
       {loadError && <p className="workspace-alert" role="alert">{loadError}</p>}
       {content}
-      {route !== 'points' && <nav className="mobile-tabbar" aria-label="移动端导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={20} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={20} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={20} />作品</button><button className={route === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><User size={20} />我的</button></nav>}
+      {route !== 'points' && route !== 'admin' && <nav className="mobile-tabbar" aria-label="移动端导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={20} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={20} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={20} />作品</button><button className={route === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><User size={20} />我的</button></nav>}
     </main>
   )
 }
 
-function AppHeader({ route, quota, session, navigate, onLogout }: { route: StudioRoute, quota: StudioQuotaBalance | null | undefined, session: StudioSession, navigate: (route: StudioRoute) => void, onLogout: () => void }) {
+function AppHeader({ route, quota, session, isAdmin, navigate, onLogout }: { route: StudioRoute, quota: StudioQuotaBalance | null | undefined, session: StudioSession, isAdmin: boolean, navigate: (route: StudioRoute) => void, onLogout: () => void }) {
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -290,7 +300,7 @@ function AppHeader({ route, quota, session, navigate, onLogout }: { route: Studi
     <header className="topbar">
       <button className="brand" onClick={() => navigate('create')}><span>NanaFox</span> 创作</button>
       <nav className="primary-nav" aria-label="主导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={18} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={18} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={18} />作品</button></nav>
-      <div className="account-area"><div className="points-wrap"><button className="points-button quota-header-button" onClick={() => { setQuotaOpen(!quotaOpen); setAccountOpen(false) }}><strong>{quotaHeader(quota)}</strong><span>{quota?.subscriber ? '订阅额度' : quota?.credits ? `另有 ${quota.credits} 次` : '免费额度'}</span></button>{quotaOpen && <div className="points-popover quota-popover"><div><Sparkle size={20} weight="duotone" /><strong>{quota?.free.enabled ? '今日免费创作' : '查看创作额度'}</strong></div><p>{quotaDescription(quota)}</p><button onClick={() => { setQuotaOpen(false); navigate('points') }}>查看额度与方案 <ArrowRight size={15} /></button></div>}</div><div className="account-menu-wrap"><button className="avatar-button" onClick={() => { setAccountOpen(!accountOpen); setQuotaOpen(false) }}><span className="studio-avatar">{displayName.slice(0, 1).toUpperCase()}</span><CaretDown size={13} /></button>{accountOpen && <div className="account-popover"><div className="account-summary"><span className="studio-avatar large">{displayName.slice(0, 1).toUpperCase()}</span><span><strong>{displayName}</strong><small>{quota?.subscriber ? `${quota.planId?.toUpperCase()} 套餐` : '免费账户'}</small></span></div><button onClick={() => navigate('points')}><Receipt size={17} />额度与订阅</button><button onClick={() => navigate('settings')}><Gear size={17} />账户设置</button><button className="danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></div>}</div></div>
+      <div className="account-area"><div className="points-wrap"><button className="points-button quota-header-button" onClick={() => { setQuotaOpen(!quotaOpen); setAccountOpen(false) }}><strong>{quotaHeader(quota)}</strong><span>{quota?.subscriber ? '订阅额度' : quota?.credits ? `另有 ${quota.credits} 次` : '免费额度'}</span></button>{quotaOpen && <div className="points-popover quota-popover"><div><Sparkle size={20} weight="duotone" /><strong>{quota?.free.enabled ? '今日免费创作' : '查看创作额度'}</strong></div><p>{quotaDescription(quota)}</p><button onClick={() => { setQuotaOpen(false); navigate('points') }}>查看额度与方案 <ArrowRight size={15} /></button></div>}</div><div className="account-menu-wrap"><button className="avatar-button" onClick={() => { setAccountOpen(!accountOpen); setQuotaOpen(false) }}><span className="studio-avatar">{displayName.slice(0, 1).toUpperCase()}</span><CaretDown size={13} /></button>{accountOpen && <div className="account-popover"><div className="account-summary"><span className="studio-avatar large">{displayName.slice(0, 1).toUpperCase()}</span><span><strong>{displayName}</strong><small>{quota?.subscriber ? `${quota.planId?.toUpperCase()} 套餐` : '免费账户'}</small></span></div><button onClick={() => navigate('points')}><Receipt size={17} />额度与订阅</button><button onClick={() => navigate('settings')}><Gear size={17} />账户设置</button>{isAdmin && <button onClick={() => navigate('admin')}><SlidersHorizontal size={17} />运营管理</button>}<button className="danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></div>}</div></div>
     </header>
   )
 }

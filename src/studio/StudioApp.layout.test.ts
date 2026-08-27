@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import mainSource from '../main.tsx?raw'
 import viteSource from '../../vite.config.ts?raw'
 import source from './StudioApp.tsx?raw'
+import adminSource from './StudioAdminPage.tsx?raw'
 
 describe('NanaFox Studio product shell', () => {
   it('loads only in the Studio deployment flavor', () => {
@@ -64,10 +65,10 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('getStudioAdminSession')
     expect(source).toContain("type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'")
     expect(source).toContain('运营管理')
-    expect(source).toContain('每日免费额度')
-    expect(source).toContain('给单个用户增加额度')
-    expect(source).toContain('searchStudioUsers')
-    expect(source).toContain('grantStudioCredits')
-    expect(source).not.toContain('模拟支付成功')
+    expect(adminSource).toContain('每日免费额度')
+    expect(adminSource).toContain('给单个用户增加额度')
+    expect(adminSource).toContain('searchStudioUsers')
+    expect(adminSource).toContain('grantStudioCredits')
+    expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
   })
 })
