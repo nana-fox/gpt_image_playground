@@ -13,6 +13,7 @@ test('Studio container builds the Studio flavor and runs without root or bundled
   assert.match(source, /npm ci --omit=dev/)
   assert.match(source, /USER studio/)
   assert.match(source, /HEALTHCHECK/)
+  assert.match(source, /\/api\/ready/)
   assert.match(source, /studio-server\/server\.mjs/)
   assert.doesNotMatch(source, /ROUTER_AUTH_CURRENT_SECRET=/)
   assert.doesNotMatch(source, /ROUTER_IMAGE_API_KEY=/)
