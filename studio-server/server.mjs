@@ -12,6 +12,7 @@ import { createGenerationService } from './generationService.mjs'
 import { createGenerationTaskStore } from './generationTaskStore.mjs'
 import { createImageProviderClient } from './imageProviderClient.mjs'
 import { createQuotaStore } from './quotaStore.mjs'
+import { createR2ArtworkStore } from './r2ArtworkStore.mjs'
 import { createRouterAuthClient } from './routerAuthClient.mjs'
 import { createSessionStore } from './sessionStore.mjs'
 
@@ -38,11 +39,25 @@ export function readStudioServerConfig(env = process.env) {
     port,
   }
   if (generationEnabled) {
+    const storageType = String(env.STUDIO_OBJECT_STORAGE ?? 'filesystem').trim().toLowerCase()
+    if (!['filesystem', 'r2'].includes(storageType)) throw new Error('STUDIO_OBJECT_STORAGE must be filesystem or r2')
     config.generation = {
       baseUrl: required(env.ROUTER_IMAGE_BASE_URL, 'ROUTER_IMAGE_BASE_URL'),
       apiKey: required(env.ROUTER_IMAGE_API_KEY, 'ROUTER_IMAGE_API_KEY'),
       model: String(env.STUDIO_IMAGE_MODEL ?? 'gpt-image-2').trim() || 'gpt-image-2',
-      artworkRoot: required(env.STUDIO_ARTWORK_ROOT, 'STUDIO_ARTWORK_ROOT'),
+      storage: storageType === 'r2'
+        ? {
+            type: 'r2',
+            endpoint: normalizeR2Endpoint(required(env.STUDIO_R2_ENDPOINT, 'STUDIO_R2_ENDPOINT')),
+            bucket: required(env.STUDIO_R2_BUCKET, 'STUDIO_R2_BUCKET'),
+            accessKeyId: required(env.STUDIO_R2_ACCESS_KEY_ID, 'STUDIO_R2_ACCESS_KEY_ID'),
+            secretAccessKey: required(env.STUDIO_R2_SECRET_ACCESS_KEY, 'STUDIO_R2_SECRET_ACCESS_KEY'),
+            region: String(env.STUDIO_R2_REGION ?? 'auto').trim() || 'auto',
+          }
+        : {
+            type: 'filesystem',
+            root: required(env.STUDIO_ARTWORK_ROOT, 'STUDIO_ARTWORK_ROOT'),
+          },
     }
   }
   if (String(env.STUDIO_STATIC_ROOT ?? '').trim()) config.staticRoot = String(env.STUDIO_STATIC_ROOT).trim()
@@ -156,7 +171,9 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
 }
 
 function createGenerationRuntime(config, sessions, quota, tasks) {
-  const outputs = createArtworkStore({ root: config.generation.artworkRoot })
+  const outputs = config.generation.storage.type === 'r2'
+    ? createR2ArtworkStore(config.generation.storage)
+    : createArtworkStore({ root: config.generation.storage.root })
   const images = createImageProviderClient({
     baseUrl: config.generation.baseUrl,
     apiKey: config.generation.apiKey,
@@ -195,6 +212,15 @@ function normalizeBasePath(value, name) {
     throw new Error(`${name} must start and end with /`)
   }
   return path
+}
+
+function normalizeR2Endpoint(value) {
+  const url = new URL(value)
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    throw new Error('STUDIO_R2_ENDPOINT is invalid')
+  }
+  if (!url.hostname.endsWith('.r2.cloudflarestorage.com')) throw new Error('STUDIO_R2_ENDPOINT must use Cloudflare R2')
+  return url.origin
 }
 
 async function serveStatic(root, pathname, method) {

@@ -82,7 +82,10 @@ test('enabled generation configuration fails closed without provider storage set
     baseUrl: 'https://router.nanafox.com/v1',
     apiKey: imageApiKey,
     model: 'gpt-image-2',
-    artworkRoot: '/var/lib/nanafox-studio/artworks',
+    storage: {
+      type: 'filesystem',
+      root: '/var/lib/nanafox-studio/artworks',
+    },
   })
   assert.equal(config.generationEnabled, true)
 })
@@ -115,7 +118,6 @@ test('R2 generation configuration requires isolated private storage credentials'
     accessKeyId: 'access-key-id',
     secretAccessKey: 'secret-access-key',
     region: 'auto',
-    readUrlTtlSeconds: 180,
   })
 })
 

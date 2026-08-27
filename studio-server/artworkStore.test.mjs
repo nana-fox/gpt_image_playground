@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +27,10 @@ test('artworks are stored as opaque PNG files and can be read back', async (t) =
   assert.deepEqual(output, {
     key: `${userId}/${taskId}.png`,
     url: `/api/artworks/${taskId}`,
+    etag: null,
+    sha256: createHash('sha256').update(png).digest('hex'),
+    bytes: png.length,
+    mimeType: 'image/png',
   })
   assert.deepEqual(await store.read(output), {
     bytes: png,

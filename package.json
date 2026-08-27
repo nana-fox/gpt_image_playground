@@ -18,6 +18,7 @@
     "test:studio-server": "node --test --experimental-test-coverage studio-server/*.test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1119.0",
     "@fal-ai/client": "^1.10.0",
     "@phosphor-icons/react": "^2.1.10",
     "@streamdown/math": "^1.0.2",

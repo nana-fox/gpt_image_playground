@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+import { artworkMetadata, decodeArtworkImage, validateArtworkId, validateArtworkKey } from './artworkValidation.mjs'
 
 export class ArtworkStoreError extends Error {
   constructor(message, reason = 'OUTPUT_STORAGE_FAILED') {
@@ -23,9 +22,9 @@ export function createArtworkStore(options = {}) {
 
   return {
     async save(taskId, image, userId) {
-      const task = validateId(taskId, 'task id')
-      const user = validateId(userId, 'user id')
-      const bytes = decodeImage(image, maxBytes)
+      const task = validateArtworkId(taskId, 'task id')
+      const user = validateArtworkId(userId, 'user id')
+      const bytes = decodeArtworkImage(image, maxBytes, ArtworkStoreError)
       const key = `${user}/${task}.png`
       const dir = resolve(root, user)
       const target = resolveKey(root, key)
@@ -47,7 +46,7 @@ export function createArtworkStore(options = {}) {
             if (error?.code !== 'ENOENT') throw error
           })
         }
-        return { key, url: `/api/artworks/${task}` }
+        return artworkMetadata(key, task, bytes)
       } catch (error) {
         if (error instanceof ArtworkStoreError) throw error
         throw new ArtworkStoreError('作品保存失败')
@@ -73,32 +72,9 @@ export function createArtworkStore(options = {}) {
   }
 }
 
-function validateId(value, label) {
-  const id = String(value ?? '').trim()
-  if (!SAFE_ID.test(id)) throw new Error(`Studio artwork ${label} is invalid`)
-  return id
-}
-
 function resolveKey(root, value) {
-  const key = String(value ?? '').trim()
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.png$/.test(key)) {
-    throw new Error('Studio artwork reference is invalid')
-  }
+  const key = validateArtworkKey(value)
   const target = resolve(root, key)
   if (!target.startsWith(`${root}${sep}`)) throw new Error('Studio artwork reference is invalid')
   return target
-}
-
-function decodeImage(image, maxBytes) {
-  const base64 = String(image?.base64 ?? '').trim()
-  if (image?.mimeType !== 'image/png' || !base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-    throw new ArtworkStoreError('图像结果格式无效')
-  }
-  const bytes = Buffer.from(base64, 'base64')
-  const canonical = bytes.toString('base64').replace(/=+$/, '')
-  if (canonical !== base64.replace(/=+$/, '') || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
-    throw new ArtworkStoreError('图像结果格式无效')
-  }
-  if (bytes.length > maxBytes) throw new ArtworkStoreError('图像结果超过存储限制')
-  return bytes
 }
