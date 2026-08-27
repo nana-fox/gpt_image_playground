@@ -59,4 +59,15 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('作品库')
     expect(source).not.toContain("lg:grid-cols-[390px_minmax(0,1fr)]")
   })
+
+  it('shows the real operations tools only to configured operators', () => {
+    expect(source).toContain('getStudioAdminSession')
+    expect(source).toContain("type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'")
+    expect(source).toContain('运营管理')
+    expect(source).toContain('每日免费额度')
+    expect(source).toContain('给单个用户增加额度')
+    expect(source).toContain('searchStudioUsers')
+    expect(source).toContain('grantStudioCredits')
+    expect(source).not.toContain('模拟支付成功')
+  })
 })
