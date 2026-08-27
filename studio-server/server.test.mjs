@@ -87,6 +87,38 @@ test('enabled generation configuration fails closed without provider storage set
   assert.equal(config.generationEnabled, true)
 })
 
+test('R2 generation configuration requires isolated private storage credentials', () => {
+  const base = {
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
+    STUDIO_GENERATION_ENABLED: 'true',
+    ROUTER_IMAGE_BASE_URL: 'https://router.nanafox.com/v1',
+    ROUTER_IMAGE_API_KEY: imageApiKey,
+    STUDIO_OBJECT_STORAGE: 'r2',
+  }
+  assert.throws(() => readStudioServerConfig(base), /STUDIO_R2_ENDPOINT/)
+
+  const config = readStudioServerConfig({
+    ...base,
+    STUDIO_R2_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+    STUDIO_R2_BUCKET: 'nanafox-studio-artworks-test',
+    STUDIO_R2_ACCESS_KEY_ID: 'access-key-id',
+    STUDIO_R2_SECRET_ACCESS_KEY: 'secret-access-key',
+  })
+  assert.deepEqual(config.generation.storage, {
+    type: 'r2',
+    endpoint: 'https://account.r2.cloudflarestorage.com',
+    bucket: 'nanafox-studio-artworks-test',
+    accessKeyId: 'access-key-id',
+    secretAccessKey: 'secret-access-key',
+    region: 'auto',
+    readUrlTtlSeconds: 180,
+  })
+})
+
 test('Studio app routes generation endpoints separately from account endpoints', async () => {
   const calls = []
   const app = createStudioApp({

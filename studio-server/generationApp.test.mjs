@@ -162,6 +162,28 @@ test('artwork bytes require ownership and a completed output', async () => {
   assert.equal(missing.status, 404)
 })
 
+test('R2 artwork URLs are signed only after ownership is verified', async () => {
+  let signedOutput
+  const app = createApp({
+    outputs: {
+      async createReadUrl(output) {
+        signedOutput = output
+        return 'https://signed.example/artwork.png?temporary=1'
+      },
+    },
+  })
+
+  const response = await app.handle(request('/api/artworks/task-1'))
+  assert.equal(response.status, 302)
+  assert.equal(response.headers.get('location'), 'https://signed.example/artwork.png?temporary=1')
+  assert.deepEqual(signedOutput, task.output)
+
+  signedOutput = null
+  const missing = await app.handle(request('/api/artworks/task-other'))
+  assert.equal(missing.status, 404)
+  assert.equal(signedOutput, null)
+})
+
 test('generation routes require a valid Studio session', async () => {
   const app = createApp()
   const response = await app.handle(new Request(`${origin}/api/generations`))
