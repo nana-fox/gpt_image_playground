@@ -28,6 +28,20 @@ export type StudioCreditGrant = {
   reference: string
 }
 
+export type StudioAdminPaymentPlan = {
+  id: string
+  kind: 'subscription' | 'pack'
+  name: string
+  description: string
+  priceCents: number
+  currency: 'CNY'
+  credits: number
+  durationDays: number
+  enabled: boolean
+  sortOrder: number
+  version: number
+}
+
 export class StudioAdminError extends Error {
   status: number
   reason: string
@@ -84,6 +98,30 @@ export async function grantStudioCredits(
     credentials: 'same-origin',
     headers: writeHeaders(),
     body: JSON.stringify(grant),
+  }, request))
+}
+
+export async function getStudioPaymentPlans(request: typeof fetch = fetch): Promise<StudioAdminPaymentPlan[]> {
+  const data = await call('admin/payment-plans', { credentials: 'same-origin' }, request)
+  if (!Array.isArray(data)) throw protocolError()
+  return data.map(normalizePaymentPlan)
+}
+
+export async function updateStudioPaymentPlan(plan: StudioAdminPaymentPlan, request: typeof fetch = fetch) {
+  return normalizePaymentPlan(await call(`admin/payment-plans/${encodeURIComponent(plan.id)}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify({
+      name: plan.name,
+      description: plan.description,
+      priceCents: plan.priceCents,
+      credits: plan.credits,
+      durationDays: plan.durationDays,
+      enabled: plan.enabled,
+      sortOrder: plan.sortOrder,
+      expectedVersion: plan.version,
+    }),
   }, request))
 }
 
@@ -146,6 +184,25 @@ function normalizeGrant(value: unknown): StudioCreditGrant {
   return grant as StudioCreditGrant
 }
 
+function normalizePaymentPlan(value: unknown): StudioAdminPaymentPlan {
+  const plan = value as Partial<StudioAdminPaymentPlan> | undefined
+  if (
+    !plan
+    || typeof plan.id !== 'string'
+    || (plan.kind !== 'subscription' && plan.kind !== 'pack')
+    || typeof plan.name !== 'string'
+    || typeof plan.description !== 'string'
+    || !positiveCount(plan.priceCents)
+    || plan.currency !== 'CNY'
+    || !positiveCount(plan.credits)
+    || !positiveCount(plan.durationDays)
+    || typeof plan.enabled !== 'boolean'
+    || !validCount(plan.sortOrder)
+    || !positiveCount(plan.version)
+  ) throw protocolError()
+  return plan as StudioAdminPaymentPlan
+}
+
 function validUser(value: unknown): value is StudioAdminUser {
   const user = value as Partial<StudioAdminUser> | undefined
   return Boolean(user && typeof user.id === 'string' && typeof user.email === 'string' && typeof user.displayName === 'string')
@@ -153,6 +210,10 @@ function validUser(value: unknown): value is StudioAdminUser {
 
 function validCount(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 0
+}
+
+function positiveCount(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) > 0
 }
 
 function writeHeaders() {

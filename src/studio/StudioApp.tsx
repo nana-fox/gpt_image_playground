@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import QRCode from 'qrcode'
 import {
   ArrowRight,
   CaretDown,
@@ -41,6 +42,13 @@ import {
   type StudioGenerationTask,
 } from '../lib/studioGeneration'
 import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
+import {
+  createStudioPaymentOrder,
+  getStudioPaymentOrder,
+  listStudioPaymentPlans,
+  type StudioPaymentOrder,
+  type StudioPaymentPlan,
+} from '../lib/studioPayment'
 import StudioAdminPage from './StudioAdminPage'
 import './studio.css'
 
@@ -259,7 +267,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
     : route === 'works'
       ? <WorksPage tasks={tasks} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
       : route === 'points'
-        ? <QuotaPage quota={quota} navigate={navigate} />
+        ? <QuotaPage quota={quota} refreshQuota={refreshQuota} navigate={navigate} />
         : route === 'settings'
           ? <SettingsPage session={session} onLogout={onLogout} />
           : route === 'admin'
@@ -380,8 +388,77 @@ function WorksPage({ tasks, useWork }: { tasks: StudioGenerationTask[] | undefin
   return <div className="page-frame"><header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{tasks === undefined ? '正在读取真实作品…' : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header><div className="works-toolbar"><div className="segmented-control"><button className="active">全部作品</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div><button className="icon-button" aria-label="作品筛选"><SlidersHorizontal size={19} /></button></div><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)} · {ratioName(task.input.size)}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{tasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>还没有这样的作品</h3><p>{query ? '清空搜索，或者开始一次新创作。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}{selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={() => useWork(selected)} />}</div>
 }
 
-function QuotaPage({ quota, navigate }: { quota: StudioQuotaBalance | null | undefined, navigate: (route: StudioRoute) => void }) {
-  return <div className="page-frame quota-live-page"><header className="page-title-row"><div><span className="eyebrow">创作额度</span><h1>额度与方案</h1><p>先使用每日免费次数，用完后再按需购买或订阅。</p></div><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></header><section className="live-quota-card"><span><Sparkle size={24} weight="duotone" /></span><div><small>当前可用额度</small><strong>{quotaHeader(quota)}</strong><p>{quotaDescription(quota)}</p></div></section><div className="plans-preview"><article><span className="eyebrow">PLUS</span><h2>创作 Plus</h2><p>适合持续内容创作，包含每月创作额度与精细画质。</p><button className="primary-button" disabled>订阅即将开放</button></article><article><span className="eyebrow">PRO</span><h2>专业版</h2><p>适合高频商业产出，提供更多额度与优先创作能力。</p><button className="primary-button" disabled>订阅即将开放</button></article></div><p className="unavailable-note">支付和套餐配置接口尚未接入测试环境，因此这里不会展示假价格或模拟付款结果。</p></div>
+function QuotaPage({ quota, refreshQuota, navigate }: { quota: StudioQuotaBalance | null | undefined, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
+  const [plans, setPlans] = useState<StudioPaymentPlan[]>()
+  const [order, setOrder] = useState<StudioPaymentOrder | null>(null)
+  const [qrCode, setQrCode] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void listStudioPaymentPlans()
+      .then(setPlans)
+      .catch((err) => setError(err instanceof Error ? err.message : '套餐暂时无法读取'))
+  }, [])
+
+  useEffect(() => {
+    if (!order?.codeUrl || order.status !== 'pending') {
+      setQrCode('')
+      return
+    }
+    let active = true
+    void QRCode.toDataURL(order.codeUrl, { width: 260, margin: 1, errorCorrectionLevel: 'M' })
+      .then((value) => { if (active) setQrCode(value) })
+      .catch(() => { if (active) setError('支付二维码生成失败，请关闭后重试') })
+    return () => { active = false }
+  }, [order?.codeUrl, order?.status])
+
+  useEffect(() => {
+    if (!order || order.status !== 'pending') return
+    let active = true
+    const timer = window.setInterval(() => {
+      void getStudioPaymentOrder(order.id)
+        .then(async (next) => {
+          if (!active) return
+          setOrder(next)
+          if (next.status === 'completed') await refreshQuota()
+        })
+        .catch(() => {})
+    }, 2000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [order?.id, order?.status, refreshQuota])
+
+  const checkout = async (plan: StudioPaymentPlan) => {
+    setBusy(plan.id)
+    setError('')
+    try {
+      setOrder(await createStudioPaymentOrder(plan.id, crypto.randomUUID()))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '订单创建失败，请稍后重试')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return <div className="page-frame quota-live-page">
+    <header className="page-title-row"><div><span className="eyebrow">创作额度</span><h1>额度与方案</h1><p>先使用每日免费次数，用完后再按需购买或订阅。</p></div><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></header>
+    <section className="live-quota-card"><span><Sparkle size={24} weight="duotone" /></span><div><small>当前可用额度</small><strong>{quotaHeader(quota)}</strong><p>{quotaDescription(quota)}</p></div></section>
+    {error && <p className="auth-error studio-payment-error" role="alert">{error}</p>}
+    {plans === undefined ? <div className="recent-loading">正在读取真实套餐…</div> : plans.length ? <div className="plans-preview studio-live-plans">{plans.map((plan) => <article key={plan.id}>
+      <span className="eyebrow">{plan.kind === 'subscription' ? '按月订阅' : '一次购买'}</span>
+      <h2>{plan.name}</h2>
+      <strong className="studio-plan-price"><small>¥</small>{(plan.priceCents / 100).toFixed(2)}</strong>
+      <p>{plan.description}</p>
+      <ul><li>{plan.credits} 次创作额度</li><li>{plan.durationDays} 天有效</li></ul>
+      <button className="primary-button" disabled={!plan.purchasable || Boolean(busy)} onClick={() => void checkout(plan)}>{busy === plan.id ? '正在创建订单…' : plan.purchasable ? plan.kind === 'subscription' ? '立即订阅' : '购买加量包' : '微信支付配置中'}</button>
+    </article>)}</div> : <div className="empty-state"><Receipt size={30} /><h3>套餐正在配置</h3><p>运营启用价格和额度后会在这里显示。</p></div>}
+    {order && <Modal onClose={() => setOrder(null)} className="studio-payment-modal">
+      {order.status === 'completed' ? <div className="studio-payment-result"><CheckCircle size={58} weight="fill" /><span className="eyebrow">支付完成</span><h2>{order.plan.name} 已到账</h2><p>{order.plan.credits} 次创作额度已经加入账户。</p><button className="primary-button" onClick={() => { setOrder(null); navigate('create') }}>开始创作</button></div> : order.status === 'pending' ? <div className="studio-payment-result"><span className="eyebrow">微信扫码支付</span><h2>{order.plan.name}</h2><strong className="studio-plan-price"><small>¥</small>{(order.amountCents / 100).toFixed(2)}</strong>{qrCode ? <img className="studio-payment-qr" src={qrCode} alt="微信支付二维码" /> : <div className="recent-loading">正在生成支付二维码…</div>}<p>请使用微信扫码，支付完成后页面会自动更新。</p><small>订单有效至 {new Date(order.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small></div> : <div className="studio-payment-result"><X size={48} /><h2>订单未完成</h2><p>{order.status === 'expired' ? '二维码已过期，请重新创建订单。' : '支付渠道暂时没有完成这个订单。'}</p><button className="secondary-button" onClick={() => setOrder(null)}>返回套餐</button></div>}
+    </Modal>}
+  </div>
 }
 
 function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {

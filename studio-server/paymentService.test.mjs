@@ -18,6 +18,14 @@ const plan = {
   version: 1,
 }
 
+test('lists configured plans but marks checkout unavailable until the provider is enabled', async () => {
+  const disabled = createPaymentService({ enabled: false, store: { listPlans: () => [plan] } })
+  assert.equal((await disabled.listPlans())[0].purchasable, false)
+
+  const enabled = createPaymentService({ enabled: true, store: { listPlans: () => [plan] }, provider: {} })
+  assert.equal((await enabled.listPlans())[0].purchasable, true)
+})
+
 test('creates one Native order from the server-side plan snapshot', async () => {
   const calls = []
   const order = {

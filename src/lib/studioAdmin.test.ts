@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getStudioAdminSession,
+  getStudioPaymentPlans,
   getStudioQuotaPolicy,
   grantStudioCredits,
   searchStudioUsers,
   updateStudioQuotaPolicy,
+  updateStudioPaymentPlan,
 } from './studioAdmin'
 
 beforeEach(() => {
@@ -63,6 +65,42 @@ describe('Studio operations client', () => {
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
       body: JSON.stringify({ units: 10, reference: 'support-001', expiresAt: null }),
+    })
+  })
+
+  it('loads and updates versioned payment plans', async () => {
+    const plan = {
+      id: 'plus',
+      kind: 'subscription' as const,
+      name: '创作 Plus',
+      description: '适合持续内容创作',
+      priceCents: 2900,
+      currency: 'CNY' as const,
+      credits: 100,
+      durationDays: 30,
+      enabled: false,
+      sortOrder: 10,
+      version: 1,
+    }
+    const load = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: [plan] }))
+    await expect(getStudioPaymentPlans(load)).resolves.toEqual([plan])
+
+    const save = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: { ...plan, enabled: true, version: 2 } }))
+    await expect(updateStudioPaymentPlan({ ...plan, enabled: true }, save)).resolves.toEqual({ ...plan, enabled: true, version: 2 })
+    expect(save).toHaveBeenCalledWith('/api/admin/payment-plans/plus', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
+      body: JSON.stringify({
+        name: plan.name,
+        description: plan.description,
+        priceCents: plan.priceCents,
+        credits: plan.credits,
+        durationDays: plan.durationDays,
+        enabled: true,
+        sortOrder: plan.sortOrder,
+        expectedVersion: plan.version,
+      }),
     })
   })
 })

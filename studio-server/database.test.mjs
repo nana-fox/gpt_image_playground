@@ -25,6 +25,9 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     'studio_admin_audit_log',
     'studio_credit_grants',
     'studio_generation_tasks',
+    'studio_payment_events',
+    'studio_payment_orders',
+    'studio_payment_plans',
     'studio_quota_policy',
     'studio_quota_reservations',
     'studio_schema_migrations',
@@ -39,4 +42,11 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     WHERE id = 1
   `)
   assert.deepEqual(policy.rows, [{ enabled: true, daily_limit: 3, timezone: 'Asia/Shanghai', version: 1 }])
+
+  const plans = await database.query('SELECT id, enabled FROM studio_payment_plans ORDER BY sort_order')
+  assert.deepEqual(plans.rows, [
+    { id: 'plus', enabled: false },
+    { id: 'pro', enabled: false },
+    { id: 'pack-60', enabled: false },
+  ])
 })

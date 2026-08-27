@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -44,6 +46,7 @@ describe('Studio payment client', () => {
       data: {
         id: 'order-1',
         status: init?.method === 'POST' ? 'pending' : 'completed',
+        provider: 'wxpay_native',
         plan: {
           id: 'plus',
           kind: 'subscription',

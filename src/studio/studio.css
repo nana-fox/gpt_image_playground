@@ -1172,6 +1172,86 @@ select:focus-visible {
   font-size: 13px;
 }
 
+.studio-live-plans {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.studio-live-plans article {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.studio-live-plans article > p {
+  min-height: 44px;
+  margin: 0;
+}
+
+.studio-live-plans ul {
+  min-height: 58px;
+  margin: 0 0 4px;
+  padding-left: 18px;
+  color: #a8b2c0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.studio-live-plans .primary-button {
+  margin-top: auto;
+}
+
+.studio-plan-price {
+  display: block;
+  color: #f4f7fb;
+  font-size: 32px;
+  letter-spacing: -0.04em;
+}
+
+.studio-plan-price small {
+  margin-right: 3px;
+  color: #91a7cf;
+  font-size: 15px;
+}
+
+.studio-payment-error {
+  margin: 18px 0 0;
+}
+
+.studio-payment-modal {
+  width: min(460px, calc(100vw - 32px));
+  padding: 36px;
+}
+
+.studio-payment-result {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.studio-payment-result > svg {
+  color: #64d2b3;
+}
+
+.studio-payment-result h2,
+.studio-payment-result p {
+  margin: 0;
+}
+
+.studio-payment-result p,
+.studio-payment-result > small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.studio-payment-qr {
+  width: 260px;
+  max-width: 100%;
+  padding: 10px;
+  border-radius: 16px;
+  background: white;
+}
+
 .studio-admin-page {
   max-width: 1120px;
 }
@@ -1338,12 +1418,81 @@ select:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+.studio-admin-plans {
+  grid-column: 1 / -1;
+}
+
+.studio-plan-list {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.studio-plan-list > article {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.studio-plan-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.studio-plan-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.studio-plan-heading .studio-admin-toggle {
+  min-width: 150px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.studio-plan-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.studio-plan-fields label,
+.studio-plan-description {
+  display: grid;
+  gap: 6px;
+  color: #a7b0bd;
+  font-size: 11px;
+}
+
+.studio-plan-fields input,
+.studio-plan-description input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.035);
+  color: #edf1f6;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
 @media (max-width: 720px) {
   .plans-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-plan-list {
     grid-template-columns: 1fr;
   }
 

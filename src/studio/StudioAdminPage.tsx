@@ -3,9 +3,12 @@ import { ArrowLeft, CheckCircle, MagnifyingGlass, Plus, Sparkle, User } from '@p
 
 import {
   getStudioQuotaPolicy,
+  getStudioPaymentPlans,
   grantStudioCredits,
   searchStudioUsers,
   updateStudioQuotaPolicy,
+  updateStudioPaymentPlan,
+  type StudioAdminPaymentPlan,
   type StudioAdminSession,
   type StudioAdminUser,
   type StudioQuotaPolicy,
@@ -13,6 +16,7 @@ import {
 
 export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminSession, onExit: () => void }) {
   const [policy, setPolicy] = useState<StudioQuotaPolicy>()
+  const [plans, setPlans] = useState<StudioAdminPaymentPlan[]>([])
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<StudioAdminUser[]>([])
   const [selected, setSelected] = useState<StudioAdminUser | null>(null)
@@ -24,9 +28,12 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void getStudioQuotaPolicy()
-      .then(setPolicy)
-      .catch((err) => setError(err instanceof Error ? err.message : '免费额度配置加载失败'))
+    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans()])
+      .then(([nextPolicy, nextPlans]) => {
+        setPolicy(nextPolicy)
+        setPlans(nextPlans)
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : '运营配置加载失败'))
   }, [])
 
   const savePolicy = async () => {
@@ -84,6 +91,25 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
     }
   }
 
+  const savePlan = async (plan: StudioAdminPaymentPlan) => {
+    setBusy(`plan:${plan.id}`)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await updateStudioPaymentPlan(plan)
+      setPlans((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setMessage(`${updated.name} 已更新，新的订单会使用这套价格和额度。`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '套餐保存失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const editPlan = (id: string, patch: Partial<StudioAdminPaymentPlan>) => {
+    setPlans((current) => current.map((plan) => plan.id === id ? { ...plan, ...patch } : plan))
+  }
+
   return <div className="page-frame studio-admin-page">
     <header className="page-title-row admin-title"><div><span className="eyebrow">NANAFOX OPERATIONS</span><h1>运营管理</h1><p>当前操作者：{admin.user.displayName || admin.user.email}。所有修改均由服务端鉴权并写入审计记录。</p></div><button className="secondary-button" onClick={onExit}><ArrowLeft size={17} /> 返回创作端</button></header>
     {error && <p className="auth-error studio-admin-notice" role="alert">{error}</p>}
@@ -109,6 +135,20 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
           <label><span>有效期（可选）</span><input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></label>
           <button className="primary-button" disabled={!selected || busy === 'grant'}>{busy === 'grant' ? '正在发放…' : selected ? `给 ${selected.email} 增加额度` : '请先选择用户'}</button>
         </form>
+      </section>
+      <section className="admin-card studio-admin-plans">
+        <div className="panel-heading"><div><h2>订阅与加量包</h2><p>价格以人民币元展示，订单始终使用保存时的服务端套餐快照。</p></div><span className="metric-icon"><Sparkle size={21} /></span></div>
+        <div className="studio-plan-list">{plans.map((plan) => <article key={plan.id}>
+          <div className="studio-plan-heading"><div><span className="eyebrow">{plan.kind === 'subscription' ? '订阅' : '加量包'}</span><strong>{plan.id}</strong></div><label className="studio-admin-toggle"><span><strong>{plan.enabled ? '销售中' : '未上架'}</strong><small>关闭后不在用户套餐页显示。</small></span><input type="checkbox" checked={plan.enabled} onChange={(event) => editPlan(plan.id, { enabled: event.target.checked })} /></label></div>
+          <div className="studio-plan-fields">
+            <label><span>套餐名称</span><input value={plan.name} maxLength={100} onChange={(event) => editPlan(plan.id, { name: event.target.value })} /></label>
+            <label><span>价格（元）</span><input type="number" min="0.01" max="1000000" step="0.01" value={(plan.priceCents / 100).toFixed(2)} onChange={(event) => editPlan(plan.id, { priceCents: Math.round(Number(event.target.value) * 100) })} /></label>
+            <label><span>包含次数</span><input type="number" min="1" max="100000" value={plan.credits} onChange={(event) => editPlan(plan.id, { credits: Number(event.target.value) })} /></label>
+            <label><span>有效天数</span><input type="number" min="1" max="3650" value={plan.durationDays} onChange={(event) => editPlan(plan.id, { durationDays: Number(event.target.value) })} /></label>
+          </div>
+          <label className="studio-plan-description"><span>用户说明</span><input value={plan.description} maxLength={300} onChange={(event) => editPlan(plan.id, { description: event.target.value })} /></label>
+          <button className="primary-button" disabled={busy === `plan:${plan.id}`} onClick={() => void savePlan(plan)}>{busy === `plan:${plan.id}` ? '正在保存…' : `保存 ${plan.name}`}</button>
+        </article>)}</div>
       </section>
     </div>
   </div>

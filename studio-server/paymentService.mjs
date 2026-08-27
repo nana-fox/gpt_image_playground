@@ -18,12 +18,23 @@ export function createPaymentService(options = {}) {
   const outTradeNo = options.outTradeNo ?? (() => `studio_${Date.now().toString(36)}_${randomBytes(5).toString('hex')}`)
 
   return {
-    listPlans() {
-      return store.listPlans()
+    async listPlans() {
+      const plans = await store.listPlans()
+      return plans.map((plan) => ({
+        id: plan.id,
+        kind: plan.kind,
+        name: plan.name,
+        description: plan.description,
+        priceCents: plan.priceCents,
+        currency: plan.currency,
+        credits: plan.credits,
+        durationDays: plan.durationDays,
+        purchasable: enabled && Boolean(provider),
+      }))
     },
 
     getOrder(userId, id) {
-      return store.getUserOrder(userId, id)
+      return store.getUserOrder(userId, id).then(publicOrder)
     },
 
     async createOrder(userId, planId, idempotencyKey, clientIp) {
@@ -42,7 +53,7 @@ export function createPaymentService(options = {}) {
         outTradeNo: outTradeNo(),
         expiresAt,
       })
-      if (!result.created) return result.order
+      if (!result.created) return publicOrder(result.order)
       try {
         const payment = await provider.createNativeOrder({
           outTradeNo: result.order.outTradeNo,
@@ -51,7 +62,7 @@ export function createPaymentService(options = {}) {
           expiresAt: result.order.expiresAt,
           clientIp,
         })
-        return store.attachCodeUrl(result.order.id, payment.codeUrl)
+        return publicOrder(await store.attachCodeUrl(result.order.id, payment.codeUrl))
       } catch (error) {
         await store.failOrder(result.order.id, error?.reason ?? 'PAYMENT_PROVIDER_ERROR')
         throw error
@@ -63,5 +74,21 @@ export function createPaymentService(options = {}) {
       const notification = provider.verifyNotification(rawBody, headers)
       return store.fulfillOrder(notification)
     },
+  }
+}
+
+function publicOrder(order) {
+  if (!order) return null
+  return {
+    id: order.id,
+    status: order.status,
+    provider: order.provider,
+    plan: order.plan,
+    amountCents: order.amountCents,
+    currency: order.currency,
+    codeUrl: order.codeUrl,
+    expiresAt: order.expiresAt,
+    paidAt: order.paidAt ?? null,
+    completedAt: order.completedAt ?? null,
   }
 }
