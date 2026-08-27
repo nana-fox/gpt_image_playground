@@ -67,6 +67,7 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 | `STUDIO_HOST` | 是 | 默认 `127.0.0.1` |
 | `STUDIO_PORT` | 是 | 默认 `8788`，不得与现有服务冲突 |
 | `STUDIO_DATABASE_URL` | 是 | 对应环境的独立 PostgreSQL role/database |
+| `STUDIO_ADMIN_SUBJECTS` | 运营端 | 逗号分隔的 Router stable subject 白名单；不使用邮箱判断管理员 |
 | `ROUTER_AUTH_BASE_URL` | 是 | Router 身份适配服务地址 |
 | `ROUTER_AUTH_KEY_ID` | 是 | 当前身份签名 Key ID |
 | `ROUTER_AUTH_CURRENT_SECRET` | 是 | Router 身份签名 Secret |
@@ -135,7 +136,7 @@ docker build \
 8. 打开真实生图，完成一笔最小生成：预占、Provider、R2、任务成功、额度确认全部一致。
 9. 重启 Studio 服务，确认 Session、额度、任务和作品仍可读取。
 10. 执行权限负向：未登录、CSRF、他人 task id、无额度、重复幂等键、R2 不存在对象。
-11. 管理 API 完成后验证管理员可修改每日免费次数、套餐配置和单用户幂等加额；当前 Store 已有能力，但受保护 API 和真实管理端闭环尚未实现。
+11. 验证白名单管理员可修改每日免费次数并给单用户幂等加额，普通用户为 403，所有写操作有同事务审计记录；套餐与支付仍不在当前管理端范围内。
 12. 执行 PostgreSQL 恢复演练和 R2/NAS 抽样校验。
 13. 观察至少 24 小时后再形成生产候选。
 
@@ -230,8 +231,13 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | 测试服务器切换 | 已完成 | `nanafox-studio:test-9b7ce84-path` 运行于 8788；旧 `test-3f1cb6f` 容器保留为回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
 | 浏览器验收 | 桌面与移动登录/注册通过 | 待使用真实 Router 账户完成登录、3 次额度、作品历史人工验收 |
-| 管理员受保护 API/真实页面 | 未实现 | 测试部署稳定后补齐，不把 mock UI 当完成 |
+| 管理员受保护 API/真实页面 | 已部署测试环境 | 已实现 subject 白名单、CSRF、每日免费次数、用户查询、幂等加额和同事务审计；待登录管理员做页面级 200 人工验收 |
+| 支付、订阅与加量包 | 未实现 | 当前页面明确显示“即将开放”；完成托管收银台、订单与幂等 Webhook 前不得开放收费 |
+| 灵感运营配置 | 未实现 | 当前灵感为前端静态内容，收藏刷新会丢失；不把“每周更新”当真实运营能力 |
+| Router 身份接口限流 | 生产阻断 | Studio 注册、验证码、登录公开前补边缘限流与集中式账号/IP 限流 |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
+| 共享 PostgreSQL 备份 | 生产阻断 | 现有备份任务需修复并完成 NAS 异机恢复演练，不能以同盘 dump 代替恢复证据 |
+| 测试服务器磁盘 | 观察项 | 根盘使用率约 86%；发布只保留当前镜像和明确回滚点，生产前配置阈值告警 |
 | Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
 | NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
@@ -247,3 +253,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 重启后 PostgreSQL readiness、页面和子路径资源继续通过；Sub2API test/prod、PostgreSQL、Redis 容器保持 healthy，Router test root 与 `/health` 为 200。
 - Playwright 在 1440×1000 与 390×844 检查登录和注册页面。两条外部字体 CSS 被 CSP 主动阻止并回退系统字体；未登录 Session 的 401 为预期，不是业务 5xx。
 - 旧 SQLite/本地作品没有导入 PostgreSQL/R2；测试备份保留在 `/home/nio/backups/nanafox-studio-test/pre-postgres-r2-20260827/`。因此旧测试 Session 会失效，旧测试作品暂不显示，但可回滚恢复。
+
+### 11.2 2026-08-27 管理端与安全修正版
+
+- Git commit：`9cb4617`；容器镜像：`nanafox-studio:test-9cb4617-path`；上一候选 `33202772` 与旧版 `9b7ce84` 容器保持停止状态，可用于测试回滚。
+- 前端 normal/studio 构建通过，49 个文件、590 个测试通过；Studio 服务 79/79 通过，真实 PostgreSQL 与私有 R2 未跳过，行覆盖率 92.39%。
+- PostgreSQL migration 已到 `1,2`，`studio_admin_audit_log` 存在；仅现有非合成测试用户被加入 `STUDIO_ADMIN_SUBJECTS`，Subject 未写入仓库或日志。
+- 公网页面、静态资源、`/api/health`、`/api/ready` 为 200；未登录 `/api/admin/me`、`/api/auth/session` 为 401；容器以 `studio` 非 root 用户运行。
+- 真实浏览器在 1280×720 与 390×844 验证登录和注册布局；无效外部字体请求已删除，控制台只保留未登录 Session 探测的预期 401。
+- 管理员真实 Session 的页面级 200、一次每日额度修改和一次幂等加额仍需人工验收；支付、找回密码、作品删除、灵感运营和套餐管理未完成，不得声称商业闭环已完成。
