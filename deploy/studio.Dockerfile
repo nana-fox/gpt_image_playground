@@ -27,5 +27,5 @@ COPY --from=build --chown=studio:studio /app/studio-server ./studio-server
 USER studio
 EXPOSE 8788
 VOLUME ["/data"]
-HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=4 CMD ["node", "-e", "fetch('http://127.0.0.1:8788/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=4 CMD ["node", "-e", "fetch('http://127.0.0.1:8788/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 CMD ["node", "studio-server/server.mjs"]
