@@ -21,31 +21,31 @@ export function createGenerationService(options = {}) {
       if (!userId) throw new GenerationError('请先登录', { status: 401, reason: 'UNAUTHENTICATED' })
       if (!key || key.length > 200) throw new GenerationError('创作请求标识无效', { status: 400, reason: 'INVALID_IDEMPOTENCY_KEY' })
 
-      const created = tasks.createTask(userId, input, key)
+      const created = await tasks.createTask(userId, input, key)
       if (!created.created) return replay(created.task)
 
       let reservation = null
       let output = null
       let confirmed = false
       try {
-        reservation = quota.reserve(userId, key)
-        tasks.markReserved(created.task.id, reservation.id)
-        tasks.markRunning(created.task.id)
+        reservation = await quota.reserve(userId, key)
+        await tasks.markReserved(created.task.id, reservation.id)
+        await tasks.markRunning(created.task.id)
 
         const result = await images.generate(input)
         if (!Array.isArray(result?.images) || result.images.length !== 1) {
           throw Object.assign(new Error('invalid image result'), { reason: 'IMAGE_PROVIDER_PROTOCOL_ERROR' })
         }
         output = await outputs.save(created.task.id, result.images[0], userId)
-        tasks.storeOutput(created.task.id, {
+        await tasks.storeOutput(created.task.id, {
           ...output,
           revisedPrompt: result.images[0].revisedPrompt,
           usage: result.usage,
         })
-        const confirmation = quota.confirm(reservation.id)
+        const confirmation = await quota.confirm(reservation.id)
         if (confirmation?.status !== 'confirmed') throw new Error('quota reservation was not confirmed')
         confirmed = true
-        return tasks.succeed(created.task.id)
+        return await tasks.succeed(created.task.id)
       } catch (error) {
         if (confirmed) {
           throw new GenerationError('作品已生成，正在完成入库，请稍后刷新', {
@@ -55,7 +55,7 @@ export function createGenerationService(options = {}) {
         }
         if (reservation) {
           try {
-            quota.release(reservation.id)
+            await quota.release(reservation.id)
           } catch (releaseError) {
             console.error('Studio quota release failed', releaseError)
           }
@@ -68,7 +68,7 @@ export function createGenerationService(options = {}) {
           }
         }
         const reason = normalizeReason(error?.reason)
-        tasks.fail(created.task.id, reason)
+        await tasks.fail(created.task.id, reason)
         throw new GenerationError(publicMessage(reason), {
           status: reason === 'QUOTA_EXHAUSTED' ? 402 : 502,
           reason,
@@ -77,18 +77,18 @@ export function createGenerationService(options = {}) {
     },
 
     async recoverPending() {
-      for (const task of tasks.listFinalizationPending()) {
+      for (const task of await tasks.listFinalizationPending()) {
         try {
-          const current = quota.getReservation(task.reservationId)
+          const current = await quota.getReservation(task.reservationId)
           const reservation = current?.status === 'reserved'
-            ? quota.confirm(task.reservationId)
+            ? await quota.confirm(task.reservationId)
             : current
           if (reservation?.status === 'confirmed') {
-            tasks.succeed(task.id)
+            await tasks.succeed(task.id)
             continue
           }
           await outputs.remove(task.output)
-          tasks.fail(task.id, 'GENERATION_FINALIZATION_EXPIRED')
+          await tasks.fail(task.id, 'GENERATION_FINALIZATION_EXPIRED')
         } catch (error) {
           console.error('Studio generation recovery failed', error)
         }

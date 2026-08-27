@@ -24,11 +24,11 @@ export function createStudioAuthApp(options = {}) {
 
       if (request.method === 'GET' && (url.pathname === '/api/auth/session' || url.pathname === '/api/quota')) {
         const token = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE]
-        const session = token ? store.getSession(token) : null
+        const session = token ? await store.getSession(token) : null
         if (!session) return json({ ok: false, error: { reason: 'UNAUTHENTICATED', message: '请先登录' } }, 401)
         if (url.pathname === '/api/quota') {
           if (!quota) return json({ ok: false, error: { reason: 'QUOTA_UNAVAILABLE', message: '额度服务暂时不可用' } }, 503)
-          return json({ ok: true, data: quota.getBalance(session.user.id) })
+          return json({ ok: true, data: await quota.getBalance(session.user.id) })
         }
         return json({ ok: true, data: session })
       }
@@ -89,10 +89,10 @@ export function createStudioAuthApp(options = {}) {
         const cookies = parseCookies(request.headers.get('cookie'))
         const sessionToken = cookies[SESSION_COOKIE] ?? ''
         const csrfToken = cookies[CSRF_COOKIE] ?? ''
-        if (!sessionToken || !csrfToken || request.headers.get('x-csrf-token') !== csrfToken || !store.verifyCsrf(sessionToken, csrfToken)) {
+        if (!sessionToken || !csrfToken || request.headers.get('x-csrf-token') !== csrfToken || !await store.verifyCsrf(sessionToken, csrfToken)) {
           return json({ ok: false, error: { reason: 'CSRF_REJECTED', message: '安全校验失败，请刷新页面后重试' } }, 403)
         }
-        store.deleteSession(sessionToken)
+        await store.deleteSession(sessionToken)
         const response = json({ ok: true, data: { loggedOut: true } })
         response.headers.append('Set-Cookie', clearCookie(SESSION_COOKIE, true, secure, publicBasePath))
         response.headers.append('Set-Cookie', clearCookie(CSRF_COOKIE, false, secure, publicBasePath))
@@ -121,10 +121,10 @@ const AUTH_POST_PATHS = new Set([
   '/api/auth/logout',
 ])
 
-function authenticated(data, store, secure, path) {
+async function authenticated(data, store, secure, path) {
   const user = data?.user
   if (!user || typeof user !== 'object' || !user.subject || !user.email) throw protocolError()
-  const session = store.createSession(user)
+  const session = await store.createSession(user)
   const response = json({
     ok: true,
     data: {

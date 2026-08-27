@@ -19,24 +19,24 @@ export function createStudioGenerationApp(options = {}) {
   return {
     async handle(request) {
       const url = new URL(request.url)
-      const session = authenticate(request, sessions)
+      const session = await authenticate(request, sessions)
       if (!session) return jsonError(401, 'UNAUTHENTICATED', '请先登录')
 
       try {
         if (request.method === 'GET' && url.pathname === '/api/generations') {
-          return json({ ok: true, data: tasks.listTasks(session.user.id).map((task) => publicTask(task, publicBasePath)) })
+          return json({ ok: true, data: (await tasks.listTasks(session.user.id)).map((task) => publicTask(task, publicBasePath)) })
         }
 
         const taskMatch = url.pathname.match(/^\/api\/generations\/([A-Za-z0-9_-]+)$/)
         if (request.method === 'GET' && taskMatch) {
-          const task = tasks.getTask(session.user.id, taskMatch[1])
+          const task = await tasks.getTask(session.user.id, taskMatch[1])
           if (!task) return jsonError(404, 'NOT_FOUND', '找不到这个创作任务')
           return json({ ok: true, data: publicTask(task, publicBasePath) })
         }
 
         const artworkMatch = url.pathname.match(/^\/api\/artworks\/([A-Za-z0-9_-]+)$/)
         if (request.method === 'GET' && artworkMatch) {
-          const task = tasks.getTask(session.user.id, artworkMatch[1])
+          const task = await tasks.getTask(session.user.id, artworkMatch[1])
           if (!task?.output || !['output_stored', 'succeeded'].includes(task.status)) {
             return jsonError(404, 'NOT_FOUND', '找不到这个作品')
           }
@@ -65,7 +65,7 @@ export function createStudioGenerationApp(options = {}) {
         if (request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
           return jsonError(415, 'UNSUPPORTED_MEDIA_TYPE', '请求格式必须为 JSON')
         }
-        if (!verifyCsrf(request, sessions)) {
+        if (!await verifyCsrf(request, sessions)) {
           return jsonError(403, 'CSRF_REJECTED', '安全校验失败，请刷新页面后重试')
         }
 
@@ -85,16 +85,16 @@ export function createStudioGenerationApp(options = {}) {
   }
 }
 
-function authenticate(request, sessions) {
+async function authenticate(request, sessions) {
   const token = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE]
   return token ? sessions.getSession(token) : null
 }
 
-function verifyCsrf(request, sessions) {
+async function verifyCsrf(request, sessions) {
   const cookies = parseCookies(request.headers.get('cookie'))
   const token = cookies[SESSION_COOKIE] ?? ''
   const csrf = cookies[CSRF_COOKIE] ?? ''
-  return Boolean(token && csrf && request.headers.get('x-csrf-token') === csrf && sessions.verifyCsrf(token, csrf))
+  return Boolean(token && csrf && request.headers.get('x-csrf-token') === csrf && await sessions.verifyCsrf(token, csrf))
 }
 
 async function readJson(request) {

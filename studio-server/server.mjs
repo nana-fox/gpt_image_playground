@@ -1,12 +1,12 @@
 import { createServer } from 'node:http'
-import { mkdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { dirname, extname, resolve, sep } from 'node:path'
+import { extname, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 import { createArtworkStore } from './artworkStore.mjs'
 import { createStudioAuthApp } from './authApp.mjs'
+import { createStudioDatabase } from './database.mjs'
 import { createStudioGenerationApp } from './generationApp.mjs'
 import { createGenerationService } from './generationService.mjs'
 import { createGenerationTaskStore } from './generationTaskStore.mjs'
@@ -21,7 +21,7 @@ export function readStudioServerConfig(env = process.env) {
   const routerSecret = required(env.ROUTER_AUTH_CURRENT_SECRET, 'ROUTER_AUTH_CURRENT_SECRET')
   const publicOrigin = required(env.STUDIO_PUBLIC_ORIGIN, 'STUDIO_PUBLIC_ORIGIN')
   const publicBasePath = normalizeBasePath(env.STUDIO_PUBLIC_BASE_PATH ?? '/', 'STUDIO_PUBLIC_BASE_PATH')
-  const database = required(env.STUDIO_SESSION_DATABASE, 'STUDIO_SESSION_DATABASE')
+  const databaseUrl = required(env.STUDIO_DATABASE_URL, 'STUDIO_DATABASE_URL')
   const generationEnabled = parseBoolean(env.STUDIO_GENERATION_ENABLED, 'STUDIO_GENERATION_ENABLED')
   const port = env.STUDIO_PORT ? Number(env.STUDIO_PORT) : 8788
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STUDIO_PORT is invalid')
@@ -32,7 +32,7 @@ export function readStudioServerConfig(env = process.env) {
     routerSecret,
     publicOrigin,
     publicBasePath,
-    database,
+    databaseUrl,
     generationEnabled,
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
     port,
@@ -121,10 +121,10 @@ export function createStudioHttpServer(options) {
 }
 
 export function createStudioRuntime(config = readStudioServerConfig()) {
-  mkdirSync(dirname(config.database), { recursive: true })
-  const store = createSessionStore({ filename: config.database })
-  const quota = createQuotaStore({ filename: config.database })
-  const tasks = createGenerationTaskStore({ filename: config.database })
+  const database = createStudioDatabase({ connectionString: config.databaseUrl })
+  const store = createSessionStore({ database })
+  const quota = createQuotaStore({ database })
+  const tasks = createGenerationTaskStore({ database })
   const routerAuth = createRouterAuthClient({
     baseUrl: config.routerBaseUrl,
     keyId: config.routerKeyId,
@@ -145,12 +145,10 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
 
   return {
     server,
-    ready: generationRuntime?.ready ?? Promise.resolve(),
+    ready: Promise.all([database.ready, generationRuntime?.ready ?? Promise.resolve()]),
     close(callback) {
-      server.close(() => {
-        tasks.close()
-        quota.close()
-        store.close()
+      server.close(async () => {
+        await database.close()
         callback?.()
       })
     },

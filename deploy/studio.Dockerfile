@@ -14,7 +14,6 @@ ENV NODE_ENV=production \
     STUDIO_HOST=0.0.0.0 \
     STUDIO_PORT=8788 \
     STUDIO_GENERATION_ENABLED=true \
-    STUDIO_SESSION_DATABASE=/data/studio.db \
     STUDIO_ARTWORK_ROOT=/data/artworks \
     STUDIO_STATIC_ROOT=/app/dist
 
