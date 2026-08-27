@@ -1,6 +1,6 @@
 # NanaFox Studio 产品与技术架构
 
-> 状态：2026-08-27 基线。本文是 Studio 的架构决策记录；部署步骤见 `docs/nanafox-studio-deployment-runbook.md`，PostgreSQL/R2 实施证据见 `docs/nanafox-studio-postgres-r2-plan.md`。
+> 状态：2026-08-28 基线。本文是 Studio 的架构决策记录；部署步骤见 `docs/nanafox-studio-deployment-runbook.md`，PostgreSQL/R2 实施证据见 `docs/nanafox-studio-postgres-r2-plan.md`，支付边界与验收见 `docs/nanafox-studio-payment-plan.md`。
 
 ## 1. 最终结论
 
@@ -40,6 +40,7 @@ Caddy
   └─ /api/* → Studio Node 服务
                  ├─ Router 身份适配接口
                  ├─ Router Images API（服务端 Key）
+                 ├─ 微信支付 APIv3（可关闭）
                  ├─ PostgreSQL / nanafox_studio
                  └─ Cloudflare R2 私有 Bucket
 
@@ -85,8 +86,19 @@ NAS（非在线链路）
 
 - 已实现：由显式 Router stable subject 白名单授权；运营端可启停每日免费额度、修改默认次数，并通过幂等 `reference` 给单用户加额。
 - 已实现：策略与加额写入在同一个 PostgreSQL 事务内记录操作者、目标、前后值和时间；不能直接改余额数字。
-- 待实现：Free、Plus、Pro 与加量包的价格、额度、有效期和销售状态管理；接入支付前不展示可购买假套餐。
-- 待实现：任务排障、订阅订单、退款、审计日志查看和灵感内容管理。当前灵感是静态前端内容，不声称运营端可配置。
+- 已实现：Plus、Pro 与加量包的名称、价格、额度、有效期和销售状态管理；每次修改使用乐观版本并写入审计日志，订单保存不可变套餐快照。
+- 待实现：任务排障、订单列表与退款、审计日志查看和灵感内容管理。当前灵感是静态前端内容，不声称运营端可配置。
+
+### 4.5 支付和履约
+
+1. 浏览器读取已启用套餐；支付渠道关闭时仍能查看套餐，但不能创建订单。
+2. 登录用户以 Idempotency-Key 创建订单，后端按数据库套餐版本固化金额、额度和有效期快照。
+3. Studio 后端使用微信支付 APIv3 Native 下单，浏览器只收到二维码内容和 Studio 订单号。
+4. 微信异步通知经过平台证书验签、五分钟时间窗、AES-256-GCM 解密及 AppID、商户号、金额、币种校验后，才可进入履约事务。
+5. PostgreSQL 在同一事务内锁定订单、记录支付事件并发放额度包或订阅；重复通知不重复发放。
+6. 用户轮询待支付订单时，后端主动查单补偿漏通知；前端没有模拟支付成功入口。
+
+首发仅支持一次性微信 Native 扫码。JSAPI、自动续费、退款自动化和支付宝均等真实需求出现后再做；当前不增加第二套支付服务或复制 Router 的余额、兑换码和用户组语义。
 
 ## 5. PostgreSQL 设计
 
@@ -111,7 +123,7 @@ NAS（非在线链路）
 | 提示词、比例、画质、状态、失败原因 | PostgreSQL | 支持作品列表与客服排障 |
 | R2 object key、ETag、SHA-256、字节数、MIME | PostgreSQL `output_json` | V1 直接随任务保存，避免提前增加一张只被单路径使用的表 |
 | 图片二进制 | R2 | 不进 PostgreSQL，不进日志 |
-| 支付流水 | PostgreSQL（支付接入阶段新增） | 与额度发放使用支付方事件 ID 幂等关联 |
+| 支付套餐、订单、事件 | PostgreSQL | 金额使用人民币分整数；订单保存套餐快照，支付事件与额度发放幂等关联 |
 
 当一个任务需要多张图、派生缩略图、分享状态或独立删除状态时，再把 `output_json` 演进为 `studio_artworks` 表；当前一任务一作品无需提前拆表。
 
@@ -192,6 +204,8 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 - 日志记录 request id、task id、状态码和耗时，不记录提示词全文、签名 URL、Cookie 和 Secret。
 - 管理员加额、套餐变更和删除操作必须有审计记录与幂等 reference。
 - 管理 API 只接受 `STUDIO_ADMIN_SUBJECTS` 中的 stable subject；不按邮箱、前端菜单或 Router 全局角色推断权限。
+- 微信商户私钥、APIv3 Key、平台公钥只从服务器 Secret 文件加载；支付默认关闭，开启支付时缺任一配置即启动失败。
+- 支付回调先验签和校验商户/金额再履约；日志不记录通知原文、二维码内容、私钥、APIv3 Key 或用户提示词。
 
 ## 11. 演进触发条件
 
@@ -213,7 +227,7 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 | PostgreSQL Store、migration、并发额度保护 | 已切换公网测试容器，真实 PostgreSQL 集成测试通过 |
 | R2 私有 Store、条件写入、后端代理读取 | 已切换公网测试容器，真实 R2 合约与供应商生成读回探针通过 |
 | 管理员每日策略/单用户加额 | 已实现受保护 API、真实前端、CSRF、幂等与同事务审计并部署测试环境；管理员 Session 页面验收待人工执行 |
-| 管理员套餐、支付、订单、灵感和任务排障 | 尚未实现；当前管理端不显示这些伪功能 |
+| 管理员套餐、微信 Native 支付、订单和履约 | 代码已实现并通过真实 PostgreSQL 集成测试；测试商户配置与真实小额支付验收待完成，渠道默认关闭 |
 | PostgreSQL/R2 测试环境部署 | `9cb4617` 已部署；`33202772` 与 `9b7ce84` 停止容器保留为测试回滚点 |
-| 订阅支付、用户删除恢复、NAS 自动备份 | 待实现或待部署配置 |
+| 退款/自动续费、用户删除恢复、NAS 自动备份 | 待实现或待部署配置 |
 | 生产发布 | 未授权、未执行 |
