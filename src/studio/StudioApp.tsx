@@ -1,4 +1,25 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import {
+  ArrowRight,
+  CaretDown,
+  CheckCircle,
+  Compass,
+  DownloadSimple,
+  Eye,
+  Gear,
+  Heart,
+  House,
+  ImageSquare,
+  Images,
+  MagnifyingGlass,
+  Plus,
+  Receipt,
+  SignOut,
+  SlidersHorizontal,
+  Sparkle,
+  User,
+  X,
+} from '@phosphor-icons/react'
 
 import {
   StudioAuthError,
@@ -10,6 +31,7 @@ import {
   sendStudioVerifyCode,
   type StudioSession,
 } from '../lib/studioAuth'
+import { studioAssetPath } from '../lib/studioApi'
 import {
   createStudioGeneration,
   listStudioGenerations,
@@ -18,8 +40,37 @@ import {
   type StudioGenerationTask,
 } from '../lib/studioGeneration'
 import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
+import './studio.css'
 
 type AuthMode = 'login' | 'register' | '2fa'
+type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings'
+
+type InspirationItem = {
+  id: string
+  category: string
+  title: string
+  description: string
+  image: string
+  prompt: string
+}
+
+const inspirationItems: InspirationItem[] = [
+  { id: 'product', category: '商业', title: '产品海报', description: '打造质感产品视觉', image: 'inspiration-product.png', prompt: '为一款高端无线耳机制作电影感产品海报，黑色背景，柔和轮廓光，突出精密材质和高级质感' },
+  { id: 'portrait', category: '人像', title: '自然光人像', description: '捕捉光影与情绪', image: 'inspiration-portrait.png', prompt: '自然电影感人像写真，柔和侧光，安静克制的情绪，细腻肤质，深色背景' },
+  { id: 'social', category: '社媒', title: '旅行封面', description: '吸睛封面一键生成', image: 'inspiration-social.png', prompt: '旅行主题社媒封面，雪山与湖面，蓝紫暮色，具有清晰的视觉中心和留白' },
+  { id: 'illustration', category: '插画', title: '云海鲸歌', description: '天马行空的想象世界', image: 'inspiration-illustration.png', prompt: '巨鲸穿行在金色云海中的幻想插画，深海蓝与暖金配色，细腻笔触，宏大而宁静' },
+  { id: 'interior', category: '空间', title: '温暖客厅', description: '焕新你的理想空间', image: 'inspiration-interior.png', prompt: '把客厅改造成安静温暖的现代空间，低饱和米灰色，木质和布艺材质，自然光充足' },
+  { id: 'perfume', category: '商业', title: '静奢香氛', description: '克制高级的品牌视觉', image: 'recent-perfume.png', prompt: '高级香氛产品摄影，深色石材台面，冷调轮廓光，微微水汽，杂志广告质感' },
+  { id: 'alley', category: '摄影', title: '雨夜街巷', description: '城市叙事氛围感', image: 'recent-alley.png', prompt: '雨夜里的老城街巷，霓虹灯倒影，电影宽银幕构图，安静行人，写实摄影' },
+  { id: 'flowers', category: '摄影', title: '百合静物', description: '柔和自然的静物光线', image: 'recent-flowers.png', prompt: '白色百合花静物摄影，晨光穿过薄纱，低饱和背景，细腻花瓣质感，留白构图' },
+  { id: 'cat', category: '萌宠', title: '布偶猫肖像', description: '把日常拍成故事', image: 'recent-cat.png', prompt: '布偶猫电影感肖像，柔和窗边光，奶油色背景，浅景深，细腻毛发' },
+]
+
+function getRoute(): StudioRoute {
+  const route = window.location.hash.replace(/^#\/?/, '')
+  if (route === 'inspiration' || route === 'works' || route === 'points' || route === 'settings') return route
+  return 'create'
+}
 
 export default function StudioApp() {
   const [session, setSession] = useState<StudioSession | null>()
@@ -38,16 +89,9 @@ export default function StudioApp() {
       })
   }, [])
 
-  if (session === undefined) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#05070a] text-white">
-        <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-[#78a8ff]" aria-label="正在加载" />
-      </main>
-    )
-  }
-
+  if (session === undefined) return <main className="studio-loading"><span aria-label="正在加载" /></main>
   if (!session) return <StudioAuthPage initialError={loadError} onAuthenticated={setSession} />
-  return <StudioAccountReady session={session} onLogout={() => setSession(null)} />
+  return <StudioWorkspace session={session} onLogout={() => setSession(null)} />
 }
 
 function StudioAuthPage({
@@ -72,6 +116,7 @@ function StudioAuthPage({
     setError('')
     setPassword('')
     setVerifyCode('')
+    setCodeSent(false)
   }
 
   const sendCode = async () => {
@@ -119,101 +164,61 @@ function StudioAuthPage({
   }
 
   return (
-    <main data-studio-auth className="min-h-screen overflow-hidden bg-[#05070a] text-white lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(440px,0.92fr)]">
-      <section className="relative hidden min-h-screen overflow-hidden border-r border-white/[0.08] px-14 py-12 lg:flex lg:flex-col lg:justify-between xl:px-20">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_26%,rgba(58,116,255,0.35),transparent_34%),radial-gradient(circle_at_78%_72%,rgba(135,73,255,0.22),transparent_30%),linear-gradient(145deg,#070b13_0%,#05070a_64%)]" />
-        <div className="absolute left-[16%] top-[25%] h-64 w-64 rounded-full border border-blue-300/15 bg-blue-500/10 blur-[1px]" />
-        <div className="absolute left-[32%] top-[34%] h-72 w-48 rotate-12 rounded-[44%_56%_52%_48%] bg-gradient-to-br from-blue-400/45 via-indigo-500/20 to-transparent blur-2xl" />
-        <div className="absolute bottom-[18%] right-[12%] h-52 w-72 -rotate-6 rounded-[2.5rem] border border-white/10 bg-white/[0.04] shadow-2xl backdrop-blur-xl" />
-        <header className="relative z-10 flex items-center gap-3 text-xl font-semibold tracking-tight">
-          <FoxMark />
-          <span>NanaFox <span className="font-normal text-white/65">Studio</span></span>
-        </header>
-        <div className="relative z-10 max-w-xl pb-10">
-          <span className="mb-5 inline-flex rounded-full border border-blue-300/20 bg-blue-300/10 px-3 py-1 text-xs font-medium tracking-[0.14em] text-blue-200">AI IMAGE STUDIO</span>
-          <h2 className="text-5xl font-semibold leading-[1.12] tracking-[-0.045em] xl:text-6xl">把脑海里的画面，<br />变成真正的作品。</h2>
-          <p className="mt-6 max-w-lg text-base leading-7 text-slate-300/75">不需要配置 Key，也不用研究复杂参数。从一句描述开始，灵感、创作和作品管理都在这里完成。</p>
+    <main data-studio-auth className="auth-shell">
+      <section className="auth-visual">
+        <span className="brand light"><span>NanaFox</span> 创作</span>
+        <img src={studioAssetPath('inspiration-portrait.png')} alt="自然光人像创作案例" />
+        <div>
+          <span className="eyebrow">为创作者准备</span>
+          <blockquote>把脑海里的光线、情绪和故事，轻松变成作品。</blockquote>
+          <p>不需要配置 Key，也不用研究复杂参数。</p>
         </div>
-        <p className="relative z-10 text-xs text-white/35">© 2026 NanaFox. 让 AI 创作更简单。</p>
       </section>
-
-      <section className="relative flex min-h-screen items-center justify-center px-6 py-12 sm:px-10 lg:bg-[#080a0e]">
-        <div className="absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_50%_0%,rgba(66,114,255,0.12),transparent_70%)] lg:hidden" />
-        <div className="relative w-full max-w-[430px]">
-          <header className="mb-12 flex items-center gap-3 text-lg font-semibold lg:hidden">
-            <FoxMark />
-            NanaFox <span className="-ml-2 font-normal text-white/60">Studio</span>
-          </header>
-
-          <div className="mb-9">
-            <span className="text-sm font-medium text-[#78a8ff]">{mode === 'login' ? '欢迎回来' : mode === 'register' ? '从这里开始创作' : '保护你的账户'}</span>
-            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-              {mode === 'login' ? '登录 NanaFox Studio' : mode === 'register' ? '创建账户' : '完成两步验证'}
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              {mode === 'login' ? '继续你的创作和作品管理。' : mode === 'register' ? '使用邮箱注册，不需要配置任何 API Key。' : '请输入身份验证器中显示的 6 位动态验证码。'}
-            </p>
-          </div>
-
-          <form className="space-y-5" onSubmit={submit}>
+      <section className="auth-panel">
+        <div className="auth-box">
+          <span className="eyebrow">{mode === 'login' ? '欢迎回来' : mode === 'register' ? '开始你的创作' : '保护你的账户'}</span>
+          <h1>{mode === 'login' ? '登录 NanaFox Studio' : mode === 'register' ? '创建账户' : '完成两步验证'}</h1>
+          <p>{mode === 'login' ? '继续管理作品、创作额度和订阅。' : mode === 'register' ? '注册后即可使用每日免费创作额度。' : '请输入身份验证器中显示的 6 位动态验证码。'}</p>
+          <form onSubmit={submit}>
             {mode !== '2fa' ? (
               <>
-                <AuthField label="邮箱">
-                  <input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required />
-                </AuthField>
-                <AuthField label="密码">
-                  <input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'login' ? '输入账户密码' : '至少 8 位，建议包含数字和符号'} minLength={8} required />
-                </AuthField>
-                {mode === 'register' && (
-                  <AuthField label="邮箱验证码">
-                    <div className="relative">
-                      <input className="pr-32" inputMode="numeric" value={verifyCode} onChange={(event) => setVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" pattern="\d{6}" required />
-                      <button className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-2 text-xs font-medium text-[#8eb6ff] transition hover:bg-blue-400/10 disabled:opacity-45" type="button" onClick={() => void sendCode()} disabled={busy || codeSent}>{codeSent ? '已发送' : '发送验证码'}</button>
-                    </div>
-                  </AuthField>
-                )}
+                <label><span>邮箱</span><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required /></label>
+                <label><span>密码</span><input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" minLength={8} required /></label>
+                {mode === 'register' && <label><span>邮箱验证码</span><div className="verify-code-field"><input inputMode="numeric" value={verifyCode} onChange={(event) => setVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" pattern="\d{6}" required /><button type="button" onClick={() => void sendCode()} disabled={busy || codeSent}>{codeSent ? '已发送' : '发送验证码'}</button></div></label>}
               </>
             ) : (
-              <AuthField label="两步验证">
-                <input className="text-center text-xl tracking-[0.45em]" autoComplete="one-time-code" inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" pattern="\d{6}" autoFocus required />
-              </AuthField>
+              <label><span>两步验证</span><input className="totp-input" autoComplete="one-time-code" inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" pattern="\d{6}" autoFocus required /></label>
             )}
-
-            {error && <p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
-
-            <button className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#f3f6fc] font-semibold text-[#080a0e] transition hover:bg-white disabled:cursor-wait disabled:opacity-60" type="submit" disabled={busy}>
-              {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-slate-900" /> : null}
-              {mode === 'login' ? '登录' : mode === 'register' ? '注册并开始创作' : '验证并登录'}
-            </button>
+            {error && <p className="auth-error" role="alert">{error}</p>}
+            <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? '请稍候…' : mode === 'login' ? '登录' : mode === 'register' ? '注册并开始创作' : '验证并登录'} <ArrowRight size={17} /></button>
           </form>
-
           {mode === '2fa' ? (
-            <button className="mt-6 w-full text-center text-sm text-slate-400 hover:text-white" type="button" onClick={() => switchMode('login')}>返回邮箱登录</button>
+            <p className="auth-switch"><button type="button" onClick={() => switchMode('login')}>返回邮箱登录</button></p>
           ) : (
-            <p className="mt-7 text-center text-sm text-slate-400">
-              {mode === 'login' ? '还没有账户？' : '已经有账户？'}{' '}
-              <button className="font-medium text-[#8eb6ff] hover:text-blue-300" type="button" onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>
-                {mode === 'login' ? '创建账户' : '直接登录'}
-              </button>
-            </p>
+            <p className="auth-switch">{mode === 'login' ? '还没有账户？' : '已经有账户？'}<button type="button" onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? '注册账户' : '直接登录'}</button></p>
           )}
-          <p className="mt-10 text-center text-xs leading-5 text-slate-500">注册或登录即表示你同意《服务条款》和《隐私政策》</p>
         </div>
       </section>
     </main>
   )
 }
 
-function StudioAccountReady({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
+function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
+  const [route, setRoute] = useState(getRoute)
   const [prompt, setPrompt] = useState('')
-  const [size, setSize] = useState<StudioGenerationInput['size']>('1024x1024')
-  const [quality, setQuality] = useState<StudioGenerationInput['quality']>('medium')
-  const [generating, setGenerating] = useState(false)
-  const [signingOut, setSigningOut] = useState(false)
-  const [error, setError] = useState('')
+  const [selectedInspiration, setSelectedInspiration] = useState('')
   const [quota, setQuota] = useState<StudioQuotaBalance | null>()
   const [tasks, setTasks] = useState<StudioGenerationTask[]>()
-  const [requestKey, setRequestKey] = useState('')
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setRoute(getRoute())
+      window.scrollTo({ top: 0 })
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -222,38 +227,106 @@ function StudioAccountReady({ session, onLogout }: { session: StudioSession, onL
         if (!active) return
         setQuota(quotaResult.status === 'fulfilled' ? quotaResult.value : null)
         setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : [])
-        if (tasksResult.status === 'rejected') setError('作品记录暂时无法读取')
+        if (tasksResult.status === 'rejected') setLoadError('作品记录暂时无法读取')
       })
     return () => {
       active = false
     }
   }, [])
 
+  const navigate = (next: StudioRoute) => {
+    if (getRoute() === next) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    window.location.hash = `/${next}`
+  }
+
+  const useTemplate = (item: InspirationItem) => {
+    setPrompt(item.prompt)
+    setSelectedInspiration(item.id)
+    navigate('create')
+  }
+
+  const refreshQuota = async () => setQuota(await getStudioQuota())
+  const addTask = (task: StudioGenerationTask) => setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
+  const content = route === 'inspiration'
+    ? <InspirationPage useTemplate={useTemplate} />
+    : route === 'works'
+      ? <WorksPage tasks={tasks} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
+      : route === 'points'
+        ? <QuotaPage quota={quota} navigate={navigate} />
+        : route === 'settings'
+          ? <SettingsPage session={session} onLogout={onLogout} />
+          : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
+
+  return (
+    <main className="app-shell" data-studio-workspace>
+      <AppHeader route={route} quota={quota} session={session} navigate={navigate} onLogout={onLogout} />
+      {loadError && <p className="workspace-alert" role="alert">{loadError}</p>}
+      {content}
+      {route !== 'points' && <nav className="mobile-tabbar" aria-label="移动端导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={20} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={20} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={20} />作品</button><button className={route === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><User size={20} />我的</button></nav>}
+    </main>
+  )
+}
+
+function AppHeader({ route, quota, session, navigate, onLogout }: { route: StudioRoute, quota: StudioQuotaBalance | null | undefined, session: StudioSession, navigate: (route: StudioRoute) => void, onLogout: () => void }) {
+  const [quotaOpen, setQuotaOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+  const displayName = session.user.displayName || session.user.email
+
   const signOut = async () => {
     setSigningOut(true)
-    setError('')
     try {
       await logoutStudio()
       onLogout()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '退出失败')
     } finally {
       setSigningOut(false)
     }
   }
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!prompt.trim()) return
+  return (
+    <header className="topbar">
+      <button className="brand" onClick={() => navigate('create')}><span>NanaFox</span> 创作</button>
+      <nav className="primary-nav" aria-label="主导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={18} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={18} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={18} />作品</button></nav>
+      <div className="account-area"><div className="points-wrap"><button className="points-button quota-header-button" onClick={() => { setQuotaOpen(!quotaOpen); setAccountOpen(false) }}><strong>{quotaHeader(quota)}</strong><span>{quota?.subscriber ? '订阅额度' : quota?.credits ? `另有 ${quota.credits} 次` : '免费额度'}</span></button>{quotaOpen && <div className="points-popover quota-popover"><div><Sparkle size={20} weight="duotone" /><strong>{quota?.free.enabled ? '今日免费创作' : '查看创作额度'}</strong></div><p>{quotaDescription(quota)}</p><button onClick={() => { setQuotaOpen(false); navigate('points') }}>查看额度与方案 <ArrowRight size={15} /></button></div>}</div><div className="account-menu-wrap"><button className="avatar-button" onClick={() => { setAccountOpen(!accountOpen); setQuotaOpen(false) }}><span className="studio-avatar">{displayName.slice(0, 1).toUpperCase()}</span><CaretDown size={13} /></button>{accountOpen && <div className="account-popover"><div className="account-summary"><span className="studio-avatar large">{displayName.slice(0, 1).toUpperCase()}</span><span><strong>{displayName}</strong><small>{quota?.subscriber ? `${quota.planId?.toUpperCase()} 套餐` : '免费账户'}</small></span></div><button onClick={() => navigate('points')}><Receipt size={17} />额度与订阅</button><button onClick={() => navigate('settings')}><Gear size={17} />账户设置</button><button className="danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></div>}</div></div>
+    </header>
+  )
+}
+
+function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addTask, refreshQuota, navigate }: { prompt: string, setPrompt: (prompt: string) => void, selectedInspiration: string, quota: StudioQuotaBalance | null | undefined, tasks: StudioGenerationTask[] | undefined, addTask: (task: StudioGenerationTask) => void, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const [size, setSize] = useState<StudioGenerationInput['size']>('1536x1024')
+  const [quality, setQuality] = useState<StudioGenerationInput['quality']>('medium')
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState('')
+  const [requestKey, setRequestKey] = useState('')
+  const [selectedTask, setSelectedTask] = useState<StudioGenerationTask | null>(null)
+  const [chosenInspiration, setChosenInspiration] = useState(selectedInspiration)
+  const recent = (tasks ?? []).filter((task) => task.output)
+  const canGenerate = Boolean(quota && ((quota.free.enabled && quota.free.remaining > 0) || quota.credits > 0))
+
+  const submit = async () => {
+    if (!prompt.trim()) {
+      setError('先描述想法，或者从下方选择一个灵感。')
+      composerRef.current?.focus()
+      return
+    }
+    if (quota && !canGenerate) {
+      navigate('points')
+      return
+    }
     setGenerating(true)
     setError('')
     const key = requestKey || crypto.randomUUID()
     setRequestKey(key)
     try {
       const task = await createStudioGeneration({ prompt: prompt.trim(), size, quality }, key)
-      setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
-      setQuota(await getStudioQuota())
+      addTask(task)
+      await refreshQuota()
       setRequestKey('')
+      if (task.output) setSelectedTask(task)
     } catch (err) {
       setError(err instanceof Error ? err.message : '这次创作没有完成，请稍后重试')
       if (!(err instanceof StudioGenerationError) || err.reason !== 'NETWORK_ERROR') setRequestKey('')
@@ -262,141 +335,95 @@ function StudioAccountReady({ session, onLogout }: { session: StudioSession, onL
     }
   }
 
-  const resetRequest = () => setRequestKey('')
-  const latest = tasks?.[0]
+  const applyInspiration = (item: InspirationItem) => {
+    setPrompt(item.prompt)
+    setChosenInspiration(item.id)
+    setError('')
+    composerRef.current?.focus()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
-    <main data-studio-workspace className="min-h-screen bg-[#05070a] text-white">
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.08] bg-[#05070a]/90 px-4 backdrop-blur-xl sm:px-8">
-        <div className="flex items-center gap-3 text-base font-semibold sm:text-lg"><FoxMark />NanaFox <span className="-ml-2 font-normal text-white/60">Studio</span></div>
-        <nav className="hidden items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.035] p-1 text-sm sm:flex" aria-label="主导航">
-          <a className="rounded-lg bg-white/[0.09] px-4 py-2 text-white" href="#create">创作</a>
-          <a className="rounded-lg px-4 py-2 text-slate-400 transition hover:text-white" href="#works">作品</a>
-        </nav>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-300 sm:inline-flex">{quotaText(quota)}</span>
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-400 text-sm font-semibold text-slate-900 disabled:opacity-50" type="button" onClick={() => void signOut()} disabled={signingOut} title="退出登录" aria-label="退出登录">
-            {(session.user.displayName || session.user.email).slice(0, 1).toUpperCase()}
-          </button>
-        </div>
-      </header>
-
-      <section id="create" className="mx-auto grid max-w-[1480px] gap-5 px-4 py-6 sm:px-8 lg:grid-cols-[390px_minmax(0,1fr)] lg:py-8">
-        <form className="rounded-3xl border border-white/[0.08] bg-[#0b0e13] p-5 shadow-2xl shadow-black/20 sm:p-6" onSubmit={submit}>
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#78a8ff]">Create</span>
-            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">开始创作</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">描述你想看到的画面，模型与服务参数由后台统一管理。</p>
-          </div>
-
-          <label className="mt-7 block">
-            <span className="mb-2 block text-sm font-medium text-slate-300">画面描述</span>
-            <textarea className="min-h-40 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/50 focus:bg-white/[0.05] focus:ring-4 focus:ring-blue-400/10" value={prompt} onChange={(event) => { setPrompt(event.target.value); resetRequest() }} placeholder="例如：月光下的银色狐狸，站在安静的雪原上，电影感光影…" maxLength={10000} required />
-            <span className="mt-1 block text-right text-[11px] text-slate-600">{prompt.length}/10000</span>
-          </label>
-
-          <fieldset className="mt-5">
-            <legend className="text-sm font-medium text-slate-300">画面比例</legend>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {([
-                ['1024x1024', '1:1', '方形'],
-                ['1536x1024', '3:2', '横图'],
-                ['1024x1536', '2:3', '竖图'],
-              ] as const).map(([value, ratio, label]) => (
-                <button key={value} className={`rounded-xl border px-3 py-3 text-left transition ${size === value ? 'border-blue-400/60 bg-blue-400/10 text-white' : 'border-white/[0.08] bg-white/[0.025] text-slate-400 hover:border-white/20'}`} type="button" onClick={() => { setSize(value); resetRequest() }}>
-                  <span className="block text-sm font-semibold">{ratio}</span>
-                  <span className="mt-0.5 block text-[11px] text-slate-500">{label}</span>
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="mt-5">
-            <legend className="text-sm font-medium text-slate-300">画面质量</legend>
-            <div className="mt-3 grid grid-cols-3 rounded-xl border border-white/[0.08] bg-white/[0.025] p-1">
-              {([['low', '快速'], ['medium', '标准'], ['high', '精细']] as const).map(([value, label]) => (
-                <button key={value} className={`rounded-lg px-3 py-2 text-sm transition ${quality === value ? 'bg-white/[0.1] text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`} type="button" onClick={() => { setQuality(value); resetRequest() }}>{label}</button>
-              ))}
-            </div>
-          </fieldset>
-
-          {error && <p className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
-
-          <button className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#78a8ff] to-[#8b77ff] font-semibold text-[#07090d] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45" type="submit" disabled={generating || !prompt.trim()}>
-            {generating && <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700/30 border-t-slate-900" />}
-            {generating ? '正在创作…' : '生成图像'}
-          </button>
-          <p className="mt-3 text-center text-xs text-slate-600">每次生成 1 张 · {quotaText(quota)}</p>
-        </form>
-
-        <div className="min-h-[560px] overflow-hidden rounded-3xl border border-white/[0.08] bg-[#090c11]">
-          {latest?.output ? (
-            <div className="relative flex h-full min-h-[560px] items-center justify-center bg-[radial-gradient(circle_at_50%_10%,rgba(90,126,255,0.12),transparent_44%)] p-4 sm:p-8">
-              <img className="max-h-[720px] w-auto max-w-full rounded-2xl object-contain shadow-2xl shadow-black/50" src={latest.output.url} alt={latest.input.prompt} />
-              <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-xl sm:inset-x-8 sm:bottom-8">
-                <p className="line-clamp-2 text-sm leading-6 text-slate-200">{latest.input.prompt}</p>
-                <p className="mt-1 text-xs text-slate-500">{latest.input.size} · {qualityName(latest.input.quality)}</p>
-              </div>
-            </div>
-          ) : latest && latest.status !== 'failed' ? (
-            <div className="flex min-h-[560px] flex-col items-center justify-center px-8 text-center">
-              <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-[#78a8ff]" />
-              <h2 className="mt-6 text-lg font-semibold">作品正在生成</h2>
-              <p className="mt-2 text-sm text-slate-500">完成后会自动保存在你的作品中。</p>
-            </div>
-          ) : (
-            <div className="relative flex min-h-[560px] flex-col items-center justify-center overflow-hidden px-8 text-center">
-              <div className="absolute h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-              <span className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-300/15 bg-blue-300/[0.07] text-3xl text-blue-200">✦</span>
-              <h2 className="relative mt-6 text-xl font-semibold">你的画布已经准备好</h2>
-              <p className="relative mt-2 max-w-sm text-sm leading-6 text-slate-500">写下一个具体的场景、主体与氛围，从第一张作品开始。</p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section id="works" className="mx-auto max-w-[1480px] px-4 pb-16 pt-8 sm:px-8">
-        <div className="flex items-end justify-between">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#78a8ff]">Library</span>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">我的作品</h2>
-          </div>
-          <span className="text-xs text-slate-500">仅你自己可见</span>
-        </div>
-
-        {tasks === undefined ? (
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {[0, 1, 2, 3].map((item) => <div key={item} className="aspect-square animate-pulse rounded-2xl bg-white/[0.04]" />)}
-          </div>
-        ) : tasks.filter((task) => task.output).length ? (
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {tasks.filter((task) => task.output).map((task) => (
-              <article key={task.id} className="group overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b0e13]">
-                <div className="aspect-square overflow-hidden bg-white/[0.025]"><img className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" src={task.output!.url} alt={task.input.prompt} loading="lazy" /></div>
-                <div className="p-3.5">
-                  <p className="line-clamp-1 text-sm text-slate-200">{task.input.prompt}</p>
-                  <p className="mt-1 text-[11px] text-slate-600">{new Date(task.createdAt).toLocaleDateString('zh-CN')} · {qualityName(task.input.quality)}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-6 rounded-2xl border border-dashed border-white/10 px-6 py-14 text-center text-sm text-slate-500">完成的作品会出现在这里。</div>
-        )}
-      </section>
-    </main>
+    <>
+      <section className="hero" style={{ '--studio-hero-image': `url(${studioAssetPath('hero-studio.png')})` } as CSSProperties}><div className="hero-backdrop" /><div className="hero-content"><h1>今天想做什么<span>？</span></h1><p className="hero-subtitle">{quota?.free.enabled ? `不用研究提示词，今天还可免费创作 ${quota.free.remaining} 次` : quota === undefined ? '正在读取你的创作额度…' : '可以使用购买或订阅额度继续创作'}</p><div className={`composer ${error ? 'composer-error' : ''}`}><textarea ref={composerRef} value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(''); setRequestKey('') }} placeholder="描述你想要的画面…" maxLength={10000} /><div className="composer-toolbar"><div className="composer-actions"><button className="toolbar-button" type="button" disabled title="参考图编辑将在下一阶段开放"><ImageSquare size={19} /><span>添加参考图</span></button><button className="suggestion-chip" type="button" onClick={() => applyInspiration(inspirationItems[0])}><Sparkle size={17} weight="fill" />试试：把产品放进电影感场景</button></div><div className="generation-settings"><label><span>画面比例</span><select value={size} onChange={(event) => { setSize(event.target.value as StudioGenerationInput['size']); setRequestKey('') }}><option value="1024x1024">1:1</option><option value="1536x1024">3:2</option><option value="1024x1536">2:3</option></select></label><label><span>画质</span><select value={quality} onChange={(event) => { setQuality(event.target.value as StudioGenerationInput['quality']); setRequestKey('') }}><option value="medium">标准画质</option><option value="high">精细画质</option></select></label><div className="create-action"><button className="primary-button" type="button" onClick={() => void submit()} disabled={generating || quota === undefined}>{generating ? <span className="loading-dot" /> : <Sparkle size={18} weight="fill" />}{generating ? '正在创作' : '开始创作'}</button><span>{quotaUsageText(quota)}</span></div></div></div></div>{error && <p className="error-message" role="alert">{error}</p>}</div></section>
+      <section className="content-section inspiration-section"><div className="section-heading"><h2>从灵感开始</h2><p>选一个方向，提示词会自动准备好</p><button className="heading-link" onClick={() => navigate('inspiration')}>浏览灵感库 <ArrowRight size={16} /></button></div><div className="inspiration-grid">{inspirationItems.slice(0, 5).map((item) => <article key={item.id} className={`inspiration-card ${chosenInspiration === item.id ? 'selected' : ''}`} onClick={() => applyInspiration(item)}><img src={studioAssetPath(item.image)} alt={item.title} /><div className="card-shade" />{chosenInspiration === item.id && <span className="selected-mark"><CheckCircle size={18} weight="fill" /> 已选</span>}<div className="card-copy"><h3>{item.title}</h3><p>{item.description}</p></div><button type="button"><Sparkle size={15} weight="fill" /> 使用此灵感</button></article>)}</div></section>
+      <section className="content-section recent-section"><div className="section-heading recent-heading"><div><h2>最近创作</h2><p>自动保存在作品库，随时继续</p></div><button className="text-button" onClick={() => navigate('works')}>查看全部 <ArrowRight size={17} /></button></div>{tasks === undefined ? <div className="recent-loading">正在读取真实作品…</div> : recent.length ? <div className="recent-grid">{recent.slice(0, 7).map((task) => <button className="recent-item" key={task.id} onClick={() => setSelectedTask(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="recent-meta"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)}</small></span></button>)}</div> : <div className="recent-empty"><Images size={25} /><span><strong>还没有作品</strong><small>完成第一次创作后会自动保存在这里。</small></span></div>}</section>
+      {selectedTask?.output && <TaskModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
+    </>
   )
 }
 
-function quotaText(quota: StudioQuotaBalance | null | undefined) {
-  if (quota === undefined) return '正在读取真实额度…'
-  if (quota === null) return '额度暂时无法读取'
-  if (quota.subscriber) return `${quota.planId?.toUpperCase()} 套餐 · 剩余 ${quota.credits} 次`
-  if (quota.free.eligible && quota.free.enabled) {
-    const paid = quota.credits > 0 ? ` · 购买或订阅额度 ${quota.credits} 次` : ''
-    return `今日免费剩余 ${quota.free.remaining}/${quota.free.limit} 次${paid}`
+function InspirationPage({ useTemplate }: { useTemplate: (item: InspirationItem) => void }) {
+  const [category, setCategory] = useState('全部')
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<InspirationItem | null>(null)
+  const [favorites, setFavorites] = useState<string[]>([])
+  const categories = ['全部', '商业', '人像', '社媒', '插画', '摄影', '空间', '萌宠']
+  const filtered = inspirationItems.filter((item) => (category === '全部' || item.category === category) && `${item.title}${item.description}`.includes(query))
+  return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 每周更新</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>换个关键词或浏览其他分类。</p><button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button></div>}{selected && <Modal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></Modal>}</div>
+}
+
+function WorksPage({ tasks, useWork }: { tasks: StudioGenerationTask[] | undefined, useWork: (task: StudioGenerationTask | null) => void }) {
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<StudioGenerationTask | null>(null)
+  const works = useMemo(() => (tasks ?? []).filter((task) => task.output && task.input.prompt.includes(query)), [tasks, query])
+  return <div className="page-frame"><header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{tasks === undefined ? '正在读取真实作品…' : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header><div className="works-toolbar"><div className="segmented-control"><button className="active">全部作品</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div><button className="icon-button" aria-label="作品筛选"><SlidersHorizontal size={19} /></button></div><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)} · {ratioName(task.input.size)}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{tasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>还没有这样的作品</h3><p>{query ? '清空搜索，或者开始一次新创作。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}{selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={() => useWork(selected)} />}</div>
+}
+
+function QuotaPage({ quota, navigate }: { quota: StudioQuotaBalance | null | undefined, navigate: (route: StudioRoute) => void }) {
+  return <div className="page-frame quota-live-page"><header className="page-title-row"><div><span className="eyebrow">创作额度</span><h1>额度与方案</h1><p>先使用每日免费次数，用完后再按需购买或订阅。</p></div><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></header><section className="live-quota-card"><span><Sparkle size={24} weight="duotone" /></span><div><small>当前可用额度</small><strong>{quotaHeader(quota)}</strong><p>{quotaDescription(quota)}</p></div></section><div className="plans-preview"><article><span className="eyebrow">PLUS</span><h2>创作 Plus</h2><p>适合持续内容创作，包含每月创作额度与精细画质。</p><button className="primary-button" disabled>订阅即将开放</button></article><article><span className="eyebrow">PRO</span><h2>专业版</h2><p>适合高频商业产出，提供更多额度与优先创作能力。</p><button className="primary-button" disabled>订阅即将开放</button></article></div><p className="unavailable-note">支付和套餐配置接口尚未接入测试环境，因此这里不会展示假价格或模拟付款结果。</p></div>
+}
+
+function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
+  const [signingOut, setSigningOut] = useState(false)
+  const displayName = session.user.displayName || session.user.email
+  const signOut = async () => {
+    setSigningOut(true)
+    try {
+      await logoutStudio()
+      onLogout()
+    } finally {
+      setSigningOut(false)
+    }
   }
-  return quota.credits > 0 ? `购买或订阅额度 ${quota.credits} 次` : '免费体验暂未开放'
+  return <div className="page-frame settings-page"><header className="page-title-row"><div><span className="eyebrow">个人中心</span><h1>账户设置</h1><p>查看你的 NanaFox Studio 账户资料</p></div></header><div className="settings-layout"><aside className="settings-nav"><button className="active"><User size={18} />个人资料</button></aside><div className="settings-content"><section className="settings-card"><div className="settings-card-heading"><div><h2>个人资料</h2><p>账户由 NanaFox Studio 登录服务安全管理。</p></div></div><div className="profile-editor"><span className="studio-avatar profile">{displayName.slice(0, 1).toUpperCase()}</span></div><div className="form-grid"><label><span>昵称</span><input value={displayName} readOnly /></label><label><span>邮箱</span><input value={session.user.email} readOnly /></label></div><button className="secondary-button danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></section></div></div></div>
+}
+
+function Modal({ children, onClose, className = '' }: { children: ReactNode, onClose: () => void, className?: string }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`base-modal ${className}`} role="dialog" aria-modal="true"><button className="modal-close" onClick={onClose} aria-label="关闭"><X size={20} /></button>{children}</section></div>
+}
+
+function TaskModal({ task, onClose, onReuse }: { task: StudioGenerationTask, onClose: () => void, onReuse?: () => void }) {
+  if (!task.output) return null
+  return <Modal onClose={onClose} className="work-modal"><div className="work-preview"><img src={task.output.url} alt={task.input.prompt} /></div><div className="work-detail"><span className="success-label"><CheckCircle size={18} weight="fill" /> 已完成</span><h2>{task.input.prompt}</h2><p>创建于 {formatDate(task.createdAt)}，作品已安全保存在云端。</p><dl><div><dt>画面比例</dt><dd>{ratioName(task.input.size)}</dd></div><div><dt>精细度</dt><dd>{qualityName(task.input.quality)}</dd></div><div><dt>作品状态</dt><dd>仅你可见</dd></div></dl><div className="result-actions">{onReuse && <button className="secondary-button" onClick={onReuse}><Sparkle size={17} /> 复用描述</button>}<a className="primary-button" href={task.output.url} download><DownloadSimple size={18} /> 下载</a></div></div></Modal>
+}
+
+function quotaHeader(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '额度读取中'
+  if (quota === null) return '额度暂不可用'
+  if (quota.free.enabled && quota.free.eligible) return `今日 ${quota.free.remaining}/${quota.free.limit} 次`
+  return `${quota.credits} 次可用`
+}
+
+function quotaDescription(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '正在读取你的真实额度。'
+  if (quota === null) return '额度服务暂时不可用，请稍后重试。'
+  if (quota.free.enabled && quota.free.eligible) return `今天还剩 ${quota.free.remaining} 次，明天自动恢复。${quota.credits ? `另有 ${quota.credits} 次购买或订阅额度。` : ''}`
+  return quota.credits ? `当前有 ${quota.credits} 次购买或订阅额度。` : '当前没有可用额度。'
+}
+
+function quotaUsageText(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '正在确认本次额度'
+  if (quota === null) return '额度暂时无法读取'
+  if (quota.free.enabled && quota.free.remaining > 0) return '使用 1 次今日免费额度'
+  if (quota.credits > 0) return '使用 1 次购买或订阅额度'
+  return '当前没有可用额度'
+}
+
+function ratioName(size: StudioGenerationInput['size']) {
+  if (size === '1536x1024') return '3:2'
+  if (size === '1024x1536') return '2:3'
+  return '1:1'
 }
 
 function qualityName(quality: StudioGenerationInput['quality']) {
@@ -405,22 +432,6 @@ function qualityName(quality: StudioGenerationInput['quality']) {
   return '标准'
 }
 
-function AuthField({ label, children }: { label: string, children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-slate-300">{label}</span>
-      <div className="[&_input]:h-12 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-white/10 [&_input]:bg-white/[0.045] [&_input]:px-4 [&_input]:text-sm [&_input]:text-white [&_input]:outline-none [&_input]:transition [&_input]:placeholder:text-slate-600 [&_input]:focus:border-blue-400/60 [&_input]:focus:bg-white/[0.06] [&_input]:focus:ring-4 [&_input]:focus:ring-blue-400/10">{children}</div>
-    </label>
-  )
-}
-
-function FoxMark() {
-  return (
-    <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#8cb7ff] via-[#5d7cff] to-[#8c5cff] shadow-[0_8px_30px_rgba(81,115,255,0.28)]">
-      <svg viewBox="0 0 32 32" className="h-6 w-6 fill-none stroke-white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M7 8.5 12 11l4-2 4 2 5-2.5-1.4 10.2L16 25l-7.6-6.3L7 8.5Z" />
-        <path d="m12.5 17 3.5 2.4 3.5-2.4M16 19.5V23" />
-      </svg>
-    </span>
-  )
+function formatDate(value: string) {
+  return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
