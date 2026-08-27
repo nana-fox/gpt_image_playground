@@ -162,6 +162,26 @@ test('artwork bytes require ownership and a completed output', async () => {
   assert.equal(missing.status, 404)
 })
 
+test('an output waiting for quota finalization is never exposed as an artwork', async () => {
+  const pending = { ...task, status: 'output_stored' }
+  const app = createApp({
+    tasks: {
+      getTask: (userId, id) => userId === user.id && id === pending.id ? pending : null,
+      listTasks: (userId) => userId === user.id ? [pending] : [],
+    },
+    outputs: { read: () => assert.fail('pending output must not be read') },
+  })
+
+  const detail = await app.handle(request('/api/generations/task-1'))
+  assert.equal((await detail.json()).data.output, null)
+
+  const list = await app.handle(request('/api/generations'))
+  assert.equal((await list.json()).data[0].output, null)
+
+  const artwork = await app.handle(request('/api/artworks/task-1'))
+  assert.equal(artwork.status, 404)
+})
+
 test('generation routes require a valid Studio session', async () => {
   const app = createApp()
   const response = await app.handle(new Request(`${origin}/api/generations`))

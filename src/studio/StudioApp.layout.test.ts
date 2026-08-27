@@ -44,6 +44,7 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('今日免费额度')
     expect(source).toContain('购买或订阅额度')
     expect(source).not.toContain('创作服务正在接入此账户')
+    expect(source).toContain("err.reason !== 'GENERATION_FINALIZATION_PENDING'")
   })
 
   it('implements the approved Demo product shell instead of an alternate workspace', () => {
