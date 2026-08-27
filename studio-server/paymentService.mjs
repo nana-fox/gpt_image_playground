@@ -33,8 +33,23 @@ export function createPaymentService(options = {}) {
       }))
     },
 
-    getOrder(userId, id) {
-      return store.getUserOrder(userId, id).then(publicOrder)
+    async getOrder(userId, id) {
+      const order = await store.getUserOrder(userId, id)
+      if (!order || order.status !== 'pending' || !enabled || !provider?.queryOrder) return publicOrder(order)
+      try {
+        const result = await provider.queryOrder(order.outTradeNo)
+        if (result.status !== 'success') return publicOrder(order)
+        return publicOrder(await store.fulfillOrder({
+          ...result,
+          eventId: `query:${result.transactionId}`,
+        }))
+      } catch (error) {
+        console.warn('Studio payment reconciliation failed', {
+          orderId: order.id,
+          reason: error?.reason ?? 'PAYMENT_PROVIDER_ERROR',
+        })
+        return publicOrder(order)
+      }
     },
 
     async createOrder(userId, planId, idempotencyKey, clientIp) {

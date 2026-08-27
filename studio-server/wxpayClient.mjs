@@ -96,6 +96,32 @@ export function createWxpayClient(options = {}) {
       return { codeUrl }
     },
 
+    async queryOrder(outTradeNoInput) {
+      const outTradeNo = normalizeOutTradeNo(outTradeNoInput)
+      const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(mchId)}`
+      const transaction = await signedRequest('GET', path)
+      if (transaction?.trade_state !== 'SUCCESS') return { status: 'pending' }
+      const total = Number(transaction?.amount?.total)
+      if (
+        transaction.appid !== appId
+        || transaction.mchid !== mchId
+        || transaction.out_trade_no !== outTradeNo
+        || !String(transaction.transaction_id ?? '').trim()
+        || !Number.isInteger(total)
+        || total < 1
+        || transaction.amount?.currency !== 'CNY'
+      ) throw new WxpayError('微信支付查单结果与商户订单不匹配', 'PAYMENT_NOTIFICATION_MISMATCH', 401)
+      return {
+        status: 'success',
+        outTradeNo,
+        transactionId: String(transaction.transaction_id),
+        amountCents: total,
+        currency: 'CNY',
+        appId,
+        mchId,
+      }
+    },
+
     verifyNotification(rawBody, inputHeaders) {
       const headers = normalizeHeaders(inputHeaders)
       const timestamp = Number(headers['wechatpay-timestamp'])
