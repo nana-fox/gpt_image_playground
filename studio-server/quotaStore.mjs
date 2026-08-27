@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { DatabaseSync } from 'node:sqlite'
 
 export class QuotaError extends Error {
   constructor(message, reason = 'QUOTA_ERROR') {
@@ -10,185 +9,57 @@ export class QuotaError extends Error {
 }
 
 export function createQuotaStore(options = {}) {
-  const filename = String(options.filename ?? '').trim()
-  if (!filename) throw new Error('Studio quota database filename is required')
+  const database = options.database
+  if (!database?.query || !database?.transaction) throw new Error('Studio quota PostgreSQL database is required')
   const clock = options.clock ?? (() => new Date())
   const reservationTtlSeconds = options.reservationTtlSeconds === undefined ? 900 : Number(options.reservationTtlSeconds)
   if (!Number.isInteger(reservationTtlSeconds) || reservationTtlSeconds < 60 || reservationTtlSeconds > 3600) {
     throw new Error('Studio quota reservation TTL is invalid')
   }
-  const db = new DatabaseSync(filename)
-  let closed = false
 
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS studio_quota_policy (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      enabled INTEGER NOT NULL,
-      daily_limit INTEGER NOT NULL,
-      timezone TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS studio_subscriptions (
-      user_id TEXT PRIMARY KEY REFERENCES studio_users(id) ON DELETE CASCADE,
-      plan_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      current_period_end INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS studio_credit_grants (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES studio_users(id) ON DELETE CASCADE,
-      source TEXT NOT NULL,
-      total INTEGER NOT NULL,
-      remaining INTEGER NOT NULL,
-      expires_at INTEGER,
-      reference TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      UNIQUE(user_id, reference)
-    );
-    CREATE INDEX IF NOT EXISTS idx_studio_credit_grants_available
-      ON studio_credit_grants(user_id, expires_at, created_at);
-    CREATE TABLE IF NOT EXISTS studio_quota_reservations (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES studio_users(id) ON DELETE CASCADE,
-      idempotency_key TEXT NOT NULL,
-      source TEXT NOT NULL,
-      grant_id TEXT REFERENCES studio_credit_grants(id),
-      day_key TEXT,
-      status TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      UNIQUE(user_id, idempotency_key)
-    );
-    CREATE INDEX IF NOT EXISTS idx_studio_quota_reservations_daily
-      ON studio_quota_reservations(user_id, source, day_key, status);
-    INSERT OR IGNORE INTO studio_quota_policy
-      (id, enabled, daily_limit, timezone, version, updated_at)
-      VALUES (1, 1, 3, 'Asia/Shanghai', 1, 0);
-  `)
-  const reservationColumns = db.prepare('PRAGMA table_info(studio_quota_reservations)').all()
-  if (!reservationColumns.some((column) => column.name === 'expires_at')) {
-    db.exec('ALTER TABLE studio_quota_reservations ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0')
+  const getPolicy = async (client = database) => {
+    const result = await client.query(`
+      SELECT enabled, daily_limit, timezone, version
+      FROM studio_quota_policy
+      WHERE id = 1
+    `)
+    return mapPolicy(result.rows[0])
   }
-
-  const readPolicy = db.prepare(`
-    SELECT enabled, daily_limit, timezone, version
-    FROM studio_quota_policy
-    WHERE id = 1
-  `)
-  const updatePolicy = db.prepare(`
-    UPDATE studio_quota_policy
-    SET enabled = ?, daily_limit = ?, timezone = ?, version = version + 1, updated_at = ?
-    WHERE id = 1 AND version = ?
-  `)
-  const readSubscription = db.prepare(`
-    SELECT plan_id, status, current_period_end
-    FROM studio_subscriptions
-    WHERE user_id = ?
-  `)
-  const upsertSubscription = db.prepare(`
-    INSERT INTO studio_subscriptions (user_id, plan_id, status, current_period_end, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET
-      plan_id = excluded.plan_id,
-      status = excluded.status,
-      current_period_end = excluded.current_period_end,
-      updated_at = excluded.updated_at
-  `)
-  const insertGrant = db.prepare(`
-    INSERT OR IGNORE INTO studio_credit_grants
-      (id, user_id, source, total, remaining, expires_at, reference, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  const readGrantByReference = db.prepare(`
-    SELECT id, source, total, remaining, expires_at, reference
-    FROM studio_credit_grants
-    WHERE user_id = ? AND reference = ?
-  `)
-  const sumCredits = db.prepare(`
-    SELECT COALESCE(SUM(remaining), 0) AS credits
-    FROM studio_credit_grants
-    WHERE user_id = ? AND remaining > 0 AND (expires_at IS NULL OR expires_at > ?)
-  `)
-  const countDaily = db.prepare(`
-    SELECT COUNT(*) AS used
-    FROM studio_quota_reservations
-    WHERE user_id = ? AND source = 'free' AND day_key = ? AND status IN ('reserved', 'confirmed')
-  `)
-  const readReservationByKey = db.prepare(`
-    SELECT id, source, status
-    FROM studio_quota_reservations
-    WHERE user_id = ? AND idempotency_key = ?
-  `)
-  const readReservation = db.prepare(`
-    SELECT id, source, status, grant_id
-    FROM studio_quota_reservations
-    WHERE id = ?
-  `)
-  const insertReservation = db.prepare(`
-    INSERT INTO studio_quota_reservations
-      (id, user_id, idempotency_key, source, grant_id, day_key, status, expires_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'reserved', ?, ?, ?)
-  `)
-  const findAvailableGrant = db.prepare(`
-    SELECT id, source
-    FROM studio_credit_grants
-    WHERE user_id = ? AND remaining > 0 AND (expires_at IS NULL OR expires_at > ?)
-    ORDER BY (expires_at IS NULL) ASC, expires_at ASC, created_at ASC
-    LIMIT 1
-  `)
-  const consumeGrant = db.prepare(`
-    UPDATE studio_credit_grants
-    SET remaining = remaining - 1
-    WHERE id = ? AND remaining > 0
-  `)
-  const restoreGrant = db.prepare(`
-    UPDATE studio_credit_grants
-    SET remaining = remaining + 1
-    WHERE id = ? AND remaining < total
-  `)
-  const updateReservationStatus = db.prepare(`
-    UPDATE studio_quota_reservations
-    SET status = ?, updated_at = ?
-    WHERE id = ?
-  `)
-  const findExpiredReservations = db.prepare(`
-    SELECT id, source, status, grant_id
-    FROM studio_quota_reservations
-    WHERE status = 'reserved' AND expires_at <= ?
-  `)
-
-  const getPolicy = () => mapPolicy(readPolicy.get())
-  const getSubscription = (userId, now) => {
-    const row = readSubscription.get(userId)
-    if (!row || row.status !== 'active' || row.current_period_end <= now) return null
-    return { planId: row.plan_id, periodEnd: new Date(row.current_period_end).toISOString() }
+  const getSubscription = async (client, userId, now) => {
+    const result = await client.query(`
+      SELECT plan_id, status, current_period_end
+      FROM studio_subscriptions
+      WHERE user_id = $1
+    `, [userId])
+    const row = result.rows[0]
+    if (!row || row.status !== 'active' || Number(row.current_period_end) <= now) return null
+    return { planId: row.plan_id, periodEnd: new Date(Number(row.current_period_end)).toISOString() }
   }
-  const releaseExpired = (now) => {
-    for (const row of findExpiredReservations.all(now)) {
-      if (row.grant_id) restoreGrant.run(row.grant_id)
-      updateReservationStatus.run('released', now, row.id)
-    }
-  }
-  const recoverExpired = (now) => {
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      releaseExpired(now)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+  const releaseExpired = async (client, now) => {
+    await client.query(`
+      WITH expired AS (
+        SELECT id
+        FROM studio_quota_reservations
+        WHERE status = 'reserved' AND expires_at <= $1
+        FOR UPDATE
+      ), released AS (
+        UPDATE studio_quota_reservations reservations
+        SET status = 'released', updated_at = $1
+        FROM expired
+        WHERE reservations.id = expired.id
+        RETURNING reservations.grant_id
+      )
+      UPDATE studio_credit_grants grants
+      SET remaining = LEAST(grants.total, grants.remaining + 1)
+      FROM released
+      WHERE grants.id = released.grant_id
+    `, [now])
   }
 
   return {
     getPolicy,
 
-    setPolicy(policy) {
+    async setPolicy(policy) {
       const enabled = policy?.enabled === true
       const dailyLimit = Number(policy?.dailyLimit)
       const timezone = String(policy?.timezone ?? '').trim()
@@ -196,27 +67,41 @@ export function createQuotaStore(options = {}) {
         throw new Error('Studio daily free limit is invalid')
       }
       validateTimezone(timezone)
-      const current = getPolicy()
+      const current = await getPolicy()
       const expectedVersion = policy.expectedVersion === undefined ? current.version : Number(policy.expectedVersion)
       if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw new Error('Studio quota policy version is invalid')
-      if (updatePolicy.run(enabled ? 1 : 0, dailyLimit, timezone, clock().getTime(), expectedVersion).changes !== 1) {
+      const result = await database.query(`
+        UPDATE studio_quota_policy
+        SET enabled = $1, daily_limit = $2, timezone = $3, version = version + 1, updated_at = $4
+        WHERE id = 1 AND version = $5
+        RETURNING enabled, daily_limit, timezone, version
+      `, [enabled, dailyLimit, timezone, clock().getTime(), expectedVersion])
+      if (!result.rowCount) {
         throw new QuotaError('免费额度配置已被其他人更新，请刷新后重试', 'POLICY_VERSION_CONFLICT')
       }
-      return getPolicy()
+      return mapPolicy(result.rows[0])
     },
 
-    setSubscription(userId, subscription) {
+    async setSubscription(userId, subscription) {
       const planId = String(subscription?.planId ?? '').trim()
       const status = String(subscription?.status ?? '').trim()
       const periodEnd = parseDate(subscription?.periodEnd, 'subscription period end')
       if (!userId || !planId || !['active', 'canceled', 'past_due', 'expired'].includes(status)) {
         throw new Error('Studio subscription is invalid')
       }
-      upsertSubscription.run(userId, planId, status, periodEnd, clock().getTime())
+      await database.query(`
+        INSERT INTO studio_subscriptions (user_id, plan_id, status, current_period_end, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT(user_id) DO UPDATE SET
+          plan_id = EXCLUDED.plan_id,
+          status = EXCLUDED.status,
+          current_period_end = EXCLUDED.current_period_end,
+          updated_at = EXCLUDED.updated_at
+      `, [userId, planId, status, periodEnd, clock().getTime()])
       return { userId, planId, status, periodEnd: new Date(periodEnd).toISOString() }
     },
 
-    grantCredits(userId, grant) {
+    async grantCredits(userId, grant) {
       const source = String(grant?.source ?? '').trim()
       const units = Number(grant?.units)
       const reference = String(grant?.reference ?? '').trim()
@@ -226,65 +111,114 @@ export function createQuotaStore(options = {}) {
       }
       if (!Number.isInteger(units) || units < 1 || units > 100000) throw new Error('Studio credit units are invalid')
       if (!reference || reference.length > 200) throw new Error('Studio credit reference is invalid')
-      const now = clock().getTime()
-      insertGrant.run(randomUUID(), userId, source, units, units, expiresAt, reference, now)
-      const row = readGrantByReference.get(userId, reference)
-      if (row.source !== source || row.total !== units || row.expires_at !== expiresAt) {
-        throw new QuotaError('额度发放记录与原订单不一致', 'CREDIT_GRANT_CONFLICT')
-      }
-      return mapGrant(row)
+      return database.transaction(async (client) => {
+        await client.query(`
+          INSERT INTO studio_credit_grants
+            (id, user_id, source, total, remaining, expires_at, reference, created_at)
+          VALUES ($1, $2, $3, $4, $4, $5, $6, $7)
+          ON CONFLICT(user_id, reference) DO NOTHING
+        `, [randomUUID(), userId, source, units, expiresAt, reference, clock().getTime()])
+        const result = await client.query(`
+          SELECT id, source, total, remaining, expires_at, reference
+          FROM studio_credit_grants
+          WHERE user_id = $1 AND reference = $2
+          FOR UPDATE
+        `, [userId, reference])
+        const row = result.rows[0]
+        if (!row || row.source !== source || Number(row.total) !== units || nullableNumber(row.expires_at) !== expiresAt) {
+          throw new QuotaError('额度发放记录与原订单不一致', 'CREDIT_GRANT_CONFLICT')
+        }
+        return mapGrant(row)
+      })
     },
 
-    getBalance(userId) {
+    async getBalance(userId) {
       const now = clock().getTime()
-      recoverExpired(now)
-      const policy = getPolicy()
-      const subscription = getSubscription(userId, now)
-      const dayKey = getDayKey(new Date(now), policy.timezone)
-      const used = Number(countDaily.get(userId, dayKey).used)
-      const eligible = !subscription
-      return {
-        free: {
-          eligible,
-          enabled: policy.enabled,
-          limit: policy.dailyLimit,
-          used,
-          remaining: eligible && policy.enabled ? Math.max(0, policy.dailyLimit - used) : 0,
-        },
-        credits: Number(sumCredits.get(userId, now).credits),
-        subscriber: Boolean(subscription),
-        planId: subscription?.planId ?? null,
-      }
+      return database.transaction(async (client) => {
+        await releaseExpired(client, now)
+        const policy = await getPolicy(client)
+        const subscription = await getSubscription(client, userId, now)
+        const dayKey = getDayKey(new Date(now), policy.timezone)
+        const [daily, credits] = await Promise.all([
+          client.query(`
+            SELECT COUNT(*)::INTEGER AS used
+            FROM studio_quota_reservations
+            WHERE user_id = $1 AND source = 'free' AND day_key = $2
+              AND status IN ('reserved', 'confirmed')
+          `, [userId, dayKey]),
+          client.query(`
+            SELECT COALESCE(SUM(remaining), 0)::INTEGER AS credits
+            FROM studio_credit_grants
+            WHERE user_id = $1 AND remaining > 0 AND (expires_at IS NULL OR expires_at > $2)
+          `, [userId, now]),
+        ])
+        const used = Number(daily.rows[0].used)
+        const eligible = !subscription
+        return {
+          free: {
+            eligible,
+            enabled: policy.enabled,
+            limit: policy.dailyLimit,
+            used,
+            remaining: eligible && policy.enabled ? Math.max(0, policy.dailyLimit - used) : 0,
+          },
+          credits: Number(credits.rows[0].credits),
+          subscriber: Boolean(subscription),
+          planId: subscription?.planId ?? null,
+        }
+      })
     },
 
-    reserve(userId, idempotencyKey) {
+    async reserve(userId, idempotencyKey) {
       const key = String(idempotencyKey ?? '').trim()
       if (!userId || !key || key.length > 200) throw new Error('Studio quota reservation key is invalid')
       const now = clock().getTime()
+      return database.transaction(async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId])
+        await releaseExpired(client, now)
+        const existing = await client.query(`
+          SELECT id, source, status
+          FROM studio_quota_reservations
+          WHERE user_id = $1 AND idempotency_key = $2
+        `, [userId, key])
+        if (existing.rowCount) return mapReservation(existing.rows[0])
 
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        releaseExpired(now)
-        const existing = readReservationByKey.get(userId, key)
-        if (existing) {
-          db.exec('COMMIT')
-          return mapReservation(existing)
-        }
-
-        const policy = getPolicy()
-        const subscription = getSubscription(userId, now)
+        const policy = await getPolicy(client)
+        const subscription = await getSubscription(client, userId, now)
         const dayKey = getDayKey(new Date(now), policy.timezone)
-        const used = Number(countDaily.get(userId, dayKey).used)
-        const useFree = !subscription && policy.enabled && used < policy.dailyLimit
-        const grant = useFree ? null : findAvailableGrant.get(userId, now)
+        const daily = await client.query(`
+          SELECT COUNT(*)::INTEGER AS used
+          FROM studio_quota_reservations
+          WHERE user_id = $1 AND source = 'free' AND day_key = $2
+            AND status IN ('reserved', 'confirmed')
+        `, [userId, dayKey])
+        const useFree = !subscription && policy.enabled && Number(daily.rows[0].used) < policy.dailyLimit
+        const grants = useFree ? { rows: [] } : await client.query(`
+          SELECT id, source
+          FROM studio_credit_grants
+          WHERE user_id = $1 AND remaining > 0 AND (expires_at IS NULL OR expires_at > $2)
+          ORDER BY (expires_at IS NULL) ASC, expires_at ASC, created_at ASC
+          LIMIT 1
+          FOR UPDATE
+        `, [userId, now])
+        const grant = grants.rows[0]
         if (!useFree && !grant) throw new QuotaError('创作额度不足', 'QUOTA_EXHAUSTED')
 
-        if (grant && consumeGrant.run(grant.id).changes !== 1) {
-          throw new QuotaError('创作额度不足', 'QUOTA_EXHAUSTED')
+        if (grant) {
+          const consumed = await client.query(`
+            UPDATE studio_credit_grants
+            SET remaining = remaining - 1
+            WHERE id = $1 AND remaining > 0
+          `, [grant.id])
+          if (!consumed.rowCount) throw new QuotaError('创作额度不足', 'QUOTA_EXHAUSTED')
         }
         const id = randomUUID()
         const source = useFree ? 'free' : grant.source
-        insertReservation.run(
+        await client.query(`
+          INSERT INTO studio_quota_reservations
+            (id, user_id, idempotency_key, source, grant_id, day_key, status, expires_at, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, 'reserved', $7, $8, $8)
+        `, [
           id,
           userId,
           key,
@@ -293,63 +227,67 @@ export function createQuotaStore(options = {}) {
           useFree ? dayKey : null,
           now + reservationTtlSeconds * 1000,
           now,
-          now,
-        )
-        db.exec('COMMIT')
+        ])
         return { id, source, status: 'reserved' }
-      } catch (error) {
-        db.exec('ROLLBACK')
-        throw error
-      }
+      })
     },
 
-    getReservation(id) {
-      recoverExpired(clock().getTime())
-      const row = readReservation.get(String(id ?? ''))
-      return row ? mapReservation(row) : null
+    async getReservation(id) {
+      const now = clock().getTime()
+      return database.transaction(async (client) => {
+        await releaseExpired(client, now)
+        const result = await client.query(`
+          SELECT id, source, status
+          FROM studio_quota_reservations
+          WHERE id = $1
+        `, [String(id ?? '')])
+        return result.rowCount ? mapReservation(result.rows[0]) : null
+      })
     },
 
-    confirm(id) {
-      return finishReservation(db, readReservation, updateReservationStatus, restoreGrant, id, 'confirmed', clock().getTime())
+    async confirm(id) {
+      return finishReservation(database, id, 'confirmed', clock().getTime())
     },
 
-    release(id) {
-      return finishReservation(db, readReservation, updateReservationStatus, restoreGrant, id, 'released', clock().getTime())
-    },
-
-    close() {
-      if (closed) return
-      closed = true
-      db.close()
+    async release(id) {
+      return finishReservation(database, id, 'released', clock().getTime())
     },
   }
 }
 
-function finishReservation(db, readReservation, updateStatus, restoreGrant, id, target, now) {
-  db.exec('BEGIN IMMEDIATE')
-  try {
-    const row = readReservation.get(id)
+async function finishReservation(database, id, target, now) {
+  return database.transaction(async (client) => {
+    const result = await client.query(`
+      SELECT id, source, status, grant_id
+      FROM studio_quota_reservations
+      WHERE id = $1
+      FOR UPDATE
+    `, [id])
+    const row = result.rows[0]
     if (!row) throw new QuotaError('额度预占记录不存在', 'RESERVATION_NOT_FOUND')
-    if (row.status !== 'reserved') {
-      db.exec('COMMIT')
-      return mapReservation(row)
+    if (row.status !== 'reserved') return mapReservation(row)
+    if (target === 'released' && row.grant_id) {
+      await client.query(`
+        UPDATE studio_credit_grants
+        SET remaining = LEAST(total, remaining + 1)
+        WHERE id = $1
+      `, [row.grant_id])
     }
-    if (target === 'released' && row.grant_id) restoreGrant.run(row.grant_id)
-    updateStatus.run(target, now, id)
-    db.exec('COMMIT')
+    await client.query(`
+      UPDATE studio_quota_reservations
+      SET status = $1, updated_at = $2
+      WHERE id = $3
+    `, [target, now, id])
     return { id: row.id, source: row.source, status: target }
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 function mapPolicy(row) {
   return {
-    enabled: row.enabled === 1,
-    dailyLimit: row.daily_limit,
+    enabled: row.enabled === true,
+    dailyLimit: Number(row.daily_limit),
     timezone: row.timezone,
-    version: row.version,
+    version: Number(row.version),
   }
 }
 
@@ -357,15 +295,19 @@ function mapGrant(row) {
   return {
     id: row.id,
     source: row.source,
-    total: row.total,
-    remaining: row.remaining,
-    expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
+    total: Number(row.total),
+    remaining: Number(row.remaining),
+    expiresAt: row.expires_at === null ? null : new Date(Number(row.expires_at)).toISOString(),
     reference: row.reference,
   }
 }
 
 function mapReservation(row) {
   return { id: row.id, source: row.source, status: row.status }
+}
+
+function nullableNumber(value) {
+  return value === null ? null : Number(value)
 }
 
 function parseDate(value, label) {
