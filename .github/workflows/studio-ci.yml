@@ -1,0 +1,99 @@
+name: Studio CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/studio-ci.yml'
+      - 'deploy/studio.Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'public/**'
+      - 'src/**'
+      - 'studio-server/**'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+  push:
+    paths:
+      - '.github/workflows/studio-ci.yml'
+      - 'deploy/studio.Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'public/**'
+      - 'src/**'
+      - 'studio-server/**'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: nanafox_studio_ci
+          POSTGRES_PASSWORD: studio
+          POSTGRES_USER: studio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U studio -d nanafox_studio_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      STUDIO_TEST_DATABASE_URL: postgresql://studio:studio@127.0.0.1:5432/nanafox_studio_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:studio
+      - run: npm run test:studio-server:ci
+
+      - name: Build Studio container
+        run: docker build --file deploy/studio.Dockerfile --tag nanafox-studio:ci .
+
+      - name: Smoke test Studio container
+        run: |
+          docker run --detach --name nanafox-studio-ci --network host \
+            -e ROUTER_AUTH_BASE_URL=https://router.invalid \
+            -e ROUTER_AUTH_KEY_ID=studio-ci \
+            -e ROUTER_AUTH_CURRENT_SECRET=studio-ci-secret-studio-ci-secret-studio-ci-secret \
+            -e STUDIO_PUBLIC_ORIGIN=http://127.0.0.1:8788 \
+            -e STUDIO_PUBLIC_BASE_PATH=/ \
+            -e STUDIO_DATABASE_URL="$STUDIO_TEST_DATABASE_URL" \
+            -e STUDIO_GENERATION_ENABLED=false \
+            nanafox-studio:ci
+          for attempt in {1..40}; do
+            status="$(docker inspect --format '{{.State.Health.Status}}' nanafox-studio-ci)"
+            if [ "$status" = healthy ]; then break; fi
+            if [ "$status" = unhealthy ]; then
+              docker logs nanafox-studio-ci
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' nanafox-studio-ci)" = healthy
+          curl --fail --silent http://127.0.0.1:8788/api/health >/dev/null
+          curl --fail --silent http://127.0.0.1:8788/api/ready >/dev/null
+          curl --fail --silent http://127.0.0.1:8788/ | grep --quiet 'NanaFox Studio'
+
+      - name: Clean up Studio container
+        if: always()
+        run: docker rm --force nanafox-studio-ci 2>/dev/null || true

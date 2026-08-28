@@ -20,3 +20,17 @@ test('Studio container builds the Studio flavor and runs without root or bundled
   assert.doesNotMatch(source, /ROUTER_AUTH_CURRENT_SECRET=/)
   assert.doesNotMatch(source, /ROUTER_IMAGE_API_KEY=/)
 })
+
+test('Studio CI requires PostgreSQL tests and smoke tests the real container', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/studio-ci.yml', import.meta.url), 'utf8')
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.match(workflow, /node-version: 24/)
+  assert.match(workflow, /postgres:18-alpine/)
+  assert.match(workflow, /npm run test:studio-server:ci/)
+  assert.match(workflow, /deploy\/studio\.Dockerfile/)
+  assert.match(workflow, /\/api\/health/)
+  assert.match(workflow, /\/api\/ready/)
+  assert.match(workflow, /NanaFox Studio/)
+  assert.match(pkg.scripts['test:studio-server:ci'], /STUDIO_TEST_DATABASE_URL/)
+  assert.match(pkg.scripts['test:studio-server:ci'], /test-coverage-lines=80/)
+})

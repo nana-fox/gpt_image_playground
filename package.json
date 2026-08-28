@@ -15,7 +15,8 @@
     "preview": "vite preview",
     "test": "vitest run src",
     "test:watch": "vitest src",
-    "test:studio-server": "node --test --experimental-test-coverage studio-server/*.test.mjs"
+    "test:studio-server": "node --test --experimental-test-coverage studio-server/*.test.mjs",
+    "test:studio-server:ci": "node -e \"if (!process.env.STUDIO_TEST_DATABASE_URL) throw new Error('STUDIO_TEST_DATABASE_URL is required')\" && node --test --experimental-test-coverage --test-coverage-lines=80 studio-server/*.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1119.0",
