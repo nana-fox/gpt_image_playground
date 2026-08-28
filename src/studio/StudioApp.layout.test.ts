@@ -93,4 +93,10 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('账户资料')
     expect(source).not.toContain('<input value={displayName} readOnly />')
   })
+
+  it('closes account navigation before opening another module', () => {
+    expect(source).toContain("setAccountOpen(false); navigate('points')")
+    expect(source).toContain("setAccountOpen(false); navigate('settings')")
+    expect(source).toContain("setAccountOpen(false); navigate('admin')")
+  })
 })
