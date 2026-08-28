@@ -7,7 +7,7 @@ const origin = 'https://studio.nanafox.com'
 const adminSubject = '019c0000-0000-7000-8000-000000000001'
 const userId = '019c0000-0000-7000-8000-000000000042'
 
-function createDependencies(subject = adminSubject) {
+function createDependencies(subject = adminSubject, role = 'admin') {
   const calls = []
   const session = {
     expiresAt: '2026-09-27T12:00:00.000Z',
@@ -20,6 +20,12 @@ function createDependencies(subject = adminSubject) {
   }
   return {
     calls,
+    routerAuth: {
+      resolve: (identitySubject, email) => {
+        calls.push(['resolve', identitySubject, email])
+        return { user: { subject: identitySubject, email, role } }
+      },
+    },
     sessions: {
       getSession: (token) => token === 'session-token' ? session : null,
       verifyCsrf: (token, csrf) => token === 'session-token' && csrf === 'csrf-token',
@@ -69,11 +75,11 @@ function request(path, options = {}) {
   })
 }
 
-test('only configured Router subjects can access Studio operations', async () => {
+test('current Router administrators can access Studio operations automatically', async () => {
   const allowed = createDependencies()
   const app = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: allowed.routerAuth,
     sessions: allowed.sessions,
     quota: allowed.quota,
     payments: allowed.payments,
@@ -89,10 +95,10 @@ test('only configured Router subjects can access Studio operations', async () =>
     },
   })
 
-  const deniedDependencies = createDependencies('not-an-admin')
+  const deniedDependencies = createDependencies(adminSubject, 'user')
   const deniedApp = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: deniedDependencies.routerAuth,
     sessions: deniedDependencies.sessions,
     quota: deniedDependencies.quota,
     payments: deniedDependencies.payments,
@@ -106,11 +112,35 @@ test('only configured Router subjects can access Studio operations', async () =>
   assert.equal((await anonymous.json()).error.reason, 'UNAUTHENTICATED')
 })
 
+test('admin access follows Router demotion and fails closed when Router is unavailable', async () => {
+  let role = 'admin'
+  const dependencies = createDependencies()
+  dependencies.routerAuth.resolve = (subject, email) => ({ user: { subject, email, role } })
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    routerAuth: dependencies.routerAuth,
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    payments: dependencies.payments,
+  })
+
+  assert.equal((await app.handle(request('/api/admin/me'))).status, 200)
+  role = 'user'
+  assert.equal((await app.handle(request('/api/admin/me'))).status, 403)
+
+  dependencies.routerAuth.resolve = () => {
+    throw new Error('Router unavailable')
+  }
+  const unavailable = await app.handle(request('/api/admin/me'))
+  assert.equal(unavailable.status, 503)
+  assert.equal((await unavailable.json()).error.reason, 'ADMIN_AUTH_UNAVAILABLE')
+})
+
 test('operators can inspect and update the daily free policy', async () => {
   const dependencies = createDependencies()
   const app = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: dependencies.routerAuth,
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
@@ -141,7 +171,7 @@ test('operators can find a user and grant idempotent credits with an audit actor
   const dependencies = createDependencies()
   const app = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: dependencies.routerAuth,
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
@@ -179,7 +209,7 @@ test('admin writes require same-origin JSON and the Studio CSRF pair', async () 
   const dependencies = createDependencies()
   const app = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: dependencies.routerAuth,
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
@@ -207,7 +237,7 @@ test('operators inspect and update payment plans without changing their kind', a
   const dependencies = createDependencies()
   const app = createStudioAdminApp({
     publicOrigin: origin,
-    adminSubjects: [adminSubject],
+    routerAuth: dependencies.routerAuth,
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,

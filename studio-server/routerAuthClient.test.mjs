@@ -67,7 +67,7 @@ test('Router auth client signs login requests and returns only identity data', a
   assert.equal('refresh_token' in result, false)
 })
 
-test('Router auth client exposes the four account operations', async () => {
+test('Router auth client exposes account operations and current identity resolution', async () => {
   const paths = []
   const client = createRouterAuthClient({
     baseUrl,
@@ -85,12 +85,14 @@ test('Router auth client exposes the four account operations', async () => {
   await client.register({ email: 'studio@example.com', password: loginValue, verifyCode: '246810' })
   await client.login('studio@example.com', loginValue)
   await client.login2FA('studio-challenge', '123456')
+  await client.resolve('019c0000-0000-7000-8000-000000000042', 'studio@example.com')
 
   assert.deepEqual(paths, [
     '/internal/v1/studio-auth/send-verify-code',
     '/internal/v1/studio-auth/register',
     '/internal/v1/studio-auth/login',
     '/internal/v1/studio-auth/login/2fa',
+    '/internal/v1/studio-auth/resolve',
   ])
 })
 
