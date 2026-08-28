@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 import { createArtworkStore } from './artworkStore.mjs'
+import { createAuthRateLimiter } from './authRateLimiter.mjs'
 import { createStudioAdminApp } from './adminApp.mjs'
 import { createStudioAuthApp } from './authApp.mjs'
 import { createStudioDatabase } from './database.mjs'
@@ -200,6 +201,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   const database = createStudioDatabase({ connectionString: config.databaseUrl })
   const store = createSessionStore({ database })
   const quota = createQuotaStore({ database })
+  const authRateLimiter = createAuthRateLimiter({ database, secret: config.routerSecret })
   const paymentStore = createPaymentStore({
     database,
     providerIdentity: config.payment
@@ -218,6 +220,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     routerAuth,
     store,
     quota,
+    rateLimiter: authRateLimiter,
   })
   const paymentProvider = config.paymentEnabled
     ? createWxpayClient({

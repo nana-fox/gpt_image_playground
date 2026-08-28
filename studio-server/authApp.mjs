@@ -1,3 +1,6 @@
+import { isIP } from 'node:net'
+
+import { AuthRateLimitError } from './authRateLimiter.mjs'
 import { RouterAuthError } from './routerAuthClient.mjs'
 
 const SESSION_COOKIE = 'nanafox_studio_session'
@@ -13,8 +16,10 @@ export function createStudioAuthApp(options = {}) {
   const routerAuth = options.routerAuth
   const store = options.store
   const quota = options.quota
+  const rateLimiter = options.rateLimiter
   if (!routerAuth || typeof routerAuth !== 'object') throw new Error('Router auth client is required')
   if (!store || typeof store !== 'object') throw new Error('Studio session store is required')
+  if (!rateLimiter?.consume) throw new Error('Studio auth rate limiter is required')
 
   const secure = new URL(publicOrigin).protocol === 'https:'
 
@@ -53,6 +58,7 @@ export function createStudioAuthApp(options = {}) {
       try {
         if (url.pathname === '/api/auth/send-verify-code') {
           const email = normalizeEmail(input.email)
+          await rateLimiter.consume(rateLimitBuckets('verify', email, clientIp(request)))
           const data = await routerAuth.sendVerifyCode(email, request.headers.get('accept-language') ?? '')
           return json({ ok: true, data })
         }
@@ -63,6 +69,7 @@ export function createStudioAuthApp(options = {}) {
             password: normalizePassword(input.password),
             verifyCode: normalizeCode(input.verifyCode, '验证码'),
           }
+          await rateLimiter.consume(rateLimitBuckets('register', registerInput.email, clientIp(request)))
           if (input.promoCode) registerInput.promoCode = String(input.promoCode).trim()
           if (input.invitationCode) registerInput.invitationCode = String(input.invitationCode).trim()
           if (input.affiliateCode) registerInput.affiliateCode = String(input.affiliateCode).trim()
@@ -70,7 +77,9 @@ export function createStudioAuthApp(options = {}) {
         }
 
         if (url.pathname === '/api/auth/login') {
-          const data = await routerAuth.login(normalizeEmail(input.email), normalizePassword(input.password))
+          const email = normalizeEmail(input.email)
+          await rateLimiter.consume(rateLimitBuckets('login', email, clientIp(request)))
+          const data = await routerAuth.login(email, normalizePassword(input.password))
           if (data.requires_2fa === true) {
             const challenge = String(data.temp_token ?? '')
             if (!challenge) throw protocolError()
@@ -83,6 +92,7 @@ export function createStudioAuthApp(options = {}) {
           const challenge = String(input.challenge ?? '').trim()
           if (!challenge || challenge.length > 4096) throw validationError('两步验证会话无效')
           const code = normalizeCode(input.code, '动态验证码')
+          await rateLimiter.consume(rateLimitBuckets('login-2fa', challenge, clientIp(request)))
           return authenticated(await routerAuth.login2FA(challenge, code), store, secure, publicBasePath)
         }
 
@@ -98,6 +108,11 @@ export function createStudioAuthApp(options = {}) {
         response.headers.append('Set-Cookie', clearCookie(CSRF_COOKIE, false, secure, publicBasePath))
         return response
       } catch (error) {
+        if (error instanceof AuthRateLimitError) {
+          const response = json({ ok: false, error: { reason: error.reason, message: error.message } }, error.status)
+          response.headers.set('Retry-After', String(error.retryAfterSeconds))
+          return response
+        }
         if (error instanceof RouterAuthError) {
           const status = error.status >= 400 && error.status < 500 ? error.status : 502
           const message = status === 502 ? '账户服务暂时不可用，请稍后重试' : error.message
@@ -167,6 +182,24 @@ function normalizeCode(value, label) {
   const code = String(value ?? '').trim()
   if (!/^\d{6}$/.test(code)) throw validationError(`请输入 6 位${label}`)
   return code
+}
+
+function clientIp(request) {
+  const value = String(request.headers.get('x-forwarded-for') ?? '').split(',', 1)[0].trim()
+  return isIP(value) ? value : 'unknown'
+}
+
+function rateLimitBuckets(action, account, ip) {
+  const limits = {
+    verify: { account: 3, ip: 10, windowMs: 10 * 60 * 1000 },
+    register: { account: 5, ip: 20, windowMs: 15 * 60 * 1000 },
+    login: { account: 10, ip: 50, windowMs: 15 * 60 * 1000 },
+    'login-2fa': { account: 8, ip: 30, windowMs: 10 * 60 * 1000 },
+  }[action]
+  return [
+    { scope: `${action}-${action === 'login-2fa' ? 'challenge' : 'email'}`, key: account, limit: limits.account, windowMs: limits.windowMs },
+    { scope: `${action}-ip`, key: ip, limit: limits.ip, windowMs: limits.windowMs },
+  ]
 }
 
 function parseCookies(header) {

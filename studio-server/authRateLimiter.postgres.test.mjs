@@ -4,6 +4,25 @@ import test from 'node:test'
 import { AuthRateLimitError, createAuthRateLimiter } from './authRateLimiter.mjs'
 import { testConnectionString, withPostgres } from './postgresTest.mjs'
 
+test('rate limit buckets reject unsafe values before PostgreSQL writes', async () => {
+  let transactions = 0
+  const limiter = createAuthRateLimiter({
+    database: {
+      transaction() {
+        transactions += 1
+      },
+    },
+    secret: ['studio', 'rate', 'limit', 'test', 'key'].join('-').repeat(2),
+  })
+
+  await assert.rejects(() => limiter.consume([]), /buckets are invalid/)
+  await assert.rejects(() => limiter.consume([{ scope: 'Unsafe Scope', key: 'member@example.com', limit: 1, windowMs: 1000 }]), /bucket is invalid/)
+  await assert.rejects(() => limiter.consume([{ scope: 'login-email', key: 'x'.repeat(4097), limit: 1, windowMs: 1000 }]), /bucket is invalid/)
+  await assert.rejects(() => limiter.consume([{ scope: 'login-email', key: 'member@example.com', limit: 0, windowMs: 1000 }]), /limit is invalid/)
+  await assert.rejects(() => limiter.consume([{ scope: 'login-email', key: 'member@example.com', limit: 1, windowMs: 999 }]), /window is invalid/)
+  assert.equal(transactions, 0)
+})
+
 test('PostgreSQL rate limits atomically and stores only HMAC keys', { skip: !testConnectionString }, async (t) => {
   const database = await withPostgres(t)
   let now = new Date('2026-08-28T08:00:00.000Z')
