@@ -31,6 +31,56 @@ export function createPaymentStore(options = {}) {
     listPlans,
     listAdminPlans: () => listPlans(true),
 
+    async getPaymentChannel() {
+      const result = await database.query(`
+        SELECT accepting_orders, version
+        FROM studio_payment_channel
+        WHERE id = 1
+      `)
+      if (!result.rowCount) throw new PaymentStoreError('支付渠道配置不存在', 'PAYMENT_CHANNEL_NOT_FOUND', 500)
+      return mapPaymentChannel(result.rows[0])
+    },
+
+    async updatePaymentChannel(input, audit) {
+      const expectedVersion = Number(input?.expectedVersion)
+      if (typeof input?.acceptingOrders !== 'boolean' || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+        throw validationError('支付渠道配置无效')
+      }
+      const actorSubject = String(audit?.actorSubject ?? '').trim()
+      if (!actorSubject || actorSubject.length > 128) throw validationError('运营身份无效')
+
+      return database.transaction(async (client) => {
+        const current = await client.query(`
+          SELECT accepting_orders, version
+          FROM studio_payment_channel
+          WHERE id = 1
+          FOR UPDATE
+        `)
+        if (!current.rowCount) throw new PaymentStoreError('支付渠道配置不存在', 'PAYMENT_CHANNEL_NOT_FOUND', 500)
+        const before = mapPaymentChannel(current.rows[0])
+        if (before.version !== expectedVersion) {
+          throw new PaymentStoreError('支付渠道已被其他人更新，请刷新后重试', 'PAYMENT_CHANNEL_VERSION_CONFLICT', 409)
+        }
+        const now = clock().getTime()
+        const result = await client.query(`
+          UPDATE studio_payment_channel
+          SET accepting_orders = $1, version = version + 1, updated_at = $2
+          WHERE id = 1 AND version = $3
+          RETURNING accepting_orders, version
+        `, [input.acceptingOrders, now, expectedVersion])
+        if (!result.rowCount) {
+          throw new PaymentStoreError('支付渠道已被其他人更新，请刷新后重试', 'PAYMENT_CHANNEL_VERSION_CONFLICT', 409)
+        }
+        const updated = mapPaymentChannel(result.rows[0])
+        await client.query(`
+          INSERT INTO studio_admin_audit_log
+            (id, actor_subject, action, target_user_id, reference, before_json, after_json, created_at)
+          VALUES ($1, $2, 'payment_channel.update', NULL, 'wxpay_native', $3, $4, $5)
+        `, [randomUUID(), actorSubject, before, updated, now])
+        return updated
+      })
+    },
+
     async updatePlan(id, input, audit) {
       const planId = normalizePlanId(id)
       const name = String(input?.name ?? '').trim()
@@ -254,6 +304,13 @@ function mapPlan(row) {
     durationDays: Number(row.duration_days),
     enabled: row.enabled === true,
     sortOrder: Number(row.sort_order),
+    version: Number(row.version),
+  }
+}
+
+function mapPaymentChannel(row) {
+  return {
+    acceptingOrders: row.accepting_orders === true,
     version: Number(row.version),
   }
 }

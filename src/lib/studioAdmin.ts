@@ -42,6 +42,15 @@ export type StudioAdminPaymentPlan = {
   version: number
 }
 
+export type StudioPaymentChannel = {
+  provider: 'wxpay_native'
+  credentialsReady: boolean
+  acceptingOrders: boolean
+  checkoutAvailable: boolean
+  notifyUrl: string
+  version: number
+}
+
 export class StudioAdminError extends Error {
   status: number
   reason: string
@@ -105,6 +114,19 @@ export async function getStudioPaymentPlans(request: typeof fetch = fetch): Prom
   const data = await call('admin/payment-plans', { credentials: 'same-origin' }, request)
   if (!Array.isArray(data)) throw protocolError()
   return data.map(normalizePaymentPlan)
+}
+
+export async function getStudioPaymentChannel(request: typeof fetch = fetch): Promise<StudioPaymentChannel> {
+  return normalizePaymentChannel(await call('admin/payment-channel', { credentials: 'same-origin' }, request))
+}
+
+export async function updateStudioPaymentChannel(channel: StudioPaymentChannel, request: typeof fetch = fetch): Promise<StudioPaymentChannel> {
+  return normalizePaymentChannel(await call('admin/payment-channel', {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify({ acceptingOrders: channel.acceptingOrders, expectedVersion: channel.version }),
+  }, request))
 }
 
 export async function updateStudioPaymentPlan(plan: StudioAdminPaymentPlan, request: typeof fetch = fetch) {
@@ -201,6 +223,20 @@ function normalizePaymentPlan(value: unknown): StudioAdminPaymentPlan {
     || !positiveCount(plan.version)
   ) throw protocolError()
   return plan as StudioAdminPaymentPlan
+}
+
+function normalizePaymentChannel(value: unknown): StudioPaymentChannel {
+  const channel = value as Partial<StudioPaymentChannel> | undefined
+  if (
+    !channel
+    || channel.provider !== 'wxpay_native'
+    || typeof channel.credentialsReady !== 'boolean'
+    || typeof channel.acceptingOrders !== 'boolean'
+    || typeof channel.checkoutAvailable !== 'boolean'
+    || typeof channel.notifyUrl !== 'string'
+    || !positiveCount(channel.version)
+  ) throw protocolError()
+  return channel as StudioPaymentChannel
 }
 
 function validUser(value: unknown): value is StudioAdminUser {

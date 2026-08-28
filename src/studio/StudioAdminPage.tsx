@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CaretRight,
   CheckCircle,
+  CreditCard,
   Gauge,
   MagnifyingGlass,
   PencilSimple,
@@ -15,31 +16,36 @@ import {
 } from '@phosphor-icons/react'
 
 import {
+  getStudioPaymentChannel,
   getStudioQuotaPolicy,
   getStudioPaymentPlans,
   grantStudioCredits,
   searchStudioUsers,
+  updateStudioPaymentChannel,
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
   type StudioAdminPaymentPlan,
   type StudioAdminSession,
   type StudioAdminUser,
+  type StudioPaymentChannel,
   type StudioQuotaPolicy,
 } from '../lib/studioAdmin'
 
-type AdminSection = 'overview' | 'quota' | 'users' | 'plans'
+type AdminSection = 'overview' | 'quota' | 'users' | 'plans' | 'payment'
 
 const adminSections: { id: AdminSection, label: string, icon: typeof Gauge }[] = [
   { id: 'overview', label: '运营总览', icon: Gauge },
   { id: 'quota', label: '免费额度', icon: Sparkle },
   { id: 'users', label: '用户额度', icon: UsersThree },
   { id: 'plans', label: '套餐与价格', icon: Storefront },
+  { id: 'payment', label: '支付渠道', icon: CreditCard },
 ]
 
 export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminSession, onExit: () => void }) {
   const [section, setSection] = useState<AdminSection>('overview')
   const [policy, setPolicy] = useState<StudioQuotaPolicy>()
   const [plans, setPlans] = useState<StudioAdminPaymentPlan[]>([])
+  const [paymentChannel, setPaymentChannel] = useState<StudioPaymentChannel>()
   const [query, setQuery] = useState('')
   const [searched, setSearched] = useState(false)
   const [users, setUsers] = useState<StudioAdminUser[]>([])
@@ -54,10 +60,11 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans()])
-      .then(([nextPolicy, nextPlans]) => {
+    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel()])
+      .then(([nextPolicy, nextPlans, nextPaymentChannel]) => {
         setPolicy(nextPolicy)
         setPlans(nextPlans)
+        setPaymentChannel(nextPaymentChannel)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '运营配置加载失败'))
   }, [])
@@ -150,6 +157,22 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
     }
   }
 
+  const savePaymentChannel = async () => {
+    if (!paymentChannel) return
+    setBusy('payment-channel')
+    setError('')
+    setMessage('')
+    try {
+      const updated = await updateStudioPaymentChannel(paymentChannel)
+      setPaymentChannel(updated)
+      setMessage(updated.acceptingOrders ? '支付渠道已开始接收新订单。' : '已停止新订单，历史订单仍会继续查单和履约。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '支付渠道保存失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
   const enabledPlans = plans.filter((plan) => plan.enabled).length
   const operator = admin.user.displayName || admin.user.email
 
@@ -181,6 +204,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
             <button onClick={() => showSection('quota')}><span className="metric-icon"><Sparkle size={20} /></span><span><strong>调整免费额度</strong><small>开关每日赠送或修改默认次数</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('users')}><span className="metric-icon"><UsersThree size={20} /></span><span><strong>给用户增加额度</strong><small>搜索账户并完成一次审计发放</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('plans')}><span className="metric-icon"><Storefront size={20} /></span><span><strong>管理销售套餐</strong><small>修改价格、额度、有效期和上架状态</small></span><CaretRight size={17} /></button>
+            <button onClick={() => showSection('payment')}><span className="metric-icon"><CreditCard size={20} /></span><span><strong>管理支付渠道</strong><small>检查服务端凭证并控制是否接收新订单</small></span><CaretRight size={17} /></button>
           </div></section>
         </>}
 
@@ -215,6 +239,18 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
           <section className="operations-card plans-table-card">
             <div className="operations-card-heading"><div><h2>全部套餐</h2><p>{enabledPlans} 个销售中，{plans.length - enabledPlans} 个未上架</p></div></div>
             <div className="operations-plan-list"><div className="operations-plan-head"><span>套餐</span><span>价格</span><span>额度与有效期</span><span>状态</span><span /></div>{plans.map((plan) => <article key={plan.id}><span><small>{plan.kind === 'subscription' ? '订阅' : '加量包'}</small><strong>{plan.name}</strong><em>{plan.id}</em></span><strong>¥{(plan.priceCents / 100).toFixed(2)}</strong><span><strong>{plan.credits} 次</strong><small>{plan.durationDays} 天有效</small></span><span className={`status-pill ${plan.enabled ? 'online' : ''}`}>{plan.enabled ? '销售中' : '未上架'}</span><button className="secondary-button small-button" onClick={() => setEditingPlan({ ...plan })}><PencilSimple size={16} />编辑套餐</button></article>)}</div>
+          </section>
+        </>}
+
+        {section === 'payment' && <>
+          <header className="operations-heading"><span className="eyebrow">收款配置</span><h1>支付渠道</h1><p>运营端只控制是否接收新订单。商户号、证书和密钥保留在服务端，不会写入页面或数据库。</p></header>
+          <section className="operations-card compact-card">
+            <div className="operations-card-heading"><div><h2>微信 Native 支付</h2><p>用户在浏览器中扫码完成支付，到账后自动发放套餐额度。</p></div><span className={`status-pill ${paymentChannel?.checkoutAvailable ? 'online' : ''}`}>{paymentChannel?.checkoutAvailable ? '可下单' : '未开放'}</span></div>
+            {paymentChannel ? <div className="operations-form">
+              <div className="operations-field-grid"><label><span>服务端凭证</span><input value={paymentChannel.credentialsReady ? '已完整配置' : '尚未配置完整'} readOnly /><small>凭证只通过部署环境和只读文件挂载提供。</small></label><label><span>支付回调地址</span><input value={paymentChannel.notifyUrl} readOnly /><small>需要在微信支付商户平台保持可访问。</small></label></div>
+              <label className="operations-switch"><span><strong>接收新的支付订单</strong><small>{paymentChannel.credentialsReady ? '关闭后不再创建新订单，已存在订单仍继续回调和履约。' : '请先由部署人员配置微信支付凭证，再开放下单。'}</small></span><input type="checkbox" checked={paymentChannel.acceptingOrders} disabled={!paymentChannel.credentialsReady} onChange={(event) => setPaymentChannel({ ...paymentChannel, acceptingOrders: event.target.checked })} /></label>
+              <div className="operations-form-actions"><span>配置版本 {paymentChannel.version}</span><button className="primary-button" disabled={busy === 'payment-channel'} onClick={() => void savePaymentChannel()}>{busy === 'payment-channel' ? '正在保存…' : '保存支付渠道设置'}</button></div>
+            </div> : <div className="recent-loading">正在读取真实配置…</div>}
           </section>
         </>}
       </div>

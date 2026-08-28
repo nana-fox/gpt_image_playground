@@ -235,6 +235,10 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     enabled: config.paymentEnabled,
     store: paymentStore,
     provider: paymentProvider,
+    notifyUrl: config.payment?.notifyUrl ?? new URL(
+      `${config.publicBasePath}api/payments/webhooks/wechat`,
+      `${config.publicOrigin}/`,
+    ).toString(),
   })
   const paymentApp = createStudioPaymentApp({
     publicOrigin: config.publicOrigin,
@@ -247,6 +251,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     sessions: store,
     quota,
     payments: paymentStore,
+    paymentChannel: payments,
   })
   const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
