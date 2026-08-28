@@ -235,15 +235,15 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
-| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 007 已应用；支付、额度、账户入口限流、作品保留和灵感运营 PostgreSQL 集成测试通过 |
+| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 008 已应用；单用户活跃任务约束、历史重复任务安全收敛和 15 分钟超时恢复通过真实 PostgreSQL 验证 |
 | R2 Store 代码 | 已完成并部署测试环境 | 私有 PUT/GET/幂等/冲突/DELETE 合约通过 |
 | Cloudflare R2 订阅与测试 Bucket | 已完成 | 补未完成 multipart upload 清理，不设置全桶 30 天删除 |
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-0e19078-path` 运行于 8788；`8b025ff` 容器保留为当前回滚点 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-476a9c7-path` 运行于 8788；`0e19078` 容器保留为唯一回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
-| 浏览器验收 | 公网桌面与移动登录/注册、完整运营台本地视觉通过 | 待使用真实 Router 账户完成 3 次额度、删除/恢复真实作品和公网运营台人工验收；本次 Chrome DOM 通道超时，不虚报通过 |
+| 浏览器验收 | 公网桌面创作页与运营总览已用真实 Router 管理员 Session 复验，无页面错误或横向溢出 | 待补移动端、真实 3 次额度、删除/恢复作品和各运营写操作人工验收 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
 | 支付、订阅与加量包 | 代码与测试环境部署已完成 | 运营端可独立控制接单；服务端凭证和渠道默认关闭，配置测试商户并完成真实小额验收后才能开放 |
 | 灵感运营配置 | 已部署测试环境 | PostgreSQL 保存 9 条首批内容；运营端可新增、编辑、上下架、推荐和排序。收藏仍只在页面状态，首发不承诺跨设备同步 |
@@ -352,3 +352,15 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 暗部署后 schema migration 为 `1..7`；原有 2 个用户、1 个生成任务、0 个加额和 0 个支付订单保持不变。切换前 dump 位于 `/home/nio/backups/nanafox-studio-test/pre-inspirations-20260828T055846Z/`，大小 34,504 bytes，`pg_restore -l` 有 84 行，SHA-256 为 `d8898c9dca827563ed0b3d0c46010e3ca62923dd916004990ba7f7906ba3c649`。
 - 公网页面、静态资源、健康和就绪接口为 200；未登录 Session、灵感、运营和作品接口为 401。桌面灵感库、编辑弹窗和 390×844 移动布局用隔离 mock 数据完成同制品视觉自审，无横向溢出或控制台错误；公网真实管理员写操作仍需登录态验收。
 - 本次没有修改 Router/Sub2API 代码、配置或容器；支付渠道开关、套餐价格和额度仍由 Studio 运营端配置，商户 Secret 仍只存在服务器环境。Router test/prod health 为 200，Sub2API test/prod、PostgreSQL、Redis 保持 healthy。
+
+### 11.11 2026-08-28 生成可靠性与 CI 测试发布证据
+
+- Studio Git commit：`476a9c7`；测试镜像：`nanafox-studio:test-476a9c7-path`；上一版保存为停止容器 `nanafox-studio-test-rollback-0e19078-20260828`。
+- 切换前 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-reliability-20260828T1109Z/`，dump 为 37,398 bytes、`pg_restore -l` 为 88 行，SHA-256 为 `d0d85cfc1f05b5cc093cc5e06ed24ca8eef28f84ad9f23df306d15a197f4d203`。
+- migration 008 从现有 migration 7 升级；切换前后均为 2 个用户、1 个任务、0 个活跃任务、0 个 reserved reservation 和 0 个支付订单。partial unique index 已存在，支付接单仍为关闭。
+- 前端 51 个文件、603 个测试通过；Studio 服务端使用临时 PostgreSQL 为 116 通过、0 失败、1 个 R2 live 用例跳过，行覆盖率 91.91%；normal/studio 双构建通过。服务器 R2 另行完成真实 PUT/GET/同内容幂等/冲突/DELETE 探针，运行镜像生产依赖审计为 0 个已知漏洞。
+- 8790 暗部署先完成 migration、health/ready、静态资源、未登录 401 和 R2 探针，再切换 8788。切换后完成容器重启，公网页面、静态资源、`/api/health`、`/api/ready` 均为 200。
+- Chrome 使用现有真实 Router 管理员 Session 验证创作首页、3/3 免费额度、已有作品和 `#/admin` 运营总览；运营入口自动出现，页面无 `role=alert` 错误且桌面无横向溢出。本次没有消耗额度、提交运营写操作或测试真实支付。
+- 新增 Studio 专用 CI：强制 PostgreSQL 测试、80% 行覆盖率、normal/studio 构建、真实 Dockerfile 构建及容器 health/ready/首页冒烟；本地合同已通过，仍需首次 GitHub runner 验证 Docker 阶段。PR 不加载 R2 Secret，R2 保留为测试部署门禁。
+- 清理了 10 个旧停止的 Studio 回滚容器、10 个旧可重建镜像、本次暗部署容器和临时源码；只保留当前镜像与上一版回滚。另清理 839.4 MB 可重建 Docker build cache，根盘由构建后的 89% 回到 86%。
+- Router/Sub2API 代码、配置和容器未修改或重启；Router test/prod health 为 200，Sub2API test/prod、PostgreSQL、Redis 保持 healthy。
