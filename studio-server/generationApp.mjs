@@ -96,7 +96,9 @@ export function createStudioGenerationApp(options = {}) {
         return json({ ok: true, data: publicTask(task, publicBasePath) }, 201)
       } catch (error) {
         if (error instanceof GenerationError) return jsonError(error.status, error.reason, error.message)
-        if (error instanceof TaskStoreError) return jsonError(409, error.reason, error.message)
+        if (error instanceof TaskStoreError) {
+          return jsonError(error.reason === 'GENERATION_BUSY' ? 429 : 409, error.reason, error.message)
+        }
         if (error?.reason && error?.status) return jsonError(error.status, error.reason, error.message)
         console.error('Studio generation request failed', error)
         return jsonError(500, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试')

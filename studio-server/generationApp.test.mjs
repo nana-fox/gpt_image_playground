@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import { createStudioGenerationApp } from './generationApp.mjs'
 import { GenerationError } from './generationService.mjs'
+import { TaskStoreError } from './generationTaskStore.mjs'
 
 const origin = 'https://studio.nanafox.com'
 const user = { id: 'local-user', email: 'creator@example.com', displayName: 'Creator' }
@@ -118,6 +119,27 @@ test('generation inputs and errors are bounded before reaching the provider', as
   assert.deepEqual(await exhausted.json(), {
     ok: false,
     error: { reason: 'QUOTA_EXHAUSTED', message: '额度不足' },
+  })
+})
+
+test('a concurrent generation returns a stable busy response without leaking database details', async () => {
+  const app = createApp({
+    generations: {
+      generate: async () => {
+        throw new TaskStoreError('已有创作任务正在处理中，请稍后再试', 'GENERATION_BUSY')
+      },
+    },
+  })
+
+  const response = await app.handle(request('/api/generations', {
+    headers: { 'Idempotency-Key': 'request-concurrent' },
+    body: task.input,
+  }))
+
+  assert.equal(response.status, 429)
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: { reason: 'GENERATION_BUSY', message: '已有创作任务正在处理中，请稍后再试' },
   })
 })
 

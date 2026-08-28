@@ -178,7 +178,9 @@ test('failed idempotent replays return the stable failure', async () => {
 
   await assert.rejects(
     service.generate(user, input, 'request-failed'),
-    (error) => error instanceof GenerationError && error.reason === 'GENERATION_FAILED',
+    (error) => error instanceof GenerationError
+      && error.reason === 'IMAGE_PROVIDER_TIMEOUT'
+      && error.status === 502,
   )
 })
 
@@ -300,6 +302,7 @@ test('startup recovery finalizes charged outputs and removes released ones', asy
   ]
   const service = createGenerationService({
     tasks: {
+      listStaleActive: () => [],
       listFinalizationPending: () => pending,
       succeed(id) {
         events.push(['succeed', id])
@@ -332,5 +335,58 @@ test('startup recovery finalizes charged outputs and removes released ones', asy
     ['succeed', 'task-reserved'],
     ['remove', 'released.png'],
     ['fail', 'task-released', 'GENERATION_FINALIZATION_EXPIRED'],
+  ])
+})
+
+test('startup recovery expires only stale active tasks and preserves output finalization', async () => {
+  const events = []
+  const now = new Date('2026-08-28T12:30:00.000Z')
+  const service = createGenerationService({
+    activeTaskTtlSeconds: 900,
+    clock: () => now,
+    tasks: {
+      listStaleActive(cutoff) {
+        events.push(['listStaleActive', cutoff])
+        return [
+          { id: 'task-created', status: 'created', reservationId: null },
+          { id: 'task-reserved', status: 'reserved', reservationId: 'reservation-reserved' },
+          { id: 'task-running', status: 'running', reservationId: 'reservation-running' },
+        ]
+      },
+      listFinalizationPending() {
+        return [{ id: 'task-output', status: 'output_stored', reservationId: 'reservation-confirmed', output: { key: 'output.png' } }]
+      },
+      fail(id, reason) {
+        events.push(['fail', id, reason])
+      },
+      succeed(id) {
+        events.push(['succeed', id])
+      },
+    },
+    quota: {
+      release(id) {
+        events.push(['release', id])
+        return { id, source: 'free', status: 'released' }
+      },
+      getReservation(id) {
+        events.push(['getReservation', id])
+        return { id, source: 'free', status: 'confirmed' }
+      },
+    },
+    images: {},
+    outputs: { remove: () => assert.fail('confirmed output must be preserved') },
+  })
+
+  await service.recoverPending()
+
+  assert.deepEqual(events, [
+    ['listStaleActive', now.getTime() - 900_000],
+    ['fail', 'task-created', 'GENERATION_RECOVERY_TIMEOUT'],
+    ['release', 'reservation-reserved'],
+    ['fail', 'task-reserved', 'GENERATION_RECOVERY_TIMEOUT'],
+    ['release', 'reservation-running'],
+    ['fail', 'task-running', 'GENERATION_RECOVERY_TIMEOUT'],
+    ['getReservation', 'reservation-confirmed'],
+    ['succeed', 'task-output'],
   ])
 })

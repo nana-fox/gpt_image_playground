@@ -13,6 +13,11 @@ export function createGenerationService(options = {}) {
   const images = options.images
   const outputs = options.outputs
   if (!tasks || !quota || !images || !outputs) throw new Error('Studio generation dependencies are required')
+  const clock = options.clock ?? (() => new Date())
+  const activeTaskTtlSeconds = options.activeTaskTtlSeconds === undefined ? 900 : Number(options.activeTaskTtlSeconds)
+  if (!Number.isInteger(activeTaskTtlSeconds) || activeTaskTtlSeconds < 60 || activeTaskTtlSeconds > 3600) {
+    throw new Error('Studio active generation TTL is invalid')
+  }
 
   return {
     async generate(user, input, idempotencyKey) {
@@ -86,14 +91,16 @@ export function createGenerationService(options = {}) {
         }
         const reason = normalizeReason(error?.reason)
         await tasks.fail(created.task.id, reason)
-        throw new GenerationError(publicMessage(reason), {
-          status: reason === 'QUOTA_EXHAUSTED' ? 402 : 502,
-          reason,
-        })
+        throw generationFailure(reason)
       }
     },
 
     async recoverPending() {
+      const cutoff = clock().getTime() - activeTaskTtlSeconds * 1000
+      for (const task of await tasks.listStaleActive(cutoff)) {
+        if (task.reservationId) await quota.release(task.reservationId)
+        await tasks.fail(task.id, 'GENERATION_RECOVERY_TIMEOUT')
+      }
       for (const task of await tasks.listFinalizationPending()) {
         try {
           const current = await quota.getReservation(task.reservationId)
@@ -116,10 +123,7 @@ export function createGenerationService(options = {}) {
 
 function replay(task) {
   if (task.status !== 'failed') return task
-  throw new GenerationError(publicMessage(task.errorReason), {
-    status: task.errorReason === 'QUOTA_EXHAUSTED' ? 402 : 502,
-    reason: 'GENERATION_FAILED',
-  })
+  throw generationFailure(task.errorReason)
 }
 
 function normalizeReason(reason) {
@@ -130,14 +134,22 @@ function normalizeReason(reason) {
     'IMAGE_PROVIDER_REJECTED',
     'IMAGE_PROVIDER_PROTOCOL_ERROR',
     'OUTPUT_STORAGE_FAILED',
+    'GENERATION_RECOVERY_TIMEOUT',
   ])
   return allowed.has(reason) ? reason : 'GENERATION_FAILED'
 }
 
 function publicMessage(reason) {
   if (reason === 'QUOTA_EXHAUSTED') return '创作额度不足'
+  if (reason === 'GENERATION_RECOVERY_TIMEOUT') return '上次创作因处理超时而中止，没有扣除额度，请重新生成'
   if (reason === 'IMAGE_PROVIDER_TIMEOUT') return '这次生成超时了，没有扣除额度，请稍后重试'
   if (reason === 'IMAGE_PROVIDER_REJECTED') return '当前描述无法生成，没有扣除额度，请调整后重试'
   if (reason === 'OUTPUT_STORAGE_FAILED') return '作品保存失败，没有扣除额度，请稍后重试'
   return '这次没有生成成功，也没有扣除额度，请稍后重试'
+}
+
+function generationFailure(reason) {
+  const value = normalizeReason(reason)
+  const status = value === 'QUOTA_EXHAUSTED' ? 402 : value === 'GENERATION_RECOVERY_TIMEOUT' ? 503 : 502
+  return new GenerationError(publicMessage(value), { status, reason: value })
 }

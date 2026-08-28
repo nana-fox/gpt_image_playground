@@ -41,21 +41,29 @@ export function createGenerationTaskStore(options = {}) {
       const normalized = normalizeInput(userId, input, idempotencyKey)
       const id = randomUUID()
       const now = clock().getTime()
-      const inserted = await database.query(`
-        INSERT INTO studio_generation_tasks
-          (id, user_id, idempotency_key, prompt, size, quality, status, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $7)
-        ON CONFLICT(user_id, idempotency_key) DO NOTHING
-        RETURNING *
-      `, [
-        id,
-        normalized.userId,
-        normalized.idempotencyKey,
-        normalized.prompt,
-        normalized.size,
-        normalized.quality,
-        now,
-      ])
+      let inserted
+      try {
+        inserted = await database.query(`
+          INSERT INTO studio_generation_tasks
+            (id, user_id, idempotency_key, prompt, size, quality, status, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $7)
+          ON CONFLICT(user_id, idempotency_key) DO NOTHING
+          RETURNING *
+        `, [
+          id,
+          normalized.userId,
+          normalized.idempotencyKey,
+          normalized.prompt,
+          normalized.size,
+          normalized.quality,
+          now,
+        ])
+      } catch (error) {
+        if (error?.code === '23505' && error?.constraint === 'idx_studio_generation_tasks_one_active_per_user') {
+          throw new TaskStoreError('已有创作任务正在处理中，请稍后再试', 'GENERATION_BUSY')
+        }
+        throw error
+      }
       if (inserted.rowCount) return { created: true, task: mapTask(inserted.rows[0]) }
 
       const existing = await database.query(`
@@ -194,6 +202,18 @@ export function createGenerationTaskStore(options = {}) {
         WHERE status = 'output_stored'
         ORDER BY updated_at ASC, id ASC
       `)
+      return result.rows.map(mapTask)
+    },
+
+    async listStaleActive(cutoff) {
+      const timestamp = Number(cutoff)
+      if (!Number.isFinite(timestamp)) throw new Error('Studio generation recovery cutoff is invalid')
+      const result = await database.query(`
+        SELECT *
+        FROM studio_generation_tasks
+        WHERE status IN ('created', 'reserved', 'running') AND updated_at <= $1
+        ORDER BY updated_at ASC, id ASC
+      `, [timestamp])
       return result.rows.map(mapTask)
     },
   }

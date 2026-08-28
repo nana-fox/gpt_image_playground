@@ -24,7 +24,7 @@ async function withDatabase(t) {
     email: 'other@example.com',
     display_name: 'Other',
   })).user
-  return { database, user, other }
+  return { database, sessions, user, other }
 }
 
 test('generation tasks persist the successful lifecycle without image bytes', { skip: !testConnectionString }, async (t) => {
@@ -101,6 +101,25 @@ test('generation task idempotency rejects a changed request', { skip: !testConne
   )
 })
 
+test('PostgreSQL allows only one active generation per user under concurrency', { skip: !testConnectionString }, async (t) => {
+  const { database, user } = await withDatabase(t)
+  const tasks = createGenerationTaskStore({ database })
+  const results = await Promise.allSettled([
+    tasks.createTask(user.id, input, 'concurrent-a'),
+    tasks.createTask(user.id, { ...input, prompt: '另一张并发图片' }, 'concurrent-b'),
+  ])
+  const fulfilled = results.filter((result) => result.status === 'fulfilled')
+  const rejected = results.filter((result) => result.status === 'rejected')
+
+  assert.equal(fulfilled.length, 1)
+  assert.equal(rejected.length, 1)
+  assert.equal(rejected[0].reason instanceof TaskStoreError, true)
+  assert.equal(rejected[0].reason.reason, 'GENERATION_BUSY')
+
+  await tasks.fail(fulfilled[0].value.task.id, 'IMAGE_PROVIDER_TIMEOUT')
+  assert.equal((await tasks.createTask(user.id, input, 'after-terminal')).created, true)
+})
+
 test('task reads and lists are scoped to their owner', { skip: !testConnectionString }, async (t) => {
   const { database, user, other } = await withDatabase(t)
   const tasks = createGenerationTaskStore({ database })
@@ -142,6 +161,39 @@ test('tasks survive a store restart and expose pending finalization', { skip: !t
   const reopened = createGenerationTaskStore({ database })
   assert.equal((await reopened.getTask(user.id, task.id)).status, 'output_stored')
   assert.deepEqual((await reopened.listFinalizationPending()).map((item) => item.id), [task.id])
+})
+
+test('stale active recovery excludes fresh and output-stored tasks', { skip: !testConnectionString }, async (t) => {
+  const { database, sessions, user, other } = await withDatabase(t)
+  let now = new Date('2026-08-28T12:00:00.000Z')
+  const tasks = createGenerationTaskStore({ database, clock: () => now })
+  const extraUsers = []
+  for (let idx = 0; idx < 3; idx += 1) {
+    extraUsers.push((await sessions.createSession({
+      subject: `019c0000-0000-7000-8000-00000000006${idx}`,
+      email: `creator-${idx}@example.com`,
+      display_name: `Creator ${idx}`,
+    })).user)
+  }
+
+  const created = (await tasks.createTask(user.id, input, 'stale-created')).task
+  const reserved = (await tasks.createTask(other.id, input, 'stale-reserved')).task
+  await tasks.markReserved(reserved.id, 'reservation-stale')
+  const running = (await tasks.createTask(extraUsers[0].id, input, 'stale-running')).task
+  await tasks.markReserved(running.id, 'reservation-running')
+  await tasks.markRunning(running.id)
+  const output = (await tasks.createTask(extraUsers[1].id, input, 'output-stored')).task
+  await tasks.markReserved(output.id, 'reservation-output')
+  await tasks.markRunning(output.id)
+  await tasks.storeOutput(output.id, { key: `${extraUsers[1].id}/${output.id}.png`, url: `/api/artworks/${output.id}` })
+
+  now = new Date('2026-08-28T12:16:00.000Z')
+  const fresh = (await tasks.createTask(extraUsers[2].id, input, 'fresh-created')).task
+  const stale = await tasks.listStaleActive(now.getTime() - 900_000)
+
+  assert.deepEqual(new Set(stale.map((task) => task.id)), new Set([created.id, reserved.id, running.id]))
+  assert.equal(stale.some((task) => task.id === output.id), false)
+  assert.equal(stale.some((task) => task.id === fresh.id), false)
 })
 
 test('soft-deleted tasks are owner-scoped, restorable for seven days, and purge safely', { skip: !testConnectionString }, async (t) => {
