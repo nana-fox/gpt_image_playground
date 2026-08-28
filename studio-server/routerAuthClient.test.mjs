@@ -8,6 +8,7 @@ const baseUrl = 'https://router.example.test'
 const keyId = 'studio-current'
 const signingMaterial = 's'.repeat(48)
 const loginValue = ['Password', '123!'].join('')
+const resetToken = ['single', 'use', 'token'].join('-')
 const now = new Date('2026-08-26T12:00:00.000Z')
 const nonceBytes = Buffer.from('00112233445566778899aabbccddeeff', 'hex')
 
@@ -69,19 +70,24 @@ test('Router auth client signs login requests and returns only identity data', a
 
 test('Router auth client exposes account operations and current identity resolution', async () => {
   const paths = []
+  const bodies = []
   const client = createRouterAuthClient({
     baseUrl,
     keyId,
     secret: signingMaterial,
+    frontendBaseUrl: 'https://studio.nanafox.com/tools/image-studio',
     clock: () => now,
     randomBytes: () => nonceBytes,
-    fetch: async (url) => {
+    fetch: async (url, options) => {
       paths.push(new URL(url).pathname)
+      bodies.push(JSON.parse(options.body))
       return Response.json({ code: 0, message: 'success', data: {} })
     },
   })
 
   await client.sendVerifyCode('studio@example.com', 'zh-CN')
+  await client.forgotPassword('studio@example.com', 'zh-CN')
+  await client.resetPassword('studio@example.com', resetToken, 'NewPassword123!')
   await client.register({ email: 'studio@example.com', password: loginValue, verifyCode: '246810' })
   await client.login('studio@example.com', loginValue)
   await client.login2FA('studio-challenge', '123456')
@@ -89,11 +95,22 @@ test('Router auth client exposes account operations and current identity resolut
 
   assert.deepEqual(paths, [
     '/internal/v1/studio-auth/send-verify-code',
+    '/internal/v1/studio-auth/forgot-password',
+    '/internal/v1/studio-auth/reset-password',
     '/internal/v1/studio-auth/register',
     '/internal/v1/studio-auth/login',
     '/internal/v1/studio-auth/login/2fa',
     '/internal/v1/studio-auth/resolve',
   ])
+  assert.deepEqual(bodies[1], {
+    email: 'studio@example.com',
+    frontend_base_url: 'https://studio.nanafox.com/tools/image-studio',
+  })
+  assert.deepEqual(bodies[2], {
+    email: 'studio@example.com',
+    token: resetToken,
+    new_password: 'NewPassword123!',
+  })
 })
 
 test('Router auth client rejects unsafe configuration and preserves upstream errors', async () => {

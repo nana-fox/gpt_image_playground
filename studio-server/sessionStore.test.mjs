@@ -84,6 +84,22 @@ test('expired and deleted Studio sessions cannot be used', { skip: !testConnecti
   assert.equal(await store.getSession(active.sessionToken), null)
 })
 
+test('password reset deletes every Studio session for the normalized email', { skip: !testConnectionString }, async (t) => {
+  const { store } = await withStore(t)
+  const first = await store.createSession(identity)
+  const second = await store.createSession(identity)
+  const other = await store.createSession({
+    ...identity,
+    subject: '019c0000-0000-7000-8000-000000000043',
+    email: 'other@example.com',
+  })
+
+  assert.equal(await store.deleteSessionsByEmail('Studio@Example.com'), 2)
+  assert.equal(await store.getSession(first.sessionToken), null)
+  assert.equal(await store.getSession(second.sessionToken), null)
+  assert.notEqual(await store.getSession(other.sessionToken), null)
+})
+
 test('invalid Router identity data is rejected before persistence', { skip: !testConnectionString }, async (t) => {
   const { store } = await withStore(t)
 

@@ -7,6 +7,7 @@ import { RouterAuthError } from './routerAuthClient.mjs'
 
 const origin = 'https://studio.nanafox.com'
 const loginValue = ['Password', '123!'].join('')
+const resetToken = ['single', 'use', 'token'].join('-')
 const identity = {
   subject: '019c0000-0000-7000-8000-000000000042',
   email: 'studio@example.com',
@@ -15,8 +16,10 @@ const identity = {
 
 function createStore() {
   const sessions = new Map()
+  const deletedEmails = []
   let sequence = 0
   return {
+    deletedEmails,
     createSession(user) {
       sequence += 1
       const sessionToken = `session-${sequence}`
@@ -41,6 +44,12 @@ function createStore() {
     },
     deleteSession(token) {
       return sessions.delete(token)
+    },
+    deleteSessionsByEmail(email) {
+      deletedEmails.push(email)
+      for (const [token, session] of sessions) {
+        if (session.record.user.email === email) sessions.delete(token)
+      }
     },
   }
 }
@@ -125,6 +134,48 @@ test('verification and registration stay behind the Studio backend', async () =>
   ])
   assert.match(cookieValue(register, 'nanafox_studio_session'), /^nanafox_studio_session=session-1$/)
   assert.match(cookieValue(register, 'nanafox_studio_csrf'), /^nanafox_studio_csrf=csrf-1$/)
+})
+
+test('password recovery stays branded and revokes every Studio session after reset', async () => {
+  const calls = []
+  const store = createStore()
+  const existing = store.createSession(identity)
+  const app = createStudioAuthApp({
+    publicOrigin: origin,
+    publicBasePath: '/tools/image-studio/',
+    store,
+    rateLimiter: createRateLimiter(),
+    routerAuth: {
+      async forgotPassword(email, locale) {
+        calls.push(['forgot', email, locale])
+        return { accepted: true }
+      },
+      async resetPassword(email, token, newPassword) {
+        calls.push(['reset', email, token, newPassword])
+        return { reset: true }
+      },
+    },
+  })
+
+  const forgot = await app.handle(jsonRequest('/api/auth/forgot-password', {
+    email: 'Studio@Example.com',
+  }, { headers: { 'Accept-Language': 'zh-CN' } }))
+  assert.equal(forgot.status, 200)
+  assert.deepEqual(await forgot.json(), { ok: true, data: { accepted: true } })
+
+  const reset = await app.handle(jsonRequest('/api/auth/reset-password', {
+    email: identity.email,
+    token: resetToken,
+    newPassword: 'NewPassword123!',
+  }))
+  assert.equal(reset.status, 200)
+  assert.deepEqual(calls, [
+    ['forgot', identity.email, 'zh-CN'],
+    ['reset', identity.email, resetToken, 'NewPassword123!'],
+  ])
+  assert.deepEqual(store.deletedEmails, [identity.email])
+  assert.equal(store.getSession(existing.sessionToken), null)
+  assert.equal(reset.headers.getSetCookie().length, 2)
 })
 
 test('rate limits verification by normalized email and client IP before calling Router', async () => {

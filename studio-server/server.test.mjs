@@ -271,6 +271,7 @@ test('HTTP adapter serves the built Studio frontend with SPA fallback', async (t
   const home = await fetch(`${base}/`)
   assert.equal(await home.text(), '<main>NanaFox Studio</main>')
   assert.match(home.headers.get('content-type'), /text\/html/)
+  assert.equal(home.headers.get('referrer-policy'), 'no-referrer')
   const asset = await fetch(`${base}/assets/app.js`)
   assert.equal(await asset.text(), 'console.log("studio")')
   assert.equal(asset.headers.get('cache-control'), 'public, max-age=31536000, immutable')

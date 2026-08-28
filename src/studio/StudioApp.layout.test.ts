@@ -18,6 +18,8 @@ describe('NanaFox Studio product shell', () => {
   it('provides native email login, registration, verification and 2FA', () => {
     expect(source).toContain('data-studio-auth')
     expect(source).toContain('登录 NanaFox Studio')
+    expect(source).toContain('忘记密码')
+    expect(source).toContain('重置密码')
     expect(source).toContain('创建账户')
     expect(source).toContain('发送验证码')
     expect(source).toContain('两步验证')

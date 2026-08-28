@@ -8,7 +8,9 @@ import {
   loginStudio,
   loginStudio2FA,
   logoutStudio,
+  requestStudioPasswordReset,
   registerStudio,
+  resetStudioPassword,
   sendStudioVerifyCode,
 } from './studioAuth'
 
@@ -33,6 +35,8 @@ describe('Studio auth client', () => {
     }))
 
     await sendStudioVerifyCode('studio@example.com', request)
+    await requestStudioPasswordReset('studio@example.com', request)
+    await resetStudioPassword('studio@example.com', 'single-use-token', 'NewPassword123!', request)
     await registerStudio({ email: 'studio@example.com', password: loginValue, verifyCode: '246810' }, request)
     await loginStudio('studio@example.com', loginValue, request)
     await loginStudio2FA('studio-challenge', '123456', request)
@@ -40,6 +44,8 @@ describe('Studio auth client', () => {
 
     expect(request.mock.calls.map((call) => call[0])).toEqual([
       '/api/auth/send-verify-code',
+      '/api/auth/forgot-password',
+      '/api/auth/reset-password',
       '/api/auth/register',
       '/api/auth/login',
       '/api/auth/login/2fa',
