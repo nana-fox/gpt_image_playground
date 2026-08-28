@@ -26,6 +26,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     'studio_auth_rate_limits',
     'studio_credit_grants',
     'studio_generation_tasks',
+    'studio_inspirations',
     'studio_payment_channel',
     'studio_payment_events',
     'studio_payment_orders',
@@ -64,4 +65,12 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     ORDER BY column_name
   `)
   assert.deepEqual(retentionColumns.rows.map((row) => row.column_name), ['deleted_at', 'purge_after', 'purged_at'])
+
+  const inspirations = await database.query(`
+    SELECT id, enabled, featured
+    FROM studio_inspirations
+    ORDER BY sort_order, id
+  `)
+  assert.deepEqual(inspirations.rows.map((row) => row.id), ['product', 'portrait', 'social', 'illustration', 'interior'])
+  assert.equal(inspirations.rows.every((row) => row.enabled && row.featured), true)
 })

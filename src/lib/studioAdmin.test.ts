@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getStudioAdminSession,
+  createStudioInspiration,
+  getStudioAdminInspirations,
   getStudioPaymentChannel,
   getStudioPaymentPlans,
   getStudioQuotaPolicy,
@@ -12,6 +14,7 @@ import {
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
   updateStudioPaymentChannel,
+  updateStudioInspiration,
 } from './studioAdmin'
 
 beforeEach(() => {
@@ -134,5 +137,43 @@ describe('Studio operations client', () => {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
       body: JSON.stringify({ acceptingOrders: true, expectedVersion: 1 }),
     })
+  })
+
+  it('loads, creates and updates versioned inspirations', async () => {
+    const inspiration = {
+      id: 'product',
+      category: '商业',
+      title: '产品海报',
+      description: '打造质感产品视觉',
+      prompt: '电影感产品海报',
+      image: 'inspiration-product.png',
+      enabled: true,
+      featured: true,
+      sortOrder: 10,
+      version: 1,
+    }
+    const load = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: [inspiration] }))
+    await expect(getStudioAdminInspirations(load)).resolves.toEqual([inspiration])
+
+    const create = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: inspiration }, { status: 201 }))
+    await createStudioInspiration(inspiration, create)
+    expect(create).toHaveBeenCalledWith('/api/admin/inspirations', expect.objectContaining({ method: 'POST' }))
+
+    const save = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: { ...inspiration, version: 2 } }))
+    await updateStudioInspiration(inspiration, save)
+    expect(save).toHaveBeenCalledWith('/api/admin/inspirations/product', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({
+        category: inspiration.category,
+        title: inspiration.title,
+        description: inspiration.description,
+        prompt: inspiration.prompt,
+        image: inspiration.image,
+        enabled: inspiration.enabled,
+        featured: inspiration.featured,
+        sortOrder: inspiration.sortOrder,
+        expectedVersion: inspiration.version,
+      }),
+    }))
   })
 })

@@ -78,6 +78,17 @@ function createDependencies(subject = adminSubject, role = 'admin') {
         }
       },
     },
+    inspirations: {
+      listAdmin: () => [{ id: 'product', title: '产品海报', version: 1 }],
+      create: (input, audit) => {
+        calls.push(['createInspiration', input, audit])
+        return { id: 'new-item', ...input, version: 1 }
+      },
+      update: (id, input, audit) => {
+        calls.push(['updateInspiration', id, input, audit])
+        return { id, ...input, version: input.expectedVersion + 1 }
+      },
+    },
   }
 }
 
@@ -337,4 +348,40 @@ test('operators inspect and switch payment checkout without receiving merchant s
     { actorSubject: adminSubject },
   ]])
   assert.equal(JSON.stringify(currentBody).includes('apiV3Key'), false)
+})
+
+test('operators create and update versioned inspirations through audited writes', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    routerAuth: dependencies.routerAuth,
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    inspirations: dependencies.inspirations,
+  })
+
+  const list = await app.handle(request('/api/admin/inspirations'))
+  assert.deepEqual((await list.json()).data, [{ id: 'product', title: '产品海报', version: 1 }])
+
+  const input = {
+    category: '商业',
+    title: '新品海报',
+    description: '快速制作新品视觉',
+    prompt: '电影感新品海报',
+    image: 'inspiration-product.png',
+    enabled: false,
+    featured: false,
+    sortOrder: 60,
+  }
+  const created = await app.handle(request('/api/admin/inspirations', { method: 'POST', body: input }))
+  assert.equal(created.status, 201)
+  const updated = await app.handle(request('/api/admin/inspirations/new-item', {
+    method: 'PATCH',
+    body: { ...input, enabled: true, expectedVersion: 1 },
+  }))
+  assert.equal(updated.status, 200)
+  assert.deepEqual(dependencies.calls, [
+    ['createInspiration', input, { actorSubject: adminSubject }],
+    ['updateInspiration', 'new-item', { ...input, enabled: true, expectedVersion: 1 }, { actorSubject: adminSubject }],
+  ])
 })

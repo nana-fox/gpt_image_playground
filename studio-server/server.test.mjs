@@ -161,6 +161,7 @@ test('Studio app routes generation endpoints separately from account endpoints',
   const app = createStudioApp({
     authApp: { handle: async () => { calls.push('auth'); return new Response('auth') } },
     generationApp: { handle: async () => { calls.push('generation'); return new Response('generation') } },
+    inspirationApp: { handle: async () => { calls.push('inspiration'); return new Response('inspiration') } },
     adminApp: { handle: async () => { calls.push('admin'); return new Response('admin') } },
     paymentApp: { handle: async () => { calls.push('payment'); return new Response('payment') } },
   })
@@ -169,9 +170,10 @@ test('Studio app routes generation endpoints separately from account endpoints',
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/quota'))).text(), 'auth')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/generations'))).text(), 'generation')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/artworks/task-1'))).text(), 'generation')
+  assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/inspirations'))).text(), 'inspiration')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/admin/me'))).text(), 'admin')
   assert.equal(await (await app.handle(new Request('https://studio.nanafox.com/api/payments/plans'))).text(), 'payment')
-  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation', 'admin', 'payment'])
+  assert.deepEqual(calls, ['auth', 'auth', 'generation', 'generation', 'inspiration', 'admin', 'payment'])
 })
 
 test('Studio app exposes an unauthenticated health endpoint for deployment probes', async () => {
