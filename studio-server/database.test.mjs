@@ -54,4 +54,14 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
 
   const channel = await database.query('SELECT accepting_orders, version FROM studio_payment_channel WHERE id = 1')
   assert.deepEqual(channel.rows, [{ accepting_orders: false, version: 1 }])
+
+  const retentionColumns = await database.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'studio_generation_tasks'
+      AND column_name IN ('deleted_at', 'purge_after', 'purged_at')
+    ORDER BY column_name
+  `)
+  assert.deepEqual(retentionColumns.rows.map((row) => row.column_name), ['deleted_at', 'purge_after', 'purged_at'])
 })

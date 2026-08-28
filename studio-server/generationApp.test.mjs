@@ -183,6 +183,56 @@ test('an output waiting for quota finalization is never exposed as an artwork', 
   assert.equal(artwork.status, 404)
 })
 
+test('soft deletes and restores only the owner completed artwork', async () => {
+  const deleted = { ...task, deletedAt: '2026-08-28T12:00:00.000Z', purgeAt: '2026-09-04T12:00:00.000Z' }
+  const calls = []
+  const app = createApp({
+    tasks: {
+      getTask: (userId, id, options) => {
+        calls.push(['get', userId, id, options])
+        return userId === user.id && id === task.id ? deleted : null
+      },
+      listTasks: (userId, options) => {
+        calls.push(['list', userId, options])
+        return userId === user.id && options?.deleted ? [deleted] : []
+      },
+      deleteTask: (userId, id) => {
+        calls.push(['delete', userId, id])
+        return userId === user.id && id === task.id ? deleted : null
+      },
+      restoreTask: (userId, id) => {
+        calls.push(['restore', userId, id])
+        return userId === user.id && id === task.id ? task : null
+      },
+    },
+  })
+  const mutation = (path, method, csrf = 'csrf-1') => new Request(`${origin}${path}`, {
+    method,
+    headers: { Cookie: cookie, Origin: origin, 'X-CSRF-Token': csrf },
+  })
+
+  const removed = await app.handle(mutation('/api/generations/task-1', 'DELETE'))
+  assert.equal(removed.status, 200)
+  assert.equal((await removed.json()).data.deletedAt, deleted.deletedAt)
+
+  const trash = await app.handle(request('/api/generations?view=deleted'))
+  assert.deepEqual((await trash.json()).data.map((item) => item.id), [task.id])
+  const artwork = await app.handle(request('/api/artworks/task-1'))
+  assert.equal(artwork.status, 200)
+  assert.deepEqual(calls.find((call) => call[0] === 'get')?.[3], { includeDeleted: true })
+
+  const restored = await app.handle(mutation('/api/generations/task-1/restore', 'POST'))
+  assert.equal(restored.status, 200)
+  assert.equal((await restored.json()).data.deletedAt, null)
+
+  const rejected = await app.handle(mutation('/api/generations/task-1', 'DELETE', 'wrong'))
+  assert.equal(rejected.status, 403)
+  assert.equal(calls.filter((call) => call[0] === 'delete').length, 1)
+
+  const missing = await app.handle(mutation('/api/generations/task-other', 'DELETE'))
+  assert.equal(missing.status, 404)
+})
+
 test('generation routes require a valid Studio session', async () => {
   const app = createApp()
   const response = await app.handle(new Request(`${origin}/api/generations`))

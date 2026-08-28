@@ -143,3 +143,36 @@ test('tasks survive a store restart and expose pending finalization', { skip: !t
   assert.equal((await reopened.getTask(user.id, task.id)).status, 'output_stored')
   assert.deepEqual((await reopened.listFinalizationPending()).map((item) => item.id), [task.id])
 })
+
+test('soft-deleted tasks are owner-scoped, restorable for seven days, and purge safely', { skip: !testConnectionString }, async (t) => {
+  const { database, user, other } = await withDatabase(t)
+  let now = new Date('2026-08-28T12:00:00.000Z')
+  const tasks = createGenerationTaskStore({ database, clock: () => now })
+  const task = (await tasks.createTask(user.id, input, 'retention')).task
+  await tasks.markReserved(task.id, 'reservation-retention')
+  await tasks.markRunning(task.id)
+  await tasks.storeOutput(task.id, { key: `${user.id}/${task.id}.png`, url: `/api/artworks/${task.id}` })
+  await tasks.succeed(task.id)
+
+  assert.equal(await tasks.deleteTask(other.id, task.id), null)
+  const deleted = await tasks.deleteTask(user.id, task.id)
+  assert.equal(deleted.deletedAt, now.toISOString())
+  assert.equal(deleted.purgeAt, '2026-09-04T12:00:00.000Z')
+  assert.deepEqual(await tasks.listTasks(user.id), [])
+  assert.deepEqual((await tasks.listTasks(user.id, { deleted: true })).map((item) => item.id), [task.id])
+  assert.equal((await tasks.getTask(user.id, task.id, { includeDeleted: true })).id, task.id)
+  assert.equal(await tasks.getTask(user.id, task.id), null)
+
+  const restored = await tasks.restoreTask(user.id, task.id)
+  assert.equal(restored.deletedAt, null)
+  assert.deepEqual((await tasks.listTasks(user.id)).map((item) => item.id), [task.id])
+
+  await tasks.deleteTask(user.id, task.id)
+  now = new Date('2026-09-04T12:00:00.001Z')
+  assert.equal(await tasks.restoreTask(user.id, task.id), null)
+  assert.deepEqual((await tasks.listPurgePending()).map((item) => item.id), [task.id])
+  const purged = await tasks.markPurged(task.id)
+  assert.equal(purged.output, null)
+  assert.equal(purged.purgedAt, now.toISOString())
+  assert.deepEqual(await tasks.listPurgePending(), [])
+})

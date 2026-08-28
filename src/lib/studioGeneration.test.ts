@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createStudioGeneration,
+  deleteStudioGeneration,
   listStudioGenerations,
+  restoreStudioGeneration,
   StudioGenerationError,
 } from './studioGeneration'
 
@@ -45,6 +47,29 @@ describe('Studio generation client', () => {
 
     const malformed = vi.fn(async () => Response.json({ ok: true, data: [{ ...task, status: 'unknown' }] }))
     await expect(listStudioGenerations(malformed)).rejects.toMatchObject({ reason: 'PROTOCOL_ERROR' })
+  })
+
+  it('loads recently deleted works and sends CSRF-protected delete and restore requests', async () => {
+    const deleted = { ...task, deletedAt: '2026-08-28T12:00:00.000Z', purgeAt: '2026-09-04T12:00:00.000Z' }
+    const request = vi.fn(async (path: string, init?: RequestInit) => Response.json({
+      ok: true,
+      data: path.endsWith('?view=deleted') ? [deleted] : init?.method === 'DELETE' ? deleted : task,
+    }))
+
+    await expect(listStudioGenerations('deleted', request)).resolves.toEqual([deleted])
+    await expect(deleteStudioGeneration(task.id, request)).resolves.toEqual(deleted)
+    await expect(restoreStudioGeneration(task.id, request)).resolves.toEqual(task)
+    expect(request).toHaveBeenNthCalledWith(1, '/api/generations?view=deleted', { credentials: 'same-origin' })
+    expect(request).toHaveBeenNthCalledWith(2, '/api/generations/task-1', {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': 'csrf-token' },
+    })
+    expect(request).toHaveBeenNthCalledWith(3, '/api/generations/task-1/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': 'csrf-token' },
+    })
   })
 
   it('waits for an in-flight idempotent replay and returns the completed artwork', async () => {
