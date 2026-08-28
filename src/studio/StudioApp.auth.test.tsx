@@ -7,8 +7,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import StudioApp from './StudioApp'
 
 const resetToken = ['single', 'use', 'token'].join('-')
+const newPassword = ['New', 'Password', '123!'].join('')
 
 beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState(null, '', `/reset-password?email=studio%40example.com&token=${resetToken}`)
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
     const path = String(input)
@@ -34,6 +36,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false })
   vi.unstubAllGlobals()
   window.history.replaceState(null, '', '/')
 })
@@ -44,19 +47,38 @@ it('enters the Studio workspace after resetting and logging in', async () => {
 
   await act(async () => root.render(<StudioApp />))
   const resetInputs = container.querySelectorAll<HTMLInputElement>('input[autocomplete="new-password"]')
-  change(resetInputs[0], 'NewPassword123!')
-  change(resetInputs[1], 'NewPassword123!')
-  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => {
+    change(resetInputs[0], newPassword)
+    change(resetInputs[1], newPassword)
+  })
+  await submit(container)
 
   const password = container.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')!
-  change(password, 'NewPassword123!')
-  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => change(password, newPassword))
+  await submit(container)
 
   expect(container.querySelector('[data-studio-workspace]')).not.toBeNull()
+  const requests = vi.mocked(fetch).mock.calls
+  expect(JSON.parse(String(requests[0][1]?.body))).toEqual({
+    email: 'studio@example.com',
+    token: resetToken,
+    newPassword,
+  })
+  expect(JSON.parse(String(requests[1][1]?.body))).toEqual({
+    email: 'studio@example.com',
+    password: newPassword,
+  })
   await act(async () => root.unmount())
 })
 
 function change(input: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+async function submit(container: HTMLElement) {
+  await act(async () => {
+    container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }

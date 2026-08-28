@@ -1049,6 +1049,7 @@ select:focus-visible {
 }
 
 .auth-error,
+.auth-success,
 .workspace-alert {
   border: 1px solid rgba(248, 113, 113, 0.22);
   border-radius: 12px;
@@ -1056,6 +1057,12 @@ select:focus-visible {
   color: #fecaca;
   padding: 12px 14px;
   font-size: 13px;
+}
+
+.auth-success {
+  border-color: rgba(74, 222, 128, 0.22);
+  background: rgba(74, 222, 128, 0.1);
+  color: #bbf7d0;
 }
 
 .workspace-alert {

@@ -228,6 +228,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     baseUrl: config.routerBaseUrl,
     keyId: config.routerKeyId,
     secret: config.routerSecret,
+    frontendBaseUrl: new URL(config.publicBasePath, `${config.publicOrigin}/`).toString(),
   })
   const authApp = createStudioAuthApp({
     publicOrigin: config.publicOrigin,
@@ -398,6 +399,7 @@ function staticResponse(bytes, filename, method) {
     headers: {
       'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-store',
       'Content-Type': types[extname(filename).toLowerCase()] ?? 'application/octet-stream',
+      'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
     },
   })

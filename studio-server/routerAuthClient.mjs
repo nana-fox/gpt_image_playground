@@ -17,6 +17,7 @@ export function createRouterAuthClient(options = {}) {
   const url = normalizeBaseUrl(options.baseUrl)
   const keyId = String(options.keyId ?? '').trim()
   const secret = String(options.secret ?? '')
+  const frontendBaseUrl = normalizeFrontendBaseUrl(options.frontendBaseUrl)
   if (!/^[A-Za-z0-9_.-]{1,64}$/.test(keyId)) throw new Error('Router auth key ID is invalid')
   if (secret.length < 32) throw new Error('Router auth signing secret must be at least 32 bytes')
 
@@ -90,6 +91,13 @@ export function createRouterAuthClient(options = {}) {
     sendVerifyCode(email, locale = '') {
       return post('/send-verify-code', { email }, locale)
     },
+    forgotPassword(email, locale = '') {
+      if (!frontendBaseUrl) throw new Error('Studio frontend base URL is required for password recovery')
+      return post('/forgot-password', { email, frontend_base_url: frontendBaseUrl }, locale)
+    },
+    resetPassword(email, token, newPassword) {
+      return post('/reset-password', { email, token, new_password: newPassword })
+    },
     register(input) {
       return post('/register', {
         email: input.email,
@@ -127,4 +135,15 @@ function normalizeBaseUrl(value) {
     throw new Error('Router auth base URL must be an origin without credentials, path, query, or fragment')
   }
   return url
+}
+
+function normalizeFrontendBaseUrl(value) {
+  if (value === undefined || value === null || value === '') return ''
+  const url = new URL(String(value))
+  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1'
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error('Studio frontend base URL must use HTTPS')
+  }
+  if (url.username || url.password || url.search || url.hash) throw new Error('Studio frontend base URL is invalid')
+  return url.toString().replace(/\/$/, '')
 }

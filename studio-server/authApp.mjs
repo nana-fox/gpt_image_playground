@@ -19,6 +19,7 @@ export function createStudioAuthApp(options = {}) {
   const rateLimiter = options.rateLimiter
   if (!routerAuth || typeof routerAuth !== 'object') throw new Error('Router auth client is required')
   if (!store || typeof store !== 'object') throw new Error('Studio session store is required')
+  if (!store.deleteSessionsByEmail) throw new Error('Studio session revocation is required')
   if (!rateLimiter?.consume) throw new Error('Studio auth rate limiter is required')
 
   const secure = new URL(publicOrigin).protocol === 'https:'
@@ -61,6 +62,27 @@ export function createStudioAuthApp(options = {}) {
           await rateLimiter.consume(rateLimitBuckets('verify', email, clientIp(request)))
           const data = await routerAuth.sendVerifyCode(email, request.headers.get('accept-language') ?? '')
           return json({ ok: true, data })
+        }
+
+        if (url.pathname === '/api/auth/forgot-password') {
+          const email = normalizeEmail(input.email)
+          await rateLimiter.consume(rateLimitBuckets('forgot', email, clientIp(request)))
+          await routerAuth.forgotPassword(email, request.headers.get('accept-language') ?? '')
+          return json({ ok: true, data: { accepted: true } })
+        }
+
+        if (url.pathname === '/api/auth/reset-password') {
+          const email = normalizeEmail(input.email)
+          const token = String(input.token ?? '').trim()
+          if (!token || token.length > 4096) throw validationError('重置链接无效或已过期')
+          const newPassword = normalizeNewPassword(input.newPassword)
+          await rateLimiter.consume(rateLimitBuckets('reset', email, clientIp(request)))
+          await routerAuth.resetPassword(email, token, newPassword)
+          await store.deleteSessionsByEmail(email)
+          const response = json({ ok: true, data: { reset: true } })
+          response.headers.append('Set-Cookie', clearCookie(SESSION_COOKIE, true, secure, publicBasePath))
+          response.headers.append('Set-Cookie', clearCookie(CSRF_COOKIE, false, secure, publicBasePath))
+          return response
         }
 
         if (url.pathname === '/api/auth/register') {
@@ -130,6 +152,8 @@ export function createStudioAuthApp(options = {}) {
 
 const AUTH_POST_PATHS = new Set([
   '/api/auth/send-verify-code',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
   '/api/auth/register',
   '/api/auth/login',
   '/api/auth/login/2fa',
@@ -178,6 +202,12 @@ function normalizePassword(value) {
   return password
 }
 
+function normalizeNewPassword(value) {
+  const password = normalizePassword(value)
+  if (password.length < 8) throw validationError('新密码至少需要 8 位')
+  return password
+}
+
 function normalizeCode(value, label) {
   const code = String(value ?? '').trim()
   if (!/^\d{6}$/.test(code)) throw validationError(`请输入 6 位${label}`)
@@ -192,6 +222,8 @@ function clientIp(request) {
 function rateLimitBuckets(action, account, ip) {
   const limits = {
     verify: { account: 3, ip: 10, windowMs: 10 * 60 * 1000 },
+    forgot: { account: 3, ip: 10, windowMs: 10 * 60 * 1000 },
+    reset: { account: 5, ip: 20, windowMs: 15 * 60 * 1000 },
     register: { account: 5, ip: 20, windowMs: 15 * 60 * 1000 },
     login: { account: 10, ip: 50, windowMs: 15 * 60 * 1000 },
     'login-2fa': { account: 8, ip: 30, windowMs: 10 * 60 * 1000 },

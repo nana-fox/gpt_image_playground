@@ -116,6 +116,7 @@ test('Router auth client exposes account operations and current identity resolut
 test('Router auth client rejects unsafe configuration and preserves upstream errors', async () => {
   assert.throws(() => createRouterAuthClient({ baseUrl, keyId, secret: 's'.repeat(5) }), /at least 32 bytes/)
   assert.throws(() => createRouterAuthClient({ baseUrl: 'http://router.example.test', keyId, secret: signingMaterial }), /HTTPS/)
+  assert.throws(() => createRouterAuthClient({ baseUrl, keyId, secret: signingMaterial, frontendBaseUrl: 'http://studio.example.test' }), /HTTPS/)
 
   const client = createRouterAuthClient({
     baseUrl,

@@ -30,7 +30,9 @@ import {
   loginStudio,
   loginStudio2FA,
   logoutStudio,
+  requestStudioPasswordReset,
   registerStudio,
+  resetStudioPassword,
   sendStudioVerifyCode,
   type StudioSession,
 } from '../lib/studioAuth'
@@ -57,7 +59,7 @@ import {
 import StudioAdminPage from './StudioAdminPage'
 import './studio.css'
 
-type AuthMode = 'login' | 'register' | '2fa'
+type AuthMode = 'login' | 'register' | '2fa' | 'forgot' | 'reset'
 type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'
 
 function getRoute(): StudioRoute {
@@ -67,10 +69,16 @@ function getRoute(): StudioRoute {
 }
 
 export default function StudioApp() {
+  const [resetRequest, setResetRequest] = useState(getPasswordResetRequest)
   const [session, setSession] = useState<StudioSession | null>()
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
+    if (resetRequest) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)
+      setSession(null)
+      return
+    }
     void getStudioSession()
       .then(setSession)
       .catch((error) => {
@@ -83,6 +91,7 @@ export default function StudioApp() {
       })
   }, [])
 
+  if (resetRequest) return <StudioAuthPage initialError="" initialMode="reset" initialEmail={resetRequest.email} resetToken={resetRequest.token} onAuthenticated={(next) => { setResetRequest(null); setSession(next) }} />
   if (session === undefined) return <main className="studio-loading"><span aria-label="正在加载" /></main>
   if (!session) return <StudioAuthPage initialError={loadError} onAuthenticated={setSession} />
   return <StudioWorkspace session={session} onLogout={() => setSession(null)} />
@@ -90,18 +99,26 @@ export default function StudioApp() {
 
 function StudioAuthPage({
   initialError,
+  initialMode = 'login',
+  initialEmail = '',
+  resetToken = '',
   onAuthenticated,
 }: {
   initialError: string
+  initialMode?: AuthMode
+  initialEmail?: string
+  resetToken?: string
   onAuthenticated: (session: StudioSession) => void
 }) {
-  const [mode, setMode] = useState<AuthMode>('login')
-  const [email, setEmail] = useState('')
+  const [mode, setMode] = useState<AuthMode>(initialMode)
+  const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [verifyCode, setVerifyCode] = useState('')
   const [challenge, setChallenge] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [error, setError] = useState(initialError)
+  const [success, setSuccess] = useState('')
   const [busy, setBusy] = useState(false)
   const [resendIn, setResendIn] = useState(0)
 
@@ -114,7 +131,9 @@ function StudioAuthPage({
   const switchMode = (next: AuthMode) => {
     setMode(next)
     setError('')
+    setSuccess('')
     setPassword('')
+    setConfirmPassword('')
     setVerifyCode('')
     setResendIn(0)
   }
@@ -141,6 +160,23 @@ function StudioAuthPage({
     setBusy(true)
     setError('')
     try {
+      if (mode === 'forgot') {
+        await requestStudioPasswordReset(email)
+        setSuccess('如果该邮箱已注册，重置链接会在几分钟内发送，请检查收件箱。')
+        return
+      }
+      if (mode === 'reset') {
+        if (password !== confirmPassword) {
+          setError('两次输入的密码不一致')
+          return
+        }
+        await resetStudioPassword(email, resetToken, password)
+        setMode('login')
+        setPassword('')
+        setConfirmPassword('')
+        setSuccess('密码已重置，请使用新密码登录。')
+        return
+      }
       if (mode === 'register') {
         onAuthenticated(await registerStudio({ email, password, verifyCode }))
         return
@@ -163,6 +199,23 @@ function StudioAuthPage({
     }
   }
 
+  const copy = {
+    login: ['欢迎回来', '登录 NanaFox Studio', '继续管理作品、创作额度和订阅。'],
+    register: ['开始你的创作', '创建账户', '注册后即可使用每日免费创作额度。'],
+    '2fa': ['保护你的账户', '完成两步验证', '请输入身份验证器中显示的 6 位动态验证码。'],
+    forgot: ['找回账户', '忘记密码', '填写注册邮箱，我们会发送一个 30 分钟内有效的重置链接。'],
+    reset: ['保护你的账户', '重置密码', '设置一个至少 8 位的新密码，完成后所有已登录设备会退出。'],
+  }[mode]
+  const submitLabel = mode === 'login'
+    ? '登录'
+    : mode === 'register'
+      ? '注册并开始创作'
+      : mode === '2fa'
+        ? '验证并登录'
+        : mode === 'forgot'
+          ? '发送重置链接'
+          : '确认重置密码'
+
   return (
     <main data-studio-auth className="auth-shell">
       <section className="auth-visual">
@@ -176,23 +229,26 @@ function StudioAuthPage({
       </section>
       <section className="auth-panel">
         <div className="auth-box">
-          <span className="eyebrow">{mode === 'login' ? '欢迎回来' : mode === 'register' ? '开始你的创作' : '保护你的账户'}</span>
-          <h1>{mode === 'login' ? '登录 NanaFox Studio' : mode === 'register' ? '创建账户' : '完成两步验证'}</h1>
-          <p>{mode === 'login' ? '继续管理作品、创作额度和订阅。' : mode === 'register' ? '注册后即可使用每日免费创作额度。' : '请输入身份验证器中显示的 6 位动态验证码。'}</p>
+          <span className="eyebrow">{copy[0]}</span>
+          <h1>{copy[1]}</h1>
+          <p>{copy[2]}</p>
           <form onSubmit={submit}>
             {mode !== '2fa' ? (
               <>
-                <label><span>邮箱</span><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required /></label>
-                <label><span>密码</span><input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" minLength={8} required /></label>
+                <label><span>邮箱</span><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" readOnly={mode === 'reset'} required /></label>
+                {mode !== 'forgot' && <label><span>{mode === 'reset' ? '新密码' : '密码'}</span><input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" minLength={8} required /></label>}
+                {mode === 'login' && <button className="forgot-button" type="button" onClick={() => switchMode('forgot')}>忘记密码？</button>}
+                {mode === 'reset' && <label><span>确认新密码</span><input autoComplete="new-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入新密码" minLength={8} required /></label>}
                 {mode === 'register' && <label><span>邮箱验证码</span><div className="verify-code-field"><input inputMode="numeric" value={verifyCode} onChange={(event) => setVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" pattern="\d{6}" required /><button type="button" onClick={() => void sendCode()} disabled={busy || resendIn > 0}>{resendIn > 0 ? `${resendIn} 秒后重新发送` : '发送验证码'}</button></div></label>}
               </>
             ) : (
               <label><span>两步验证</span><input className="totp-input" autoComplete="one-time-code" inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" pattern="\d{6}" autoFocus required /></label>
             )}
+            {success && <p className="auth-success" role="status">{success}</p>}
             {error && <p className="auth-error" role="alert">{error}</p>}
-            <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? '请稍候…' : mode === 'login' ? '登录' : mode === 'register' ? '注册并开始创作' : '验证并登录'} <ArrowRight size={17} /></button>
+            <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? '请稍候…' : submitLabel} <ArrowRight size={17} /></button>
           </form>
-          {mode === '2fa' ? (
+          {mode === '2fa' || mode === 'forgot' || mode === 'reset' ? (
             <p className="auth-switch"><button type="button" onClick={() => switchMode('login')}>返回邮箱登录</button></p>
           ) : (
             <p className="auth-switch">{mode === 'login' ? '还没有账户？' : '已经有账户？'}<button type="button" onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? '注册账户' : '直接登录'}</button></p>
@@ -201,6 +257,15 @@ function StudioAuthPage({
       </section>
     </main>
   )
+}
+
+function getPasswordResetRequest() {
+  if (!window.location.pathname.endsWith('/reset-password')) return null
+  const params = new URLSearchParams(window.location.search)
+  const email = params.get('email')?.trim().toLowerCase() ?? ''
+  const token = params.get('token')?.trim() ?? ''
+  if (!email || !token) return null
+  return { email, token }
 }
 
 function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {

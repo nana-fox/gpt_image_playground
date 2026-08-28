@@ -33,6 +33,19 @@ export function sendStudioVerifyCode(email: string, request: typeof fetch = fetc
   return post(studioApiPath('auth/send-verify-code'), { email }, request)
 }
 
+export function requestStudioPasswordReset(email: string, request: typeof fetch = fetch) {
+  return post(studioApiPath('auth/forgot-password'), { email }, request)
+}
+
+export function resetStudioPassword(
+  email: string,
+  token: string,
+  newPassword: string,
+  request: typeof fetch = fetch,
+) {
+  return post(studioApiPath('auth/reset-password'), { email, token, newPassword }, request)
+}
+
 export function registerStudio(input: {
   email: string
   password: string

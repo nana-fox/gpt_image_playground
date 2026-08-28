@@ -95,6 +95,15 @@ export function createSessionStore(options = {}) {
       return result.rowCount > 0
     },
 
+    async deleteSessionsByEmail(email) {
+      const result = await database.query(`
+        DELETE FROM studio_sessions s
+        USING studio_users u
+        WHERE s.user_id = u.id AND LOWER(u.email) = LOWER($1)
+      `, [String(email ?? '').trim()])
+      return result.rowCount
+    },
+
     async getUser(userId) {
       const result = await database.query(`
         SELECT id, email, display_name
