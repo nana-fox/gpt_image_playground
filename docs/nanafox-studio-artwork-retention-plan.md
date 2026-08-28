@@ -115,7 +115,7 @@ succeeded + active
 
 | 项 | 状态 | Owner | Follow-up ticket |
 |----|------|------|-----------------|
-| 当前无 NAS/R2 误删恢复自动化 | 生产阻断，先完成备份恢复演练 | NanaFox ops | `studio-artwork-backup-restore` |
+| 当前无 R2 作品异机备份 | 生产阻断；PostgreSQL 已进 NAS，作品仍需独立只读 R2 Token 和 NAS 增量同步 | NanaFox ops | `studio-artwork-backup-restore` |
 | 清理指标首发只用结构化日志 | 已知，首批真实用户后接监控 | NanaFox ops | `studio-retention-metrics` |
 
 ## 测试发布证据

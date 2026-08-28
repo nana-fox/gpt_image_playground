@@ -178,6 +178,8 @@ docker build \
 - 每月用 PostgreSQL 容器内 `pg_restore` 恢复到隔离 database，运行表数量、用户/额度/任务抽样检查。
 - 不用“备份文件存在”代替恢复成功证据。
 
+测试环境当前状态：`nanafox-db-backup.timer` 每日 19:30 UTC 运行并带最多 10 分钟随机延迟，已包含 `sub2api`、`sub2api_test`、`nanafox_studio_test` 和 globals。NAS Bucket 返回的对象过期时间约为 31 天，因此当前只是每日 31 天滚动备份，不等于上面的 6 小时与分层保留目标。
+
 ### 7.2 R2
 
 - NAS 使用独立只读 Token 每日增量拉取。
@@ -247,10 +249,10 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | 灵感运营配置 | 未实现 | 当前灵感为前端静态内容，收藏刷新会丢失；不把“每周更新”当真实运营能力 |
 | Studio 账户入口防刷 | 已部署测试环境 | 验证码、注册、登录和 2FA 已在调用 Router 前按账号/IP 集中限流；生产前补 429 告警，出现分布式滥用再启用边缘规则或 Turnstile |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
-| 共享 PostgreSQL 备份 | 生产阻断 | 现有备份任务需修复并完成 NAS 异机恢复演练，不能以同盘 dump 代替恢复证据 |
+| PostgreSQL 备份 | 部分完成，生产仍阻断 | 每日 NAS 任务已包含 Studio 测试库，同机隔离恢复通过；频率仍非 6 小时，NAS 端异机恢复和长期分层保留未完成 |
 | 测试服务器磁盘 | 观察项 | 作品保留版本切换并清理本次临时制品后根盘为 86%；当前与 `1a715b6` 回滚镜像必须保留，旧历史候选应另行确认后清理，生产前配置阈值告警 |
 | Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
-| NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
+| NAS 自动备份 | 数据库已启用，R2 作品未启用 | 为 R2 创建独立只读 Token 后配置 NAS 增量拉取；不得复用应用写 Token |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
 | 生产发布 | 未授权 | 通过所有门禁后单独请求授权 |
 
@@ -332,3 +334,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 8790 暗部署应用 migration 后，原有 2 个测试用户、1 个生成任务、0 个加额和 0 个支付订单保持不变；公网前端、健康和就绪为 200，未登录作品、最近删除、删除、恢复和运营接口均为 401。
 - Studio 仍只监听 `127.0.0.1:8788`；Sub2API test/prod、PostgreSQL、Redis 和 Router test/prod 均保持 healthy/200，Router/Sub2API 代码、配置和容器均未修改或重启。
 - Chrome 已确认现有 Studio 页面标签，但刷新和 DOM 通道连续超时，因此本次不把登录后作品库“全部作品/最近删除”的视觉验收记为通过。
+
+### 11.9 2026-08-28 PostgreSQL 备份与恢复证据
+
+- 发布前 dump 已恢复到临时隔离数据库：migration 为 `1..5`，2 个用户、1 个生成任务、0 个加额、0 个支付订单和 14 张 Studio 表均与备份时一致；验证后临时库已删除。
+- 服务器既有 `/usr/local/sbin/nanafox-db-backup` 仅备份 `sub2api` 和 `sub2api_test`；本次只增加 `dumpDatabase 'nanafox_studio_test'`，原脚本保留为 `/usr/local/sbin/nanafox-db-backup.bak-20260828T053432Z`。
+- `nanafox-db-backup.service` 手动完整运行成功：Sub2API、Sub2API test、Studio test 和 globals 均先通过 `pg_restore --list`/内容校验，再上传 NAS MinIO 并逐文件 `mc stat`。
+- NAS 上 `nanafox_studio_test-20260828T053439Z.dump` 为 34,504 bytes，配套 SHA 文件为 108 bytes；对象可读元数据确认成功。
+- 当前 timer 是每日任务而非 6 小时；NAS 对象显示约 31 天后过期。数据库异机恢复、7 日/4 周/6 月分层保留和 R2 作品备份仍是生产门禁，不能因本次上传成功而标记完成。
+- 备份期间 Studio 保持 healthy，公网 readiness 为 200；没有修改或重启 Router/Sub2API/PostgreSQL/Redis 容器。
