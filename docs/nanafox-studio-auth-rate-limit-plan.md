@@ -1,19 +1,19 @@
 # NanaFox Studio 账户入口防刷计划
 
-> 状态：2026-08-28 实施基线。限流由 Studio 自己的 PostgreSQL 承担，不修改 Router/Sub2API 接口或业务逻辑。
+> 状态：2026-08-28 已实现并部署测试环境。限流由 Studio 自己的 PostgreSQL 承担，Router/Sub2API 代码、配置和容器均未修改。
 
 ## L1.1 引用验证
 
 | 符号 | 证据 (file:line) | 签名 | 用途 |
 |-----|-----------------|-----|-----|
-| `createStudioAuthApp` | `studio-server/authApp.mjs:7` | `(options) -> authApp` | 在转发 Router 前执行统一限流 |
+| `createStudioAuthApp` | `studio-server/authApp.mjs:10` | `(options = {}) -> authApp` | 在转发 Router 前执行统一限流 |
 | `createStudioDatabase` | `studio-server/database.mjs:7` | `(options) -> database` | 使用现有 PostgreSQL 事务与 migration |
-| `createStudioRuntime` | `studio-server/server.mjs:199` | `(config) -> runtime` | 注入限流 Store，不增加 Router 依赖 |
-| `normalizeEmail` | `studio-server/authApp.mjs:149` | `(value) -> email` | 标准化后再按邮箱限流，避免大小写绕过 |
+| `createStudioRuntime` | `studio-server/server.mjs:200` | `(config = readStudioServerConfig()) -> runtime` | 注入限流 Store，不增加 Router 依赖 |
+| `normalizeEmail` | `studio-server/authApp.mjs:169` | `(value) -> email` | 标准化后再按邮箱限流，避免大小写绕过 |
 
 ## L1.2 同类路径对照
 
-参考实现：`studio-server/paymentStore.mjs:33`
+参考实现：`studio-server/paymentStore.mjs:52`
 
 - [x] PostgreSQL 单事务更新计数，避免多进程内存计数不一致。
 - [x] 只保存 HMAC 后的邮箱、IP、挑战令牌，不保存原值。
@@ -32,8 +32,8 @@
 
 | return 形态 | caller 解读 | 测试名 |
 |-----------|-----------|--------|
-| `{ allowed: true }` | 调用 Router 身份接口 | `forwards requests below the account and IP limits` |
-| `RateLimitError` | 返回 429，不调用 Router | `rate limits verification by normalized email and client IP` |
+| `{ allowed: true }` | 调用 Router 身份接口 | `verification and registration stay behind the Studio backend` |
+| `AuthRateLimitError` | 返回 429，不调用 Router | `rate limits verification by normalized email and client IP before calling Router` |
 
 ## L1.5 负向断言
 
@@ -41,7 +41,7 @@
 |-----|--------|--------|
 | 同邮箱不同大小写 | 共享同一计数桶 | 第四次验证码请求为 429 |
 | 同 IP 批量不同邮箱 | 命中 IP 桶 | Router 调用次数不超过上限 |
-| 伪造超长键或非法 scope | 400/内部校验失败 | PostgreSQL 无写入 |
+| 伪造超长键或非法 scope | 内部校验在写库前失败 | PostgreSQL 无写入 |
 | 限流命中 | 不说明邮箱或 IP | 统一 `RATE_LIMITED` 文案 |
 
 ## L1.6 回滚
@@ -80,10 +80,10 @@
 
 | 维度 | 回答 | 证据 |
 |-----|-----|-----|
-| 身份来源 | 未登录公开入口，按规范化邮箱/挑战令牌和代理 IP | `studio-server/authApp.mjs:48` |
-| 授权边界 | 限流只决定是否转发，不产生身份或 Session | `studio-server/authApp.mjs:64` |
-| 凭证泄漏面 | HMAC Secret 沿用服务端 Router 签名 Secret，不写表/响应/日志 | `studio-server/server.mjs:28` |
-| SSRF | Router host 仍由固定服务端配置控制 | `studio-server/routerAuthClient.mjs:13` |
+| 身份来源 | 未登录公开入口，按规范化邮箱/挑战令牌和代理 IP | `studio-server/authApp.mjs:61` |
+| 授权边界 | 限流只决定是否转发，不产生身份或 Session | `studio-server/authApp.mjs:62` |
+| 凭证泄漏面 | HMAC Secret 沿用服务端 Router 签名 Secret，不写表/响应/日志 | `studio-server/server.mjs:29` |
+| SSRF | Router host 仍由固定服务端配置控制 | `studio-server/routerAuthClient.mjs:16` |
 | 租户隔离 | scope + HMAC key 作为联合主键 | migration 005 |
 | 日志脱敏 | 429 不记录原始邮箱、IP、密码、验证码或挑战令牌 | Auth App 测试 |
 
@@ -101,3 +101,11 @@
 |----|----------------|------|-----------------|
 | 首发不加 Turnstile/CAPTCHA | 接受；出现分布式滥用或邮件成本异常时增加 | NanaFox ops | `studio-auth-turnstile-trigger` |
 | Caddy 转发 IP 信任依赖本机监听 | 测试/生产发布硬门禁 | NanaFox ops | `studio-loopback-listener-gate` |
+
+## 测试环境证据
+
+- TDD：RED `6881b0b`，GREEN `1a715b6`。
+- 真实依赖：PostgreSQL + 私有 R2 104/104，无跳过；服务端行覆盖率 91.86%，限流模块行覆盖率 100%、分支覆盖率 81.25%。
+- 网络边界：运行容器只监听 `127.0.0.1:8788`；公网经过 Caddy 后没有生成 `unknown` IP 桶。
+- 行为：前 10 次错误登录由 Router 返回 401，第 11 次由 Studio 返回 429 和 `Retry-After=900`；限流表只存 64 位 HMAC。
+- 回滚：切换前 dump 位于 `/home/nio/backups/nanafox-studio-test/pre-auth-rate-20260828T051048Z/`，上一镜像容器为 `nanafox-studio-test-rollback-c05054c-20260828`。
