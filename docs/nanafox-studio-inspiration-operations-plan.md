@@ -14,11 +14,11 @@
 | 符号 | 证据 (file:line) | 签名 | 用途 |
 |-----|-----------------|-----|-----|
 | `createStudioAdminApp` | `studio-server/adminApp.mjs:7` | `(options = {}) -> adminApp` | 增加管理员灵感列表和写接口 |
-| `createStudioApp` | `studio-server/server.mjs:89` | `(options) -> studioApp` | 将 `/api/inspirations` 路由到独立应用 |
-| `createStudioRuntime` | `studio-server/server.mjs:202` | `(config) -> runtime` | 组装同一 PostgreSQL Store，不引入新服务 |
-| `StudioAdminPage` | `src/studio/StudioAdminPage.tsx:44` | `({ admin, onExit }) -> JSX` | 增加灵感运营任务页和编辑对话框 |
-| `CreatePage` | `src/studio/StudioApp.tsx:327` | `(...) -> JSX` | 首页只展示运营设为推荐的灵感 |
-| `InspirationPage` | `src/studio/StudioApp.tsx:385` | `(...) -> JSX` | 展示全部已上架灵感 |
+| `createStudioApp` | `studio-server/server.mjs:91` | `(options) -> studioApp` | 将 `/api/inspirations` 路由到独立应用 |
+| `createStudioRuntime` | `studio-server/server.mjs:214` | `(config) -> runtime` | 组装同一 PostgreSQL Store，不引入新服务 |
+| `StudioAdminPage` | `src/studio/StudioAdminPage.tsx:63` | `({ admin, onExit }) -> JSX` | 增加灵感运营任务页和编辑对话框 |
+| `CreatePage` | `src/studio/StudioApp.tsx:310` | `(...) -> JSX` | 首页只展示运营设为推荐的灵感 |
+| `InspirationPage` | `src/studio/StudioApp.tsx:369` | `(...) -> JSX` | 展示全部已上架灵感 |
 
 ## 数据与状态
 

@@ -15,6 +15,8 @@ import { createStudioGenerationApp } from './generationApp.mjs'
 import { createGenerationService } from './generationService.mjs'
 import { createGenerationTaskStore } from './generationTaskStore.mjs'
 import { createImageProviderClient } from './imageProviderClient.mjs'
+import { createStudioInspirationApp } from './inspirationApp.mjs'
+import { createInspirationStore } from './inspirationStore.mjs'
 import { createStudioPaymentApp } from './paymentApp.mjs'
 import { createPaymentService } from './paymentService.mjs'
 import { createPaymentStore } from './paymentStore.mjs'
@@ -90,6 +92,7 @@ export function createStudioApp(options) {
   const authApp = options.authApp
   const adminApp = options.adminApp
   const generationApp = options.generationApp
+  const inspirationApp = options.inspirationApp
   const paymentApp = options.paymentApp
   const readiness = options.readiness
   if (!authApp) throw new Error('Studio auth app is required')
@@ -125,6 +128,16 @@ export function createStudioApp(options) {
         return Response.json({
           ok: false,
           error: { reason: 'ADMIN_UNAVAILABLE', message: '运营服务暂时不可用' },
+        }, {
+          status: 503,
+          headers: { 'Cache-Control': 'no-store' },
+        })
+      }
+      if (path === '/api/inspirations') {
+        if (inspirationApp) return inspirationApp.handle(request)
+        return Response.json({
+          ok: false,
+          error: { reason: 'INSPIRATION_UNAVAILABLE', message: '灵感服务暂时不可用' },
         }, {
           status: 503,
           headers: { 'Cache-Control': 'no-store' },
@@ -210,6 +223,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
       : {},
   })
   const tasks = createGenerationTaskStore({ database })
+  const inspirations = createInspirationStore({ database })
   const routerAuth = createRouterAuthClient({
     baseUrl: config.routerBaseUrl,
     keyId: config.routerKeyId,
@@ -249,6 +263,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     sessions: store,
     payments,
   })
+  const inspirationApp = createStudioInspirationApp({ sessions: store, inspirations })
   const adminApp = createStudioAdminApp({
     publicOrigin: config.publicOrigin,
     routerAuth,
@@ -256,6 +271,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     quota,
     payments: paymentStore,
     paymentChannel: payments,
+    inspirations,
   })
   const generationRuntime = config.generationEnabled
     ? createGenerationRuntime(config, store, quota, tasks)
@@ -264,6 +280,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     authApp,
     adminApp,
     paymentApp,
+    inspirationApp,
     generationApp: generationRuntime?.app,
     readiness: async () => database.query('SELECT 1'),
   })

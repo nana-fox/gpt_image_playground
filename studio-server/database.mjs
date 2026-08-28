@@ -65,7 +65,7 @@ async function migrate(pool) {
         applied_at BIGINT NOT NULL
       )
     `)
-    for (const migration of ['001_initial.sql', '002_admin_operations.sql', '003_payments.sql', '004_payment_channel.sql', '005_auth_rate_limits.sql', '006_artwork_retention.sql']) {
+    for (const migration of ['001_initial.sql', '002_admin_operations.sql', '003_payments.sql', '004_payment_channel.sql', '005_auth_rate_limits.sql', '006_artwork_retention.sql', '007_inspirations.sql']) {
       const version = Number(migration.slice(0, 3))
       const applied = await client.query('SELECT version FROM studio_schema_migrations WHERE version = $1', [version])
       if (applied.rowCount) continue

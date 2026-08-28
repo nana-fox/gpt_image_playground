@@ -1,5 +1,6 @@
 import { readStudioCookie } from './studioAuth'
 import { studioApiPath } from './studioApi'
+import { normalizeStudioInspiration, type StudioInspiration } from './studioInspiration'
 
 export type StudioAdminUser = {
   id: string
@@ -49,6 +50,10 @@ export type StudioPaymentChannel = {
   checkoutAvailable: boolean
   notifyUrl: string
   version: number
+}
+
+export type StudioAdminInspiration = StudioInspiration & {
+  enabled: boolean
 }
 
 export class StudioAdminError extends Error {
@@ -147,6 +152,30 @@ export async function updateStudioPaymentPlan(plan: StudioAdminPaymentPlan, requ
   }, request))
 }
 
+export async function getStudioAdminInspirations(request: typeof fetch = fetch): Promise<StudioAdminInspiration[]> {
+  const data = await call('admin/inspirations', { credentials: 'same-origin' }, request)
+  if (!Array.isArray(data)) throw protocolError()
+  return data.map(normalizeAdminInspiration)
+}
+
+export async function createStudioInspiration(inspiration: StudioAdminInspiration, request: typeof fetch = fetch) {
+  return normalizeAdminInspiration(await call('admin/inspirations', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify(inspirationInput(inspiration)),
+  }, request))
+}
+
+export async function updateStudioInspiration(inspiration: StudioAdminInspiration, request: typeof fetch = fetch) {
+  return normalizeAdminInspiration(await call(`admin/inspirations/${encodeURIComponent(inspiration.id)}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify({ ...inspirationInput(inspiration), expectedVersion: inspiration.version }),
+  }, request))
+}
+
 async function call(path: string, init: RequestInit, request: typeof fetch) {
   let response
   try {
@@ -237,6 +266,25 @@ function normalizePaymentChannel(value: unknown): StudioPaymentChannel {
     || !positiveCount(channel.version)
   ) throw protocolError()
   return channel as StudioPaymentChannel
+}
+
+function normalizeAdminInspiration(value: unknown): StudioAdminInspiration {
+  const item = normalizeStudioInspiration(value)
+  if (typeof (value as Partial<StudioAdminInspiration>).enabled !== 'boolean') throw protocolError()
+  return { ...item, enabled: (value as StudioAdminInspiration).enabled }
+}
+
+function inspirationInput(inspiration: StudioAdminInspiration) {
+  return {
+    category: inspiration.category,
+    title: inspiration.title,
+    description: inspiration.description,
+    prompt: inspiration.prompt,
+    image: inspiration.image,
+    enabled: inspiration.enabled,
+    featured: inspiration.featured,
+    sortOrder: inspiration.sortOrder,
+  }
 }
 
 function validUser(value: unknown): value is StudioAdminUser {

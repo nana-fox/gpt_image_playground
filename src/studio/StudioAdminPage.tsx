@@ -5,6 +5,7 @@ import {
   CheckCircle,
   CreditCard,
   Gauge,
+  ImageSquare,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -16,29 +17,47 @@ import {
 } from '@phosphor-icons/react'
 
 import {
+  createStudioInspiration,
+  getStudioAdminInspirations,
   getStudioPaymentChannel,
   getStudioQuotaPolicy,
   getStudioPaymentPlans,
   grantStudioCredits,
   searchStudioUsers,
   updateStudioPaymentChannel,
+  updateStudioInspiration,
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
   type StudioAdminPaymentPlan,
+  type StudioAdminInspiration,
   type StudioAdminSession,
   type StudioAdminUser,
   type StudioPaymentChannel,
   type StudioQuotaPolicy,
 } from '../lib/studioAdmin'
+import { studioAssetPath } from '../lib/studioApi'
 
-type AdminSection = 'overview' | 'quota' | 'users' | 'plans' | 'payment'
+type AdminSection = 'overview' | 'quota' | 'users' | 'inspirations' | 'plans' | 'payment'
 
 const adminSections: { id: AdminSection, label: string, icon: typeof Gauge }[] = [
   { id: 'overview', label: '运营总览', icon: Gauge },
   { id: 'quota', label: '免费额度', icon: Sparkle },
   { id: 'users', label: '用户额度', icon: UsersThree },
+  { id: 'inspirations', label: '灵感内容', icon: ImageSquare },
   { id: 'plans', label: '套餐与价格', icon: Storefront },
   { id: 'payment', label: '支付渠道', icon: CreditCard },
+]
+
+const inspirationImages = [
+  'inspiration-product.png',
+  'inspiration-portrait.png',
+  'inspiration-social.png',
+  'inspiration-illustration.png',
+  'inspiration-interior.png',
+  'recent-perfume.png',
+  'recent-alley.png',
+  'recent-flowers.png',
+  'recent-cat.png',
 ]
 
 export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminSession, onExit: () => void }) {
@@ -46,6 +65,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [policy, setPolicy] = useState<StudioQuotaPolicy>()
   const [plans, setPlans] = useState<StudioAdminPaymentPlan[]>([])
   const [paymentChannel, setPaymentChannel] = useState<StudioPaymentChannel>()
+  const [inspirations, setInspirations] = useState<StudioAdminInspiration[]>([])
   const [query, setQuery] = useState('')
   const [searched, setSearched] = useState(false)
   const [users, setUsers] = useState<StudioAdminUser[]>([])
@@ -55,16 +75,18 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [expiresAt, setExpiresAt] = useState('')
   const [confirmingGrant, setConfirmingGrant] = useState(false)
   const [editingPlan, setEditingPlan] = useState<StudioAdminPaymentPlan | null>(null)
+  const [editingInspiration, setEditingInspiration] = useState<StudioAdminInspiration | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel()])
-      .then(([nextPolicy, nextPlans, nextPaymentChannel]) => {
+    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel(), getStudioAdminInspirations()])
+      .then(([nextPolicy, nextPlans, nextPaymentChannel, nextInspirations]) => {
         setPolicy(nextPolicy)
         setPlans(nextPlans)
         setPaymentChannel(nextPaymentChannel)
+        setInspirations(nextInspirations)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '运营配置加载失败'))
   }, [])
@@ -173,7 +195,45 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
     }
   }
 
+  const startCreatingInspiration = () => {
+    setEditingInspiration({
+      id: '',
+      category: '商业',
+      title: '',
+      description: '',
+      prompt: '',
+      image: inspirationImages[0],
+      enabled: false,
+      featured: false,
+      sortOrder: Math.max(0, ...inspirations.map((item) => item.sortOrder)) + 10,
+      version: 1,
+    })
+  }
+
+  const saveInspiration = async () => {
+    if (!editingInspiration) return
+    setBusy('inspiration')
+    setError('')
+    setMessage('')
+    try {
+      const updated = editingInspiration.id
+        ? await updateStudioInspiration(editingInspiration)
+        : await createStudioInspiration(editingInspiration)
+      setInspirations((current) => (editingInspiration.id
+        ? current.map((item) => item.id === updated.id ? updated : item)
+        : [...current, updated]
+      ).sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id)))
+      setMessage(`${updated.title} 已保存，${updated.enabled ? '用户端已可见' : '当前未上架'}。`)
+      setEditingInspiration(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '灵感保存失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
   const enabledPlans = plans.filter((plan) => plan.enabled).length
+  const enabledInspirations = inspirations.filter((item) => item.enabled).length
   const operator = admin.user.displayName || admin.user.email
 
   return <div className="studio-operations" data-admin-shell>
@@ -194,7 +254,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
         {message && <p className="studio-admin-success" role="status"><CheckCircle size={18} weight="fill" />{message}</p>}
 
         {section === 'overview' && <>
-          <header className="operations-heading"><span className="eyebrow">NANAFOX OPERATIONS</span><h1>运营总览</h1><p>管理免费额度、用户补偿和销售套餐。每次修改都会经过服务端鉴权并记录操作者。</p></header>
+          <header className="operations-heading"><span className="eyebrow">NANAFOX OPERATIONS</span><h1>运营总览</h1><p>管理灵感内容、免费额度、用户补偿和销售套餐。每次修改都会经过服务端鉴权并记录操作者。</p></header>
           <div className="operations-metrics">
             <article><span className="metric-icon"><Sparkle size={20} /></span><div><small>每日免费额度</small><strong>{policy ? `${policy.dailyLimit} 次` : '读取中'}</strong><p>{policy?.enabled ? '当前已启用' : '当前已关闭'}</p></div></article>
             <article><span className="metric-icon"><Storefront size={20} /></span><div><small>销售中的套餐</small><strong>{plans.length ? `${enabledPlans}/${plans.length}` : '读取中'}</strong><p>订阅与加量包</p></div></article>
@@ -203,6 +263,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
           <section className="operations-quick-actions"><div><h2>常用操作</h2><p>选择一个任务开始，避免在同一页面误改多项配置。</p></div><div>
             <button onClick={() => showSection('quota')}><span className="metric-icon"><Sparkle size={20} /></span><span><strong>调整免费额度</strong><small>开关每日赠送或修改默认次数</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('users')}><span className="metric-icon"><UsersThree size={20} /></span><span><strong>给用户增加额度</strong><small>搜索账户并完成一次审计发放</small></span><CaretRight size={17} /></button>
+            <button onClick={() => showSection('inspirations')}><span className="metric-icon"><ImageSquare size={20} /></span><span><strong>管理灵感内容</strong><small>{enabledInspirations}/{inspirations.length} 条已上架，可调整首页推荐</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('plans')}><span className="metric-icon"><Storefront size={20} /></span><span><strong>管理销售套餐</strong><small>修改价格、额度、有效期和上架状态</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('payment')}><span className="metric-icon"><CreditCard size={20} /></span><span><strong>管理支付渠道</strong><small>检查服务端凭证并控制是否接收新订单</small></span><CaretRight size={17} /></button>
           </div></section>
@@ -234,6 +295,17 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
           </section>}
         </>}
 
+        {section === 'inspirations' && <>
+          <header className="operations-heading"><span className="eyebrow">内容运营</span><h1>灵感内容</h1><p>维护创作端展示的灵感和首页推荐。未上架内容不会出现在用户端。</p></header>
+          <section className="operations-card">
+            <div className="operations-card-heading"><div><h2>灵感库</h2><p>{enabledInspirations} 条已上架，{inspirations.filter((item) => item.featured && item.enabled).length} 条首页推荐</p></div><button className="primary-button small-button" onClick={startCreatingInspiration}><Plus size={16} />新增灵感</button></div>
+            {inspirations.length > 0 ? <div className="operations-inspiration-grid">{inspirations.map((item) => <article key={item.id} className="operations-inspiration-card">
+              <div className="operations-inspiration-cover"><img src={studioAssetPath(item.image)} alt="" /><span className={`status-pill ${item.enabled ? 'online' : ''}`}>{item.enabled ? '已上架' : '未上架'}</span></div>
+              <div className="operations-inspiration-body"><small>{item.category} · 排序 {item.sortOrder}</small><h3>{item.title}</h3><p>{item.description}</p><div><span>{item.featured ? '首页推荐' : '灵感页展示'}</span><button className="secondary-button small-button" onClick={() => setEditingInspiration({ ...item })}><PencilSimple size={15} />编辑</button></div></div>
+            </article>)}</div> : <div className="operations-empty"><ImageSquare size={25} /><span><strong>还没有灵感内容</strong><small>新增后先预览，再决定是否上架。</small></span></div>}
+          </section>
+        </>}
+
         {section === 'plans' && <>
           <header className="operations-heading"><span className="eyebrow">商业化</span><h1>套餐与价格</h1><p>订单会保存下单时的套餐快照，修改只影响之后创建的新订单。</p></header>
           <section className="operations-card plans-table-card">
@@ -259,5 +331,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
     {confirmingGrant && selected && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmingGrant(false) }}><section className="operations-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="grant-title"><button className="modal-close" onClick={() => setConfirmingGrant(false)} aria-label="关闭"><X size={20} /></button><span className="metric-icon"><Plus size={21} /></span><h2 id="grant-title">确认发放</h2><p>请核对账户和额度。提交后会写入审计记录，不能通过当前页面撤销。</p><dl><div><dt>用户</dt><dd>{selected.email}</dd></div><div><dt>增加额度</dt><dd>{units} 次</dd></div><div><dt>业务编号</dt><dd>{reference}</dd></div><div><dt>有效期</dt><dd>{expiresAt ? new Date(expiresAt).toLocaleString('zh-CN') : '不过期'}</dd></div></dl><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setConfirmingGrant(false)}>返回修改</button><button className="primary-button" disabled={busy === 'grant'} onClick={() => void grant()}>{busy === 'grant' ? '正在发放…' : '确认发放'}</button></div></section></div>}
 
     {editingPlan && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingPlan(null) }}><section className="operations-modal plan-editor" role="dialog" aria-modal="true" aria-labelledby="plan-editor-title"><button className="modal-close" onClick={() => setEditingPlan(null)} aria-label="关闭"><X size={20} /></button><span className="eyebrow">{editingPlan.kind === 'subscription' ? '订阅套餐' : '一次性加量包'}</span><h2 id="plan-editor-title">编辑套餐</h2><p>修改会影响之后创建的新订单，历史订单继续使用原快照。</p><div className="operations-form"><label className="operations-switch"><span><strong>在用户端销售</strong><small>关闭后不会出现在额度与方案页面。</small></span><input type="checkbox" checked={editingPlan.enabled} onChange={(event) => setEditingPlan({ ...editingPlan, enabled: event.target.checked })} /></label><label><span>套餐名称</span><input value={editingPlan.name} maxLength={100} onChange={(event) => setEditingPlan({ ...editingPlan, name: event.target.value })} /></label><div className="operations-field-grid"><label><span>价格（元）</span><input type="number" min="0.01" max="1000000" step="0.01" value={(editingPlan.priceCents / 100).toFixed(2)} onChange={(event) => setEditingPlan({ ...editingPlan, priceCents: Math.round(Number(event.target.value) * 100) })} /></label><label><span>包含次数</span><input type="number" min="1" max="100000" value={editingPlan.credits} onChange={(event) => setEditingPlan({ ...editingPlan, credits: Number(event.target.value) })} /></label><label><span>有效天数</span><input type="number" min="1" max="3650" value={editingPlan.durationDays} onChange={(event) => setEditingPlan({ ...editingPlan, durationDays: Number(event.target.value) })} /></label></div><label><span>用户说明</span><textarea value={editingPlan.description} maxLength={300} onChange={(event) => setEditingPlan({ ...editingPlan, description: event.target.value })} /></label></div><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setEditingPlan(null)}>取消</button><button className="primary-button" disabled={busy === `plan:${editingPlan.id}`} onClick={() => void savePlan()}>{busy === `plan:${editingPlan.id}` ? '正在保存…' : '保存套餐'}</button></div></section></div>}
+
+    {editingInspiration && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingInspiration(null) }}><section className="operations-modal inspiration-editor" role="dialog" aria-modal="true" aria-labelledby="inspiration-editor-title"><button className="modal-close" onClick={() => setEditingInspiration(null)} aria-label="关闭"><X size={20} /></button><span className="eyebrow">内容运营</span><h2 id="inspiration-editor-title">{editingInspiration.id ? '编辑灵感' : '新增灵感'}</h2><p>提示词会在用户选择灵感后带入创作框。首发封面使用随 Studio 发布的受控图片。</p><img className="inspiration-editor-preview" src={studioAssetPath(editingInspiration.image)} alt="当前封面预览" /><div className="operations-form"><div className="operations-field-grid"><label><span>分类</span><input value={editingInspiration.category} maxLength={30} required onChange={(event) => setEditingInspiration({ ...editingInspiration, category: event.target.value })} /></label><label><span>标题</span><input value={editingInspiration.title} maxLength={100} required onChange={(event) => setEditingInspiration({ ...editingInspiration, title: event.target.value })} /></label></div><label><span>一句话说明</span><input value={editingInspiration.description} maxLength={300} required onChange={(event) => setEditingInspiration({ ...editingInspiration, description: event.target.value })} /></label><label><span>创作提示词</span><textarea value={editingInspiration.prompt} maxLength={10000} required onChange={(event) => setEditingInspiration({ ...editingInspiration, prompt: event.target.value })} /></label><div className="operations-field-grid"><label><span>封面图片</span><select value={editingInspiration.image} onChange={(event) => setEditingInspiration({ ...editingInspiration, image: event.target.value })}>{inspirationImages.map((image) => <option key={image} value={image}>{image}</option>)}</select></label><label><span>排序</span><input type="number" min="0" max="100000" value={editingInspiration.sortOrder} onChange={(event) => setEditingInspiration({ ...editingInspiration, sortOrder: Number(event.target.value) })} /></label></div><label className="operations-switch"><span><strong>在灵感页上架</strong><small>关闭后用户端立即隐藏，但内容和审计记录会保留。</small></span><input type="checkbox" checked={editingInspiration.enabled} onChange={(event) => setEditingInspiration({ ...editingInspiration, enabled: event.target.checked })} /></label><label className="operations-switch"><span><strong>设为首页推荐</strong><small>只有已上架内容会在首页推荐区展示。</small></span><input type="checkbox" checked={editingInspiration.featured} onChange={(event) => setEditingInspiration({ ...editingInspiration, featured: event.target.checked })} /></label></div><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setEditingInspiration(null)}>取消</button><button className="primary-button" disabled={busy === 'inspiration' || !editingInspiration.title.trim() || !editingInspiration.description.trim() || !editingInspiration.prompt.trim()} onClick={() => void saveInspiration()}>{busy === 'inspiration' ? '正在保存…' : '保存灵感'}</button></div></section></div>}
   </div>
 }

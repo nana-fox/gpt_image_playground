@@ -45,6 +45,7 @@ import {
   type StudioGenerationInput,
   type StudioGenerationTask,
 } from '../lib/studioGeneration'
+import { listStudioInspirations, type StudioInspiration } from '../lib/studioInspiration'
 import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
 import {
   createStudioPaymentOrder,
@@ -58,27 +59,6 @@ import './studio.css'
 
 type AuthMode = 'login' | 'register' | '2fa'
 type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'
-
-type InspirationItem = {
-  id: string
-  category: string
-  title: string
-  description: string
-  image: string
-  prompt: string
-}
-
-const inspirationItems: InspirationItem[] = [
-  { id: 'product', category: '商业', title: '产品海报', description: '打造质感产品视觉', image: 'inspiration-product.png', prompt: '为一款高端无线耳机制作电影感产品海报，黑色背景，柔和轮廓光，突出精密材质和高级质感' },
-  { id: 'portrait', category: '人像', title: '自然光人像', description: '捕捉光影与情绪', image: 'inspiration-portrait.png', prompt: '自然电影感人像写真，柔和侧光，安静克制的情绪，细腻肤质，深色背景' },
-  { id: 'social', category: '社媒', title: '旅行封面', description: '吸睛封面一键生成', image: 'inspiration-social.png', prompt: '旅行主题社媒封面，雪山与湖面，蓝紫暮色，具有清晰的视觉中心和留白' },
-  { id: 'illustration', category: '插画', title: '云海鲸歌', description: '天马行空的想象世界', image: 'inspiration-illustration.png', prompt: '巨鲸穿行在金色云海中的幻想插画，深海蓝与暖金配色，细腻笔触，宏大而宁静' },
-  { id: 'interior', category: '空间', title: '温暖客厅', description: '焕新你的理想空间', image: 'inspiration-interior.png', prompt: '把客厅改造成安静温暖的现代空间，低饱和米灰色，木质和布艺材质，自然光充足' },
-  { id: 'perfume', category: '商业', title: '静奢香氛', description: '克制高级的品牌视觉', image: 'recent-perfume.png', prompt: '高级香氛产品摄影，深色石材台面，冷调轮廓光，微微水汽，杂志广告质感' },
-  { id: 'alley', category: '摄影', title: '雨夜街巷', description: '城市叙事氛围感', image: 'recent-alley.png', prompt: '雨夜里的老城街巷，霓虹灯倒影，电影宽银幕构图，安静行人，写实摄影' },
-  { id: 'flowers', category: '摄影', title: '百合静物', description: '柔和自然的静物光线', image: 'recent-flowers.png', prompt: '白色百合花静物摄影，晨光穿过薄纱，低饱和背景，细腻花瓣质感，留白构图' },
-  { id: 'cat', category: '萌宠', title: '布偶猫肖像', description: '把日常拍成故事', image: 'recent-cat.png', prompt: '布偶猫电影感肖像，柔和窗边光，奶油色背景，浅景深，细腻毛发' },
-]
 
 function getRoute(): StudioRoute {
   const route = window.location.hash.replace(/^#\/?/, '')
@@ -229,6 +209,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
   const [selectedInspiration, setSelectedInspiration] = useState('')
   const [quota, setQuota] = useState<StudioQuotaBalance | null>()
   const [tasks, setTasks] = useState<StudioGenerationTask[]>()
+  const [inspirations, setInspirations] = useState<StudioInspiration[]>([])
   const [admin, setAdmin] = useState<StudioAdminSession | null>()
   const [loadError, setLoadError] = useState('')
 
@@ -243,13 +224,15 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
 
   useEffect(() => {
     let active = true
-    void Promise.allSettled([getStudioQuota(), listStudioGenerations(), getStudioAdminSession()])
-      .then(([quotaResult, tasksResult, adminResult]) => {
+    void Promise.allSettled([getStudioQuota(), listStudioGenerations(), listStudioInspirations(), getStudioAdminSession()])
+      .then(([quotaResult, tasksResult, inspirationResult, adminResult]) => {
         if (!active) return
         setQuota(quotaResult.status === 'fulfilled' ? quotaResult.value : null)
         setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : [])
+        setInspirations(inspirationResult.status === 'fulfilled' ? inspirationResult.value : [])
         setAdmin(adminResult.status === 'fulfilled' ? adminResult.value : null)
         if (tasksResult.status === 'rejected') setLoadError('作品记录暂时无法读取')
+        if (inspirationResult.status === 'rejected') setLoadError('灵感内容暂时无法读取')
       })
     return () => {
       active = false
@@ -264,7 +247,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
     window.location.hash = `/${next}`
   }
 
-  const useTemplate = (item: InspirationItem) => {
+  const useTemplate = (item: StudioInspiration) => {
     setPrompt(item.prompt)
     setSelectedInspiration(item.id)
     navigate('create')
@@ -274,7 +257,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
   const addTask = (task: StudioGenerationTask) => setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
   const removeTask = (id: string) => setTasks((current) => (current ?? []).filter((item) => item.id !== id))
   const content = route === 'inspiration'
-    ? <InspirationPage useTemplate={useTemplate} />
+    ? <InspirationPage items={inspirations} useTemplate={useTemplate} />
     : route === 'works'
       ? <WorksPage tasks={tasks} addTask={addTask} removeTask={removeTask} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
       : route === 'points'
@@ -287,7 +270,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
               : admin
                 ? <StudioAdminPage admin={admin} onExit={() => navigate('create')} />
                 : <div className="page-frame empty-state"><Gear size={30} /><h3>当前账户没有运营权限</h3><p>运营权限只按服务端配置的 Router 用户标识开放。</p><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></div>
-            : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
+            : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} inspirations={inspirations} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
 
   return (
     <main className="app-shell" data-studio-workspace>
@@ -324,7 +307,7 @@ function AppHeader({ route, quota, session, isAdmin, navigate, onLogout }: { rou
   )
 }
 
-function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addTask, refreshQuota, navigate }: { prompt: string, setPrompt: (prompt: string) => void, selectedInspiration: string, quota: StudioQuotaBalance | null | undefined, tasks: StudioGenerationTask[] | undefined, addTask: (task: StudioGenerationTask) => void, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
+function CreatePage({ prompt, setPrompt, selectedInspiration, inspirations, quota, tasks, addTask, refreshQuota, navigate }: { prompt: string, setPrompt: (prompt: string) => void, selectedInspiration: string, inspirations: StudioInspiration[], quota: StudioQuotaBalance | null | undefined, tasks: StudioGenerationTask[] | undefined, addTask: (task: StudioGenerationTask) => void, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const [size, setSize] = useState<StudioGenerationInput['size']>('1536x1024')
   const [quality, setQuality] = useState<StudioGenerationInput['quality']>('medium')
@@ -334,6 +317,7 @@ function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addT
   const [selectedTask, setSelectedTask] = useState<StudioGenerationTask | null>(null)
   const [chosenInspiration, setChosenInspiration] = useState(selectedInspiration)
   const recent = (tasks ?? []).filter((task) => task.output)
+  const featured = inspirations.filter((item) => item.featured).slice(0, 5)
   const canGenerate = Boolean(quota && ((quota.free.enabled && quota.free.remaining > 0) || quota.credits > 0))
 
   const submit = async () => {
@@ -364,7 +348,7 @@ function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addT
     }
   }
 
-  const applyInspiration = (item: InspirationItem) => {
+  const applyInspiration = (item: StudioInspiration) => {
     setPrompt(item.prompt)
     setChosenInspiration(item.id)
     setError('')
@@ -374,22 +358,22 @@ function CreatePage({ prompt, setPrompt, selectedInspiration, quota, tasks, addT
 
   return (
     <>
-      <section className="hero" style={{ '--studio-hero-image': `url(${studioAssetPath('hero-studio.png')})` } as CSSProperties}><div className="hero-backdrop" /><div className="hero-content"><h1>今天想做什么<span>？</span></h1><p className="hero-subtitle">{quota?.free.enabled ? `不用研究提示词，今天还可免费创作 ${quota.free.remaining} 次` : quota === undefined ? '正在读取你的创作额度…' : '可以使用购买或订阅额度继续创作'}</p><div className={`composer ${error ? 'composer-error' : ''}`}><textarea ref={composerRef} value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(''); setRequestKey('') }} placeholder="描述你想要的画面…" maxLength={10000} /><div className="composer-toolbar"><div className="composer-actions"><button className="toolbar-button" type="button" disabled title="参考图编辑将在下一阶段开放"><ImageSquare size={19} /><span>添加参考图</span></button><button className="suggestion-chip" type="button" onClick={() => applyInspiration(inspirationItems[0])}><Sparkle size={17} weight="fill" />试试：把产品放进电影感场景</button></div><div className="generation-settings"><label><span>画面比例</span><select value={size} onChange={(event) => { setSize(event.target.value as StudioGenerationInput['size']); setRequestKey('') }}><option value="1024x1024">1:1</option><option value="1536x1024">3:2</option><option value="1024x1536">2:3</option></select></label><label><span>画质</span><select value={quality} onChange={(event) => { setQuality(event.target.value as StudioGenerationInput['quality']); setRequestKey('') }}><option value="medium">标准画质</option><option value="high">精细画质</option></select></label><div className="create-action"><button className="primary-button" type="button" onClick={() => void submit()} disabled={generating || quota === undefined}>{generating ? <span className="loading-dot" /> : <Sparkle size={18} weight="fill" />}{generating ? '正在创作' : '开始创作'}</button><span>{quotaUsageText(quota)}</span></div></div></div></div>{error && <p className="error-message" role="alert">{error}</p>}</div></section>
-      <section className="content-section inspiration-section"><div className="section-heading"><h2>从灵感开始</h2><p>选一个方向，提示词会自动准备好</p><button className="heading-link" onClick={() => navigate('inspiration')}>浏览灵感库 <ArrowRight size={16} /></button></div><div className="inspiration-grid">{inspirationItems.slice(0, 5).map((item) => <article key={item.id} className={`inspiration-card ${chosenInspiration === item.id ? 'selected' : ''}`} onClick={() => applyInspiration(item)}><img src={studioAssetPath(item.image)} alt={item.title} /><div className="card-shade" />{chosenInspiration === item.id && <span className="selected-mark"><CheckCircle size={18} weight="fill" /> 已选</span>}<div className="card-copy"><h3>{item.title}</h3><p>{item.description}</p></div><button type="button"><Sparkle size={15} weight="fill" /> 使用此灵感</button></article>)}</div></section>
+      <section className="hero" style={{ '--studio-hero-image': `url(${studioAssetPath('hero-studio.png')})` } as CSSProperties}><div className="hero-backdrop" /><div className="hero-content"><h1>今天想做什么<span>？</span></h1><p className="hero-subtitle">{quota?.free.enabled ? `不用研究提示词，今天还可免费创作 ${quota.free.remaining} 次` : quota === undefined ? '正在读取你的创作额度…' : '可以使用购买或订阅额度继续创作'}</p><div className={`composer ${error ? 'composer-error' : ''}`}><textarea ref={composerRef} value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(''); setRequestKey('') }} placeholder="描述你想要的画面…" maxLength={10000} /><div className="composer-toolbar"><div className="composer-actions"><button className="toolbar-button" type="button" disabled title="参考图编辑将在下一阶段开放"><ImageSquare size={19} /><span>添加参考图</span></button>{featured[0] && <button className="suggestion-chip" type="button" onClick={() => applyInspiration(featured[0])}><Sparkle size={17} weight="fill" />试试：{featured[0].title}</button>}</div><div className="generation-settings"><label><span>画面比例</span><select value={size} onChange={(event) => { setSize(event.target.value as StudioGenerationInput['size']); setRequestKey('') }}><option value="1024x1024">1:1</option><option value="1536x1024">3:2</option><option value="1024x1536">2:3</option></select></label><label><span>画质</span><select value={quality} onChange={(event) => { setQuality(event.target.value as StudioGenerationInput['quality']); setRequestKey('') }}><option value="medium">标准画质</option><option value="high">精细画质</option></select></label><div className="create-action"><button className="primary-button" type="button" onClick={() => void submit()} disabled={generating || quota === undefined}>{generating ? <span className="loading-dot" /> : <Sparkle size={18} weight="fill" />}{generating ? '正在创作' : '开始创作'}</button><span>{quotaUsageText(quota)}</span></div></div></div></div>{error && <p className="error-message" role="alert">{error}</p>}</div></section>
+      <section className="content-section inspiration-section"><div className="section-heading"><h2>从灵感开始</h2><p>选一个方向，提示词会自动准备好</p><button className="heading-link" onClick={() => navigate('inspiration')}>浏览灵感库 <ArrowRight size={16} /></button></div>{featured.length ? <div className="inspiration-grid">{featured.map((item) => <article key={item.id} className={`inspiration-card ${chosenInspiration === item.id ? 'selected' : ''}`} onClick={() => applyInspiration(item)}><img src={studioAssetPath(item.image)} alt={item.title} /><div className="card-shade" />{chosenInspiration === item.id && <span className="selected-mark"><CheckCircle size={18} weight="fill" /> 已选</span>}<div className="card-copy"><h3>{item.title}</h3><p>{item.description}</p></div><button type="button"><Sparkle size={15} weight="fill" /> 使用此灵感</button></article>)}</div> : <div className="recent-empty"><Compass size={25} /><span><strong>灵感正在准备中</strong><small>你仍然可以直接描述想要的画面。</small></span></div>}</section>
       <section className="content-section recent-section"><div className="section-heading recent-heading"><div><h2>最近创作</h2><p>自动保存在作品库，随时继续</p></div><button className="text-button" onClick={() => navigate('works')}>查看全部 <ArrowRight size={17} /></button></div>{tasks === undefined ? <div className="recent-loading">正在读取真实作品…</div> : recent.length ? <div className="recent-grid">{recent.slice(0, 7).map((task) => <button className="recent-item" key={task.id} onClick={() => setSelectedTask(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="recent-meta"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)}</small></span></button>)}</div> : <div className="recent-empty"><Images size={25} /><span><strong>还没有作品</strong><small>完成第一次创作后会自动保存在这里。</small></span></div>}</section>
       {selectedTask?.output && <TaskModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
     </>
   )
 }
 
-function InspirationPage({ useTemplate }: { useTemplate: (item: InspirationItem) => void }) {
+function InspirationPage({ items, useTemplate }: { items: StudioInspiration[], useTemplate: (item: StudioInspiration) => void }) {
   const [category, setCategory] = useState('全部')
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<InspirationItem | null>(null)
+  const [selected, setSelected] = useState<StudioInspiration | null>(null)
   const [favorites, setFavorites] = useState<string[]>([])
-  const categories = ['全部', '商业', '人像', '社媒', '插画', '摄影', '空间', '萌宠']
-  const filtered = inspirationItems.filter((item) => (category === '全部' || item.category === category) && `${item.title}${item.description}`.includes(query))
-  return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 每周更新</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>换个关键词或浏览其他分类。</p><button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button></div>}{selected && <Modal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></Modal>}</div>
+  const categories = ['全部', ...new Set(items.map((item) => item.category))]
+  const filtered = items.filter((item) => (category === '全部' || item.category === category) && `${item.title}${item.description}`.includes(query))
+  return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 运营精选</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>{items.length ? '换个关键词或浏览其他分类。' : '灵感内容正在准备中，你可以先直接开始创作。'}</p>{items.length > 0 && <button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button>}</div>}{selected && <Modal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></Modal>}</div>
 }
 
 function WorksPage({

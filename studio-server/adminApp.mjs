@@ -11,6 +11,7 @@ export function createStudioAdminApp(options = {}) {
   const quota = options.quota
   const payments = options.payments
   const paymentChannel = options.paymentChannel
+  const inspirations = options.inspirations
   if (!routerAuth?.resolve || !sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
     throw new Error('Studio operations dependencies are required')
   }
@@ -62,6 +63,10 @@ export function createStudioAdminApp(options = {}) {
         if (request.method === 'GET' && url.pathname === '/api/admin/payment-channel') {
           if (!paymentChannel) return jsonError(503, 'PAYMENT_UNAVAILABLE', '支付渠道服务暂时不可用')
           return json({ ok: true, data: await paymentChannel.getChannelStatus() })
+        }
+        if (request.method === 'GET' && url.pathname === '/api/admin/inspirations') {
+          if (!inspirations) return jsonError(503, 'INSPIRATION_UNAVAILABLE', '灵感服务暂时不可用')
+          return json({ ok: true, data: await inspirations.listAdmin() })
         }
         if (request.method === 'GET' && url.pathname === '/api/admin/users') {
           const query = String(url.searchParams.get('query') ?? '').trim()
@@ -119,6 +124,29 @@ export function createStudioAdminApp(options = {}) {
           return json({
             ok: true,
             data: await paymentChannel.updateChannel(normalizePaymentChannel(await readJson(request)), {
+              actorSubject: session.user.identitySubject,
+            }),
+          })
+        }
+
+        if (request.method === 'POST' && url.pathname === '/api/admin/inspirations') {
+          if (!inspirations) return jsonError(503, 'INSPIRATION_UNAVAILABLE', '灵感服务暂时不可用')
+          await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
+          return json({
+            ok: true,
+            data: await inspirations.create(normalizeInspiration(await readJson(request)), {
+              actorSubject: session.user.identitySubject,
+            }),
+          }, 201)
+        }
+
+        const inspirationMatch = url.pathname.match(/^\/api\/admin\/inspirations\/([A-Za-z0-9_-]{1,64})$/)
+        if (request.method === 'PATCH' && inspirationMatch) {
+          if (!inspirations) return jsonError(503, 'INSPIRATION_UNAVAILABLE', '灵感服务暂时不可用')
+          await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
+          return json({
+            ok: true,
+            data: await inspirations.update(inspirationMatch[1], normalizeInspiration(await readJson(request), true), {
               actorSubject: session.user.identitySubject,
             }),
           })
@@ -234,6 +262,24 @@ function normalizePaymentChannel(input) {
     throw validationError('支付渠道配置无效')
   }
   return { acceptingOrders: input.acceptingOrders, expectedVersion }
+}
+
+function normalizeInspiration(input, update = false) {
+  const keys = ['category', 'title', 'description', 'prompt', 'image', 'enabled', 'featured', 'sortOrder']
+  if (update) keys.push('expectedVersion')
+  if (Object.keys(input).some((key) => !keys.includes(key))) throw validationError('灵感配置无效')
+  const value = {
+    category: String(input.category ?? '').trim(),
+    title: String(input.title ?? '').trim(),
+    description: String(input.description ?? '').trim(),
+    prompt: String(input.prompt ?? '').trim(),
+    image: String(input.image ?? '').trim(),
+    enabled: input.enabled,
+    featured: input.featured,
+    sortOrder: Number(input.sortOrder),
+  }
+  if (update) value.expectedVersion = Number(input.expectedVersion)
+  return value
 }
 
 function publicUser(user) {
