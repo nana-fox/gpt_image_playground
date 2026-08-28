@@ -35,32 +35,10 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     databaseUrl: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     generationEnabled: false,
     paymentEnabled: false,
-    adminSubjects: [],
     host: '127.0.0.1',
     port: 8788,
   })
   assert.equal('VITE_ROUTER_AUTH_CURRENT_SECRET' in config, false)
-})
-
-test('Studio server accepts only explicit Router subjects for operations access', () => {
-  const config = readStudioServerConfig({
-    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
-    ROUTER_AUTH_KEY_ID: 'studio-current',
-    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
-    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
-    STUDIO_ADMIN_SUBJECTS: 'router-user-1, router-user-2,router-user-1',
-  })
-
-  assert.deepEqual(config.adminSubjects, ['router-user-1', 'router-user-2'])
-  assert.throws(() => readStudioServerConfig({
-    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
-    ROUTER_AUTH_KEY_ID: 'studio-current',
-    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
-    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
-    STUDIO_ADMIN_SUBJECTS: 'contains spaces',
-  }), /STUDIO_ADMIN_SUBJECTS/)
 })
 
 test('Studio server accepts an isolated public base path', () => {

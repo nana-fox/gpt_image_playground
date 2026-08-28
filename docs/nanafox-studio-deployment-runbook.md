@@ -67,7 +67,6 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 | `STUDIO_HOST` | 是 | 默认 `127.0.0.1` |
 | `STUDIO_PORT` | 是 | 默认 `8788`，不得与现有服务冲突 |
 | `STUDIO_DATABASE_URL` | 是 | 对应环境的独立 PostgreSQL role/database |
-| `STUDIO_ADMIN_SUBJECTS` | 运营端 | 逗号分隔的 Router stable subject 白名单；不使用邮箱判断管理员 |
 | `ROUTER_AUTH_BASE_URL` | 是 | Router 身份适配服务地址 |
 | `ROUTER_AUTH_KEY_ID` | 是 | 当前身份签名 Key ID |
 | `ROUTER_AUTH_CURRENT_SECRET` | 是 | Router 身份签名 Secret |
@@ -270,7 +269,7 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 - Git commit：`9cb4617`；容器镜像：`nanafox-studio:test-9cb4617-path`；上一候选 `33202772` 与旧版 `9b7ce84` 容器保持停止状态，可用于测试回滚。
 - 前端 normal/studio 构建通过，49 个文件、590 个测试通过；Studio 服务 79/79 通过，真实 PostgreSQL 与私有 R2 未跳过，行覆盖率 92.39%。
-- PostgreSQL migration 已到 `1,2`，`studio_admin_audit_log` 存在；仅现有非合成测试用户被加入 `STUDIO_ADMIN_SUBJECTS`，Subject 未写入仓库或日志。本段是当次发布证据，不代表当前目标 migration。
+- PostgreSQL migration 已到 `1,2`，`studio_admin_audit_log` 存在；当次版本仍使用 `STUDIO_ADMIN_SUBJECTS`。该机制已在后续版本被 Router 当前角色解析替代，本段只保留历史发布证据。
 - 公网页面、静态资源、`/api/health`、`/api/ready` 为 200；未登录 `/api/admin/me`、`/api/auth/session` 为 401；容器以 `studio` 非 root 用户运行。
 - 真实浏览器在 1280×720 与 390×844 验证登录和注册布局；无效外部字体请求已删除，控制台只保留未登录 Session 探测的预期 401。
 - 管理员真实 Session 的页面级 200、一次每日额度修改和一次幂等加额仍需人工验收；当次版本未包含支付和套餐管理。后续版本即使代码已实现，在真实商户小额支付验收前仍不得声称商业闭环已完成。

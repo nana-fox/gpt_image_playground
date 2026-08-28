@@ -9,6 +9,7 @@ const userId = '019c0000-0000-7000-8000-000000000042'
 
 function createDependencies(subject = adminSubject, role = 'admin') {
   const calls = []
+  const authCalls = []
   const session = {
     expiresAt: '2026-09-27T12:00:00.000Z',
     user: {
@@ -20,9 +21,10 @@ function createDependencies(subject = adminSubject, role = 'admin') {
   }
   return {
     calls,
+    authCalls,
     routerAuth: {
       resolve: (identitySubject, email) => {
-        calls.push(['resolve', identitySubject, email])
+        authCalls.push([identitySubject, email])
         return { user: { subject: identitySubject, email, role } }
       },
     },
@@ -94,6 +96,7 @@ test('current Router administrators can access Studio operations automatically',
       user: { id: 'admin-user', email: 'admin@nanafox.com', displayName: 'NanaFox Admin' },
     },
   })
+  assert.deepEqual(allowed.authCalls, [[adminSubject, 'admin@nanafox.com']])
 
   const deniedDependencies = createDependencies(adminSubject, 'user')
   const deniedApp = createStudioAdminApp({

@@ -57,9 +57,9 @@ NAS（非在线链路）
 
 1. 浏览器在 Studio 页面输入邮箱和验证码。
 2. Studio 后端把请求转给 Router 的窄身份接口。
-3. Router 返回稳定 `identity_subject` 和必要的用户资料，不返回 Router Session 给浏览器。
+3. Router 返回稳定 `identity_subject`、必要的用户资料和当前 `admin/user` 角色，不返回 Router Session 给浏览器。
 4. Studio 在 `studio_users` 建立或更新映射，并签发自己的 HttpOnly Session Cookie。
-5. 后续 Studio API 只认 Studio Session；账号封禁或身份失效通过适配接口同步。
+5. 后续 Studio API 只认 Studio Session；进入运营 API 时，Studio 使用签名内部 `/studio-auth/resolve` 接口重新读取 Router 的当前状态和角色，降权或封禁立即生效。
 
 这样既复用 Router 用户池和验证码能力，又避免把两个产品耦合成一个共享 Cookie/共享 Session 系统。
 
@@ -84,7 +84,7 @@ NAS（非在线链路）
 
 ### 4.4 管理员操作
 
-- 已实现：由显式 Router stable subject 白名单授权；运营端可启停每日免费额度、修改默认次数，并通过幂等 `reference` 给单用户加额。
+- 已实现：Router 当前角色为 `admin` 的用户自动获得 Studio 运营权限，普通用户不显示入口且后端返回 403；运营端可启停每日免费额度、修改默认次数，并通过幂等 `reference` 给单用户加额。
 - 已实现：策略与加额写入在同一个 PostgreSQL 事务内记录操作者、目标、前后值和时间；不能直接改余额数字。
 - 已实现：Plus、Pro 与加量包的名称、价格、额度、有效期和销售状态管理；每次修改使用乐观版本并写入审计日志，订单保存不可变套餐快照。
 - 待实现：任务排障、订单列表与退款、审计日志查看和灵感内容管理。当前灵感是静态前端内容，不声称运营端可配置。
@@ -203,7 +203,7 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 - 上传内容校验 MIME、PNG signature、Base64 canonical form 和最大 50 MiB。
 - 日志记录 request id、task id、状态码和耗时，不记录提示词全文、签名 URL、Cookie 和 Secret。
 - 管理员加额、套餐变更和删除操作必须有审计记录与幂等 reference。
-- 管理 API 只接受 `STUDIO_ADMIN_SUBJECTS` 中的 stable subject；不按邮箱、前端菜单或 Router 全局角色推断权限。
+- 管理 API 通过签名内部身份适配器同时核对 stable subject、邮箱、账户状态和 Router 当前角色；只有 `role=admin` 放行。前端菜单仅用于展示，不构成权限判断；身份服务不可用或返回未知角色时失败关闭为 503。
 - 微信商户私钥、APIv3 Key、平台公钥只从服务器 Secret 文件加载；支付默认关闭，开启支付时缺任一配置即启动失败。
 - 支付回调先验签和校验商户/金额再履约；日志不记录通知原文、二维码内容、私钥、APIv3 Key 或用户提示词。
 

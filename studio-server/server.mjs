@@ -43,7 +43,6 @@ export function readStudioServerConfig(env = process.env) {
     databaseUrl,
     generationEnabled,
     paymentEnabled,
-    adminSubjects: parseAdminSubjects(env.STUDIO_ADMIN_SUBJECTS),
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
     port,
   }
@@ -244,7 +243,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   })
   const adminApp = createStudioAdminApp({
     publicOrigin: config.publicOrigin,
-    adminSubjects: config.adminSubjects,
+    routerAuth,
     sessions: store,
     quota,
     payments: paymentStore,
@@ -307,14 +306,6 @@ function parseBoolean(value, name) {
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   throw new Error(`${name} must be true or false`)
-}
-
-function parseAdminSubjects(value) {
-  const subjects = String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
-  if (subjects.some((subject) => !/^[A-Za-z0-9._:@/-]{1,128}$/.test(subject))) {
-    throw new Error('STUDIO_ADMIN_SUBJECTS is invalid')
-  }
-  return [...new Set(subjects)]
 }
 
 function normalizeBasePath(value, name) {

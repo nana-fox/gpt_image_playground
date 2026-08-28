@@ -106,6 +106,9 @@ export function createRouterAuthClient(options = {}) {
     login2FA(tempToken, totpCode) {
       return post('/login/2fa', { temp_token: tempToken, totp_code: totpCode })
     },
+    resolve(subject, email) {
+      return post('/resolve', { subject, email })
+    },
   }
 }
 

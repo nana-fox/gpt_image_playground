@@ -6,11 +6,11 @@ const MAX_BODY_BYTES = 32 * 1024
 
 export function createStudioAdminApp(options = {}) {
   const publicOrigin = normalizeOrigin(options.publicOrigin)
-  const adminSubjects = new Set(options.adminSubjects ?? [])
+  const routerAuth = options.routerAuth
   const sessions = options.sessions
   const quota = options.quota
   const payments = options.payments
-  if (!sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
+  if (!routerAuth?.resolve || !sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
     throw new Error('Studio operations dependencies are required')
   }
 
@@ -21,7 +21,23 @@ export function createStudioAdminApp(options = {}) {
       const sessionToken = cookies[SESSION_COOKIE] ?? ''
       const session = sessionToken ? await sessions.getSession(sessionToken) : null
       if (!session) return jsonError(401, 'UNAUTHENTICATED', '请先登录')
-      if (!adminSubjects.has(session.user.identitySubject)) {
+
+      let identity
+      try {
+        identity = (await routerAuth.resolve(session.user.identitySubject, session.user.email))?.user
+      } catch (error) {
+        console.error('Studio administrator identity check failed', error)
+        return jsonError(503, 'ADMIN_AUTH_UNAVAILABLE', '暂时无法确认运营权限，请稍后重试')
+      }
+      if (
+        !identity
+        || identity.subject !== session.user.identitySubject
+        || String(identity.email ?? '').trim().toLowerCase() !== session.user.email
+        || !['admin', 'user'].includes(identity.role)
+      ) {
+        return jsonError(503, 'ADMIN_AUTH_UNAVAILABLE', '暂时无法确认运营权限，请稍后重试')
+      }
+      if (identity.role !== 'admin') {
         return jsonError(403, 'ADMIN_FORBIDDEN', '当前账户没有运营权限')
       }
 
