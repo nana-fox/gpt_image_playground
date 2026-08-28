@@ -69,7 +69,7 @@ describe('NanaFox Studio product shell', () => {
     expect(source).not.toContain('订阅即将开放')
     expect(source).toContain('运营管理')
     expect(adminSource).toContain('每日免费额度')
-    expect(adminSource).toContain('给单个用户增加额度')
+    expect(adminSource).toContain('给用户增加额度')
     expect(adminSource).toContain('searchStudioUsers')
     expect(adminSource).toContain('grantStudioCredits')
     expect(adminSource).toContain('getStudioPaymentPlans')

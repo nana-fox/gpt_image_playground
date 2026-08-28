@@ -119,14 +119,20 @@ function StudioAuthPage({
   const [totpCode, setTotpCode] = useState('')
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
-  const [codeSent, setCodeSent] = useState(false)
+  const [resendIn, setResendIn] = useState(0)
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const timer = window.setInterval(() => setResendIn((current) => Math.max(0, current - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [resendIn])
 
   const switchMode = (next: AuthMode) => {
     setMode(next)
     setError('')
     setPassword('')
     setVerifyCode('')
-    setCodeSent(false)
+    setResendIn(0)
   }
 
   const sendCode = async () => {
@@ -138,7 +144,7 @@ function StudioAuthPage({
     setError('')
     try {
       await sendStudioVerifyCode(email)
-      setCodeSent(true)
+      setResendIn(60)
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证码发送失败')
     } finally {
@@ -194,7 +200,7 @@ function StudioAuthPage({
               <>
                 <label><span>邮箱</span><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required /></label>
                 <label><span>密码</span><input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" minLength={8} required /></label>
-                {mode === 'register' && <label><span>邮箱验证码</span><div className="verify-code-field"><input inputMode="numeric" value={verifyCode} onChange={(event) => setVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" pattern="\d{6}" required /><button type="button" onClick={() => void sendCode()} disabled={busy || codeSent}>{codeSent ? '已发送' : '发送验证码'}</button></div></label>}
+                {mode === 'register' && <label><span>邮箱验证码</span><div className="verify-code-field"><input inputMode="numeric" value={verifyCode} onChange={(event) => setVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" pattern="\d{6}" required /><button type="button" onClick={() => void sendCode()} disabled={busy || resendIn > 0}>{resendIn > 0 ? `${resendIn} 秒后重新发送` : '发送验证码'}</button></div></label>}
               </>
             ) : (
               <label><span>两步验证</span><input className="totp-input" autoComplete="one-time-code" inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" pattern="\d{6}" autoFocus required /></label>
@@ -280,7 +286,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
 
   return (
     <main className="app-shell" data-studio-workspace>
-      <AppHeader route={route} quota={quota} session={session} isAdmin={Boolean(admin)} navigate={navigate} onLogout={onLogout} />
+      {route !== 'admin' && <AppHeader route={route} quota={quota} session={session} isAdmin={Boolean(admin)} navigate={navigate} onLogout={onLogout} />}
       {loadError && <p className="workspace-alert" role="alert">{loadError}</p>}
       {content}
       {route !== 'points' && route !== 'admin' && <nav className="mobile-tabbar" aria-label="移动端导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={20} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={20} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={20} />作品</button><button className={route === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><User size={20} />我的</button></nav>}
@@ -385,7 +391,7 @@ function WorksPage({ tasks, useWork }: { tasks: StudioGenerationTask[] | undefin
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<StudioGenerationTask | null>(null)
   const works = useMemo(() => (tasks ?? []).filter((task) => task.output && task.input.prompt.includes(query)), [tasks, query])
-  return <div className="page-frame"><header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{tasks === undefined ? '正在读取真实作品…' : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header><div className="works-toolbar"><div className="segmented-control"><button className="active">全部作品</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div><button className="icon-button" aria-label="作品筛选"><SlidersHorizontal size={19} /></button></div><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)} · {ratioName(task.input.size)}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{tasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>还没有这样的作品</h3><p>{query ? '清空搜索，或者开始一次新创作。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}{selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={() => useWork(selected)} />}</div>
+  return <div className="page-frame"><header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{tasks === undefined ? '正在读取真实作品…' : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header><div className="works-toolbar"><div className="segmented-control"><button className="active">全部作品</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div></div><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)} · {ratioName(task.input.size)}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{tasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>还没有这样的作品</h3><p>{query ? '清空搜索，或者开始一次新创作。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}{selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={() => useWork(selected)} />}</div>
 }
 
 function QuotaPage({ quota, refreshQuota, navigate }: { quota: StudioQuotaBalance | null | undefined, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
@@ -473,7 +479,7 @@ function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout:
       setSigningOut(false)
     }
   }
-  return <div className="page-frame settings-page"><header className="page-title-row"><div><span className="eyebrow">个人中心</span><h1>账户设置</h1><p>查看你的 NanaFox Studio 账户资料</p></div></header><div className="settings-layout"><aside className="settings-nav"><button className="active"><User size={18} />个人资料</button></aside><div className="settings-content"><section className="settings-card"><div className="settings-card-heading"><div><h2>个人资料</h2><p>账户由 NanaFox Studio 登录服务安全管理。</p></div></div><div className="profile-editor"><span className="studio-avatar profile">{displayName.slice(0, 1).toUpperCase()}</span></div><div className="form-grid"><label><span>昵称</span><input value={displayName} readOnly /></label><label><span>邮箱</span><input value={session.user.email} readOnly /></label></div><button className="secondary-button danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></section></div></div></div>
+  return <div className="page-frame settings-page"><header className="page-title-row"><div><span className="eyebrow">个人中心</span><h1>账户设置</h1><p>查看你的 NanaFox Studio 账户资料</p></div></header><div className="settings-layout"><aside className="settings-nav"><button className="active"><User size={18} />账户资料</button></aside><div className="settings-content"><section className="settings-card account-profile-card"><div className="account-profile-heading"><span className="studio-avatar profile">{displayName.slice(0, 1).toUpperCase()}</span><div><h2>{displayName}</h2><p>账户由 NanaFox Studio 登录服务安全管理。</p></div></div><dl className="account-profile-list"><div><dt>显示名称</dt><dd>{displayName}</dd></div><div><dt>登录邮箱</dt><dd>{session.user.email}</dd></div><div><dt>账户标识</dt><dd>{session.user.id}</dd></div></dl><div className="account-security-note"><CheckCircle size={19} weight="fill" /><span><strong>账户已受保护</strong><small>密码、验证码和两步验证由账户服务统一处理。</small></span></div><button className="secondary-button danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></section></div></div></div>
 }
 
 function Modal({ children, onClose, className = '' }: { children: ReactNode, onClose: () => void, className?: string }) {
