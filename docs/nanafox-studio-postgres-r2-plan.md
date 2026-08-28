@@ -143,9 +143,9 @@
 2. [x] 实现 R2 私有 Store、条件写入、对象元数据和同源后端代理读取。
 3. [x] 创建 R2 test Bucket 和最小权限 Token，凭据安全写入测试服务器。
 4. [x] 完成真实 PUT/GET/条件冲突/DELETE 集成测试。
-5. [ ] 测试站已切 PostgreSQL/R2，真实供应商生图与重启探针通过；仍需真实 Router 账户验证登录、3 次免费额度、作品历史，管理员闭环在管理 API 完成后验收。
-6. [ ] 增加用户删除/恢复闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
-7. [ ] 配置 PostgreSQL 备份及 NAS 增量拉取，做一次恢复演练。
+5. [ ] 测试站已切 PostgreSQL/R2，真实供应商生图、重启探针和管理员 API 已通过；仍需真实 Router 账户验证 3 次免费额度、作品历史和公网运营写操作。
+6. [x] 增加用户删除/7 天恢复/到期清理闭环；一任务一作品阶段继续使用任务 `output_json`，不提前建 `studio_artworks` 表。
+7. [ ] PostgreSQL 已进入每日 NAS 备份并完成一次同机隔离恢复；仍需提高到 6 小时、完成 NAS 异机恢复和使用独立只读 Token 备份 R2 作品。
 
 ## 剩余风险登记
 
@@ -154,4 +154,4 @@
 | R2 APAC 不保证日本落点 | 已知；若产品需要日本驻留则换 OSS/S3 Tokyo | Product/Infra | 上线前数据驻留确认 |
 | 后端代理承担图片带宽 | 已知；记录 GET 字节和延迟 | Engineering | P95/带宽达到架构文档阈值后再引入媒体边缘层 |
 | SQLite 测试数据是否保留 | 已备份但未导入；接受旧测试 Session 失效和旧测试作品暂不可见 | Engineering | 回滚窗口结束后再决定归档或迁移 |
-| 付费渠道尚未确定 | 当前先保留订阅/额度内部模型 | Product | Payment integration |
+| 微信 Native 支付尚无测试商户资料 | 代码、订单模型和运营开关已部署，真实资金验收前保持关闭 | Product | `studio-wxpay-test-merchant` |
