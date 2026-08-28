@@ -145,7 +145,7 @@ docker build \
 8. 打开真实生图，完成一笔最小生成：预占、Provider、R2、任务成功、额度确认全部一致。
 9. 重启 Studio 服务，确认 Session、额度、任务和作品仍可读取。
 10. 执行权限负向：未登录、CSRF、他人 task id、无额度、重复幂等键、R2 不存在对象。
-11. 验证白名单管理员可修改每日免费次数、给单用户幂等加额并编辑套餐，普通用户为 403，所有写操作有同事务审计记录。
+11. 验证 Router 当前管理员可修改每日免费次数、给单用户幂等加额并编辑套餐，普通用户为 403，降权后立即失效，所有写操作有同事务审计记录。
 12. 支付默认保持关闭；取得测试商户资料后创建隐藏一分钱套餐，验证真实下单、扫码、异步通知、主动查单补偿、只履约一次和错误金额拒绝。
 13. 执行 PostgreSQL 恢复演练和 R2/NAS 抽样校验。
 14. 观察至少 24 小时后再形成生产候选。
@@ -239,16 +239,16 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-25eb8d3-path` 运行于 8788；`9cb4617` 容器保留为当前回滚点 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-c8a130a-path` 运行于 8788；`25eb8d3` 容器保留为当前回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
 | 浏览器验收 | 桌面与移动登录/注册通过 | 待使用真实 Router 账户完成登录、3 次额度、作品历史人工验收 |
-| 管理员受保护 API/真实页面 | 已部署测试环境 | 已实现 subject 白名单、CSRF、每日免费次数、用户查询、幂等加额和同事务审计；待登录管理员做页面级 200 人工验收 |
+| 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
 | 支付、订阅与加量包 | 代码与测试环境部署已完成 | 三个套餐默认停用、支付默认关闭；配置测试商户并完成真实小额验收后才能开放 |
 | 灵感运营配置 | 未实现 | 当前灵感为前端静态内容，收藏刷新会丢失；不把“每周更新”当真实运营能力 |
 | Router 身份接口限流 | 生产阻断 | Studio 注册、验证码、登录公开前补边缘限流与集中式账号/IP 限流 |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
 | 共享 PostgreSQL 备份 | 生产阻断 | 现有备份任务需修复并完成 NAS 异机恢复演练，不能以同盘 dump 代替恢复证据 |
-| 测试服务器磁盘 | 观察项 | 根盘使用率约 86%；发布只保留当前镜像和明确回滚点，生产前配置阈值告警 |
+| 测试服务器磁盘 | 观察项 | 本轮构建后清理 4.95 GB 可重建缓存，根盘回落至 82%；继续只保留当前镜像和明确回滚点，生产前配置阈值告警 |
 | Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
 | NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
@@ -283,3 +283,13 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 切换后原有 2 个测试用户、1 个生成任务、0 个额度记录保持不变；支付订单为 0，Plus/Pro/加量包均为停用草稿，`STUDIO_PAYMENT_ENABLED=false`。
 - 公网页面和静态资源、`/api/health`、`/api/ready` 为 200；未登录 Session、套餐和运营接口为 401；关闭渠道的微信回调为 503。Sub2API test/prod、PostgreSQL、Redis 未重启且保持 healthy。
 - Chrome 已确认目标 URL 与 `NanaFox Studio` 标题；扩展的截图/DOM 通道连续超时，因此本次不把桌面、移动和登录后套餐页记为视觉通过。真实商户小额支付及该视觉复验仍是开放收费前门禁。
+
+### 11.4 2026-08-28 Router 角色自动授权测试发布证据
+
+- Studio Git commit：`c8a130a`，测试镜像：`nanafox-studio:test-c8a130a-path`；Sub2API 测试部署 commit：`df127d246`，测试镜像：`sub2api:test-studio-df127d246`。
+- 切换前 `sub2api_test` 与 `nanafox_studio_test` 的 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-router-role-20260828T013344Z/`，两个 dump 均通过 `pg_restore -l` 和 SHA-256 校验。
+- Sub2API 新增签名 `/internal/v1/studio-auth/resolve`，按 stable subject 与邮箱读取当前账户状态和 `admin/user` 角色；无签名请求为 401，响应不含 Router access/refresh token。
+- Studio 移除 `STUDIO_ADMIN_SUBJECTS` 固定白名单。每个运营 API 请求都实时解析 Router 角色；管理员为 200、普通用户为 403、身份服务不可用或协议异常时为 503，不使用前端菜单作为授权边界。
+- 暗部署和公网切换后均使用真实 Router 测试库角色与临时 Studio Session 验证管理员 200、普通用户 403；探针 Session 与临时用户映射已清理。
+- 前端 50 个文件、594 个测试通过；Studio 服务端 96 个用例无失败；normal/studio 构建和 Sub2API handler/server 相关 Go 包通过。公网页面、静态资源、健康和就绪接口均为 200，生产 Router 未更新且保持 healthy。
+- 切换后根盘曾因构建缓存达到 93%；只清理了 4.95 GB 可重建 Docker build cache，数据库卷、作品、运行镜像与两个明确回滚容器未删除，根盘回落至 82%。
