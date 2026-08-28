@@ -243,7 +243,7 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
 | 测试服务器切换 | 已完成 | `nanafox-studio:test-476a9c7-path` 运行于 8788；`0e19078` 容器保留为唯一回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
-| 浏览器验收 | 公网桌面创作页与运营总览已用真实 Router 管理员 Session 复验，无页面错误或横向溢出 | 待补移动端、真实 3 次额度、删除/恢复作品和各运营写操作人工验收 |
+| 浏览器验收 | 公网桌面创作页与运营总览已用真实 Router 管理员 Session 复验；390×844 移动创作、登录和找回页无横向溢出 | 待补真实 3 次额度、删除/恢复作品和各运营写操作人工验收 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
 | 支付、订阅与加量包 | 代码与测试环境部署已完成 | 运营端可独立控制接单；服务端凭证和渠道默认关闭，配置测试商户并完成真实小额验收后才能开放 |
 | 灵感运营配置 | 已部署测试环境 | PostgreSQL 保存 9 条首批内容；运营端可新增、编辑、上下架、推荐和排序。收藏仍只在页面状态，首发不承诺跨设备同步 |
@@ -364,3 +364,13 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 新增 Studio 专用 CI：强制 PostgreSQL 测试、80% 行覆盖率、normal/studio 构建、真实 Dockerfile 构建及容器 health/ready/首页冒烟；本地合同已通过，仍需首次 GitHub runner 验证 Docker 阶段。PR 不加载 R2 Secret，R2 保留为测试部署门禁。
 - 清理了 10 个旧停止的 Studio 回滚容器、10 个旧可重建镜像、本次暗部署容器和临时源码；只保留当前镜像与上一版回滚。另清理 839.4 MB 可重建 Docker build cache，根盘由构建后的 89% 回到 86%。
 - Router/Sub2API 代码、配置和容器未修改或重启；Router test/prod health 为 200，Sub2API test/prod、PostgreSQL、Redis 保持 healthy。
+
+### 11.12 2026-08-28 账户找回测试发布证据
+
+- Studio Git commit：`f40e582`，测试镜像：`nanafox-studio:test-f40e582-path`，回滚容器：`nanafox-studio-test-rollback-476a9c7-20260828`。Sub2API test Git commit：`01dc0d6a2`，测试镜像：`sub2api:test-studio-01dc0d6a2`，回滚容器：`sub2api-test-rollback-df127d246-20260828`。
+- 切换前备份位于 `/home/nio/backups/nanafox-studio-test/pre-account-recovery-20260828T1225Z/`：Studio dump 37,885 bytes、`pg_restore -l` 89 行、SHA-256 `c048338919657eee8a06143443c8b1fb93796beabfa187f6fe3f9bbd617e3e41`；Sub2API test dump 90,053,286 bytes、`pg_restore -l` 1,249 行、SHA-256 `1b29aaf7fed0cfcb6c5409381edc39089e27734a6895e914b8616905f291c742`。
+- Sub2API 新增两条 HMAC 签名内部 adapter，复用现有邮件、token 和改密 service；reset token 改为 Redis WATCH 下的原子 compare-and-delete，并发仅一次成功。受影响 Go package 全量测试通过，暗启动 health 为 200，两条 adapter 未签名请求均为 401。
+- Studio 新增品牌内找回/重置页、账号与 IP 独立限流、固定服务端 reset base URL、`Referrer-Policy: no-referrer` 和改密后全部 Studio Session 撤销。前端 52 文件/604 测试通过；服务端 119 项中 118 通过、1 项仅因本地无真实 R2 Secret 跳过，行覆盖率 92.03%；normal/studio 构建和真实 Dockerfile 构建通过。
+- 8790 暗部署的 health、ready、首页、子路径静态资源和安全头通过。Studio 使用签名 adapter 已到达 Router 业务层；测试 Router 当前关闭密码找回，因此返回 `PASSWORD_RESET_DISABLED`。未擅自打开邮件能力，真实邮件和旧 Session 失效仍是配置启用后的测试环境验收项。
+- 公网首页、静态资源、health 和 ready 均为 200；未登录 Session、作品和运营接口均为 401。Chrome 使用真实 Router 管理员 Session 复验创作首页、自动运营入口、每日 3 次、3/3 套餐和 9/9 灵感；支付仍为未开放且凭证未完整。隔离会话验证找回/重置页无溢出、无控制台错误，reset token 在页面读取后立即从 URL 清除；390×844 移动创作、登录和找回页也无横向溢出。
+- 只替换 `sub2api-test` 和 `nanafox-studio-test`；`sub2api-prod` 未重启、未替换，Router test/prod 为 200，PostgreSQL/Redis 保持 healthy。清理了本次临时源码、可重建 build cache 和多余旧回滚容器/镜像，两个系统各保留一个直接回滚点，根盘由 97% 恢复到 85%。

@@ -234,8 +234,8 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 | 灵感内容运营 | `0e19078` 已部署；9 条首批内容已迁移到 PostgreSQL，运营端版本控制和审计通过测试 |
 | 前端失败闭环、单用户生成并发和超时恢复 | `476a9c7` 已部署测试环境；额度/作品读取失败可重试，单用户并发返回 429，migration 008 与启动恢复通过真实 PostgreSQL/R2 验证 |
 | Studio CI | `5fcc370` 已实现 PostgreSQL 强制测试、80% 行覆盖率、镜像构建和容器冒烟，待 GitHub runner 首次验证 |
-| 账户找回 | Router 已有核心邮件/token/改密能力；Studio 品牌页面和两条内部 adapter 按 `docs/nanafox-studio-next-slices.md` 实施 |
-| PostgreSQL/R2 测试环境部署 | `476a9c7` 已部署；`0e19078` 停止容器保留为唯一测试回滚点 |
+| 账户找回 | Studio `f40e582` 与 Router adapter `01dc0d6a2` 已部署测试环境；密码归 Router 唯一管理，Studio 只提供品牌页面、同源限流和改密后 Studio Session 撤销；Router reset token 已改为原子消费 |
+| PostgreSQL/R2 测试环境部署 | Studio `f40e582` 已部署，`476a9c7` 作为唯一 Studio 回滚点；Sub2API test `01dc0d6a2` 已部署，`df127d246` 作为唯一 Sub2API test 回滚点 |
 | 备份与恢复 | Studio 测试数据库已进入每日 NAS 备份，同机隔离恢复和 NAS 对象确认通过；6 小时频率、长期分层保留、NAS 异机恢复与 R2 作品备份仍待完成 |
 | 退款/自动续费 | 待真实需求和支付验收后实现 |
 | 生产发布 | 未授权、未执行 |

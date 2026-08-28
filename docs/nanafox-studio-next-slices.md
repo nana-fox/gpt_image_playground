@@ -21,8 +21,8 @@
 参考实现：`../../../../sub2api/backend/internal/server/routes/auth.go:58`
 
 - [x] 注册、登录继续走 Studio 同源 API 和 Router 内部签名 adapter。
-- [ ] 找回、重置复用 Router service，但不复用 Router 前端页面；decision: 避免用户跳出 Studio，同时不复制账户核心逻辑。
-- [ ] Router adapter 只接收固定 Studio reset base URL；decision: 浏览器不能提交任意回跳地址。
+- [x] 找回、重置复用 Router service，但不复用 Router 前端页面；decision: 避免用户跳出 Studio，同时不复制账户核心逻辑。
+- [x] Router adapter 只接收固定 Studio reset base URL；decision: 浏览器不能提交任意回跳地址。
 
 ## L1.3 约定清单
 
@@ -145,6 +145,7 @@ GenerationIdle
 |----|----------------|------|-----------------|
 | GitHub CI 尚未在真实 runner 构建容器 | 已知，首次 push 后确认 | Studio maintainer | STUDIO-CI-001 |
 | PR CI 不运行 R2 live Secret | 接受，测试部署强制运行 | Studio maintainer | STUDIO-R2-GATE |
-| Router reset token 当前非原子消费 | 待后续，本功能上线前阻断 | Router maintainer | ROUTER-AUTH-RESET-001 |
+| Router reset token 原子消费 | 已完成，并发二次消费返回失败 | Router maintainer | ROUTER-AUTH-RESET-001 closed |
+| 测试环境密码找回开关未启用 | 已知，签名 adapter 已达 Router 业务层并返回 `PASSWORD_RESET_DISABLED` | Infrastructure owner | ROUTER-TEST-RECOVERY-CONFIG |
 | PostgreSQL/Redis 端口整改属于共享基础设施 | 待独立维护窗口，不在本切片改 Sub2API | Infrastructure owner | INFRA-NET-001 |
 | 真实微信支付与备案 | 已拆分到其他任务 | Product owner | EXTERNAL-PAYMENT-ICP |
