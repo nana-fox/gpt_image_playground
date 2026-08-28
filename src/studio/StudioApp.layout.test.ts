@@ -76,4 +76,21 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).toContain('updateStudioPaymentPlan')
     expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
   })
+
+  it('uses a task-oriented operations console instead of exposing every write form at once', () => {
+    expect(adminSource).toContain('data-admin-shell')
+    expect(adminSource).toContain('aria-label="运营模块"')
+    expect(adminSource).toContain('运营总览')
+    expect(adminSource).toContain('用户额度')
+    expect(adminSource).toContain('套餐与价格')
+    expect(adminSource).toContain('确认发放')
+    expect(adminSource).toContain('编辑套餐')
+  })
+
+  it('does not present unfinished controls as working product features', () => {
+    expect(source).not.toContain('aria-label="作品筛选"')
+    expect(source).toContain('秒后重新发送')
+    expect(source).toContain('账户资料')
+    expect(source).not.toContain('<input value={displayName} readOnly />')
+  })
 })
