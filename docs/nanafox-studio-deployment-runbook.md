@@ -343,3 +343,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - NAS 上 `nanafox_studio_test-20260828T053439Z.dump` 为 34,504 bytes，配套 SHA 文件为 108 bytes；对象可读元数据确认成功。
 - 当前 timer 是每日任务而非 6 小时；NAS 对象显示约 31 天后过期。数据库异机恢复、7 日/4 周/6 月分层保留和 R2 作品备份仍是生产门禁，不能因本次上传成功而标记完成。
 - 备份期间 Studio 保持 healthy，公网 readiness 为 200；没有修改或重启 Router/Sub2API/PostgreSQL/Redis 容器。
+
+### 11.10 2026-08-28 灵感内容运营测试发布证据
+
+- RED commits：`45ba4d7`、`f948e62`；GREEN commit：`0e19078`；测试镜像：`nanafox-studio:test-0e19078-path`；上一版保存为停止容器 `nanafox-studio-test-rollback-8b025ff-20260828`。
+- migration 007 新增 Studio 自有灵感表和 9 条现有内容种子；运营端可新增、编辑、上下架、设置首页推荐和排序，写入使用乐观版本并与管理员审计同事务完成。前端不再硬编码内容。
+- 前端 601 项测试、normal/studio 构建通过；测试服务器真实 PostgreSQL/R2 服务端测试为 111/111、无跳过，行覆盖率 92.24%。
+- 暗部署后 schema migration 为 `1..7`；原有 2 个用户、1 个生成任务、0 个加额和 0 个支付订单保持不变。切换前 dump 位于 `/home/nio/backups/nanafox-studio-test/pre-inspirations-20260828T055846Z/`，大小 34,504 bytes，`pg_restore -l` 有 84 行，SHA-256 为 `d8898c9dca827563ed0b3d0c46010e3ca62923dd916004990ba7f7906ba3c649`。
+- 公网页面、静态资源、健康和就绪接口为 200；未登录 Session、灵感、运营和作品接口为 401。桌面灵感库、编辑弹窗和 390×844 移动布局用隔离 mock 数据完成同制品视觉自审，无横向溢出或控制台错误；公网真实管理员写操作仍需登录态验收。
+- 本次没有修改 Router/Sub2API 代码、配置或容器；支付渠道开关、套餐价格和额度仍由 Studio 运营端配置，商户 Secret 仍只存在服务器环境。Router test/prod health 为 200，Sub2API test/prod、PostgreSQL、Redis 保持 healthy。

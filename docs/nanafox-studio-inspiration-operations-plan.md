@@ -55,6 +55,16 @@
 - 回滚代码后前端会恢复内置五条内容；运营期间新增或修改的数据保留，不删除。
 - Router/Sub2API、用户、额度、支付、生成任务和 R2 对象均不在本次回滚范围。
 
+## 2026-08-28 测试部署证据
+
+- RED commits：`45ba4d7`、`f948e62`；GREEN commit：`0e19078`；运行镜像：`nanafox-studio:test-0e19078-path`。
+- normal/studio 构建和前端 601 项测试通过；Studio 服务端本地 111 项零失败，测试服务器真实 PostgreSQL/R2 为 111/111 且无跳过，行覆盖率 92.24%。
+- migration 007 暗部署后版本为 `1..7`；原有 2 个用户、1 个生成任务、0 个加额和 0 个支付订单保持不变，新增 9 条灵感，其中 9 条上架、5 条首页推荐。
+- 切换前 PostgreSQL dump 位于 `/home/nio/backups/nanafox-studio-test/pre-inspirations-20260828T055846Z/`，大小 34,504 bytes，`pg_restore -l` 有 84 行，SHA-256 为 `d8898c9dca827563ed0b3d0c46010e3ca62923dd916004990ba7f7906ba3c649`。
+- 公网页面、静态资源、健康和就绪接口为 200；未登录 Session、灵感、运营、作品和最近删除接口为 401。上一镜像保留为停止容器 `nanafox-studio-test-rollback-8b025ff-20260828`。
+- 同一构建制品通过隔离 Playwright mock 数据完成桌面灵感库、编辑弹窗和 390×844 移动布局自审；无横向溢出、无浏览器错误。该结果只证明 UI，不替代公网真实管理员 Session 的写操作验收。
+- Router/Sub2API 代码、配置和容器未修改或重启；test/prod Router health 为 200，Sub2API test/prod、PostgreSQL 和 Redis 保持 healthy。
+
 ## 剩余风险登记
 
 | 项 | 状态 | Follow-up |
