@@ -1,6 +1,6 @@
 # NanaFox Studio 作品删除与保留计划
 
-> 状态：2026-08-28 实施基线。全部逻辑位于 Studio；Router/Sub2API 不增加接口、不修改数据或任务状态。
+> 状态：2026-08-28 已部署公网测试环境。全部逻辑位于 Studio；Router/Sub2API 不增加接口、不修改数据或任务状态。
 
 ## 用户旅程
 
@@ -117,3 +117,13 @@ succeeded + active
 |----|------|------|-----------------|
 | 当前无 NAS/R2 误删恢复自动化 | 生产阻断，先完成备份恢复演练 | NanaFox ops | `studio-artwork-backup-restore` |
 | 清理指标首发只用结构化日志 | 已知，首批真实用户后接监控 | NanaFox ops | `studio-retention-metrics` |
+
+## 测试发布证据
+
+- RED commit `086d5b5`，GREEN commit `8b025ff`；migration 006 已应用到独立 Studio 测试数据库。
+- 前端 50 个文件、599 个测试通过；Studio 服务端本地 108 项零失败，测试服务器真实 PostgreSQL/R2 运行 108/108 且无跳过。
+- 切换前 dump 位于 `/home/nio/backups/nanafox-studio-test/pre-artwork-retention-20260828T052636Z/`，大小 33,960 bytes，`pg_restore -l` 有 83 行，SHA-256 为 `c72bfaa9e7720d2b9f75ee9b6aa5d2a25b40f6e1550ac6c5d7e4bbf74d1cdc9b`。
+- 8790 暗部署与公网 8788 的 health/readiness 均通过；迁移前后保持 2 个用户、1 个生成任务、0 个加额和 0 个支付订单。
+- 公网未登录作品列表、最近删除、删除、恢复和运营接口均为 401；Studio 仍只监听 `127.0.0.1:8788`。
+- 当前测试镜像为 `nanafox-studio:test-8b025ff-path`，上一版本保留为停止容器 `nanafox-studio-test-rollback-1a715b6-20260828`。
+- Chrome 已确认现有 Studio 标签页，但刷新与 DOM 通道连续超时；本次不把登录后作品库视觉验收记为通过。

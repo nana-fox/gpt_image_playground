@@ -233,22 +233,22 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
-| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 005 已应用；支付、额度与账户入口限流 PostgreSQL 集成测试通过 |
+| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 006 已应用；支付、额度、账户入口限流和作品保留 PostgreSQL 集成测试通过 |
 | R2 Store 代码 | 已完成并部署测试环境 | 私有 PUT/GET/幂等/冲突/DELETE 合约通过 |
 | Cloudflare R2 订阅与测试 Bucket | 已完成 | 补未完成 multipart upload 清理，不设置全桶 30 天删除 |
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-1a715b6-path` 运行于 8788；`c05054c` 容器保留为当前回滚点 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-8b025ff-path` 运行于 8788；`1a715b6` 容器保留为当前回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
-| 浏览器验收 | 公网桌面与移动登录/注册、完整运营台本地视觉通过 | 待使用真实 Router 账户完成 3 次额度、真实作品历史和公网运营台人工验收 |
+| 浏览器验收 | 公网桌面与移动登录/注册、完整运营台本地视觉通过 | 待使用真实 Router 账户完成 3 次额度、删除/恢复真实作品和公网运营台人工验收；本次 Chrome DOM 通道超时，不虚报通过 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
 | 支付、订阅与加量包 | 代码与测试环境部署已完成 | 运营端可独立控制接单；服务端凭证和渠道默认关闭，配置测试商户并完成真实小额验收后才能开放 |
 | 灵感运营配置 | 未实现 | 当前灵感为前端静态内容，收藏刷新会丢失；不把“每周更新”当真实运营能力 |
 | Studio 账户入口防刷 | 已部署测试环境 | 验证码、注册、登录和 2FA 已在调用 Router 前按账号/IP 集中限流；生产前补 429 告警，出现分布式滥用再启用边缘规则或 Turnstile |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改 | 收紧到 localhost 或云防火墙白名单，不影响 Sub2API |
 | 共享 PostgreSQL 备份 | 生产阻断 | 现有备份任务需修复并完成 NAS 异机恢复演练，不能以同盘 dump 代替恢复证据 |
-| 测试服务器磁盘 | 观察项 | 账户限流版本构建后根盘为 87%；当前与 `c05054c` 回滚镜像必须保留，旧历史候选应另行确认后清理，生产前配置阈值告警 |
+| 测试服务器磁盘 | 观察项 | 作品保留版本切换并清理本次临时制品后根盘为 86%；当前与 `1a715b6` 回滚镜像必须保留，旧历史候选应另行确认后清理，生产前配置阈值告警 |
 | Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
 | NAS 自动备份 | 未执行 | 测试环境稳定后配置只读拉取和恢复演练 |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
@@ -322,3 +322,13 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 测试服务器使用真实 PostgreSQL 与私有 R2 运行 104/104，通过且无跳过；服务端行覆盖率 91.86%，限流模块行覆盖率 100%、分支覆盖率 81.25%；前端 50 个文件、598 个测试与 Studio 构建通过。
 - 8790 暗部署和公网 8788 都验证：同一账号前 10 次错误登录由 Router 返回 401，第 11 次由 Studio 返回 429 且 `Retry-After=900`；PostgreSQL 只出现长度 64 的 HMAC，Caddy 公网请求未产生 `unknown` IP 桶。
 - Studio 仍只监听 `127.0.0.1:8788`。公网前端、健康和就绪接口为 200；未登录 Session、运营与生成接口为 401。Sub2API test/prod、PostgreSQL、Redis 和 Router test/prod `/health` 均保持 healthy/200，Router/Sub2API 代码、配置和容器均未修改或重启。
+
+### 11.8 2026-08-28 作品删除与恢复测试发布证据
+
+- RED commit：`086d5b5`；GREEN commit：`8b025ff`；测试镜像：`nanafox-studio:test-8b025ff-path`；上一版保存为停止容器 `nanafox-studio-test-rollback-1a715b6-20260828`。
+- 切换前 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-artwork-retention-20260828T052636Z/`；dump 为 33,960 bytes，`pg_restore -l` 有 83 行，SHA-256 为 `c72bfaa9e7720d2b9f75ee9b6aa5d2a25b40f6e1550ac6c5d7e4bbf74d1cdc9b`。
+- migration 006 在现有任务表增加可空删除、清理期限和已清理时间；删除后进入 7 天“最近删除”，恢复不重新扣额，到期先删除私有 R2 对象再写墓碑，失败保留待重试状态。
+- 前端 50 个文件、599 个测试通过；Studio 服务端本地 108 项零失败，测试服务器真实 PostgreSQL/R2 为 108/108 且无跳过。
+- 8790 暗部署应用 migration 后，原有 2 个测试用户、1 个生成任务、0 个加额和 0 个支付订单保持不变；公网前端、健康和就绪为 200，未登录作品、最近删除、删除、恢复和运营接口均为 401。
+- Studio 仍只监听 `127.0.0.1:8788`；Sub2API test/prod、PostgreSQL、Redis 和 Router test/prod 均保持 healthy/200，Router/Sub2API 代码、配置和容器均未修改或重启。
+- Chrome 已确认现有 Studio 页面标签，但刷新和 DOM 通道连续超时，因此本次不把登录后作品库“全部作品/最近删除”的视觉验收记为通过。
