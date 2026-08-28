@@ -209,6 +209,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
   const [selectedInspiration, setSelectedInspiration] = useState('')
   const [quota, setQuota] = useState<StudioQuotaBalance | null>()
   const [tasks, setTasks] = useState<StudioGenerationTask[]>()
+  const [tasksError, setTasksError] = useState('')
   const [inspirations, setInspirations] = useState<StudioInspiration[]>([])
   const [admin, setAdmin] = useState<StudioAdminSession | null>()
   const [loadError, setLoadError] = useState('')
@@ -228,10 +229,10 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
       .then(([quotaResult, tasksResult, inspirationResult, adminResult]) => {
         if (!active) return
         setQuota(quotaResult.status === 'fulfilled' ? quotaResult.value : null)
-        setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : [])
+        setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : undefined)
+        setTasksError(tasksResult.status === 'rejected' ? '作品记录暂时无法读取，请重试' : '')
         setInspirations(inspirationResult.status === 'fulfilled' ? inspirationResult.value : [])
         setAdmin(adminResult.status === 'fulfilled' ? adminResult.value : null)
-        if (tasksResult.status === 'rejected') setLoadError('作品记录暂时无法读取')
         if (inspirationResult.status === 'rejected') setLoadError('灵感内容暂时无法读取')
       })
     return () => {
@@ -253,13 +254,29 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
     navigate('create')
   }
 
-  const refreshQuota = async () => setQuota(await getStudioQuota())
+  const refreshQuota = async () => {
+    setQuota(undefined)
+    try {
+      setQuota(await getStudioQuota())
+    } catch {
+      setQuota(null)
+    }
+  }
+  const refreshTasks = async () => {
+    setTasks(undefined)
+    setTasksError('')
+    try {
+      setTasks(await listStudioGenerations())
+    } catch {
+      setTasksError('作品记录暂时无法读取，请重试')
+    }
+  }
   const addTask = (task: StudioGenerationTask) => setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
   const removeTask = (id: string) => setTasks((current) => (current ?? []).filter((item) => item.id !== id))
   const content = route === 'inspiration'
     ? <InspirationPage items={inspirations} useTemplate={useTemplate} />
     : route === 'works'
-      ? <WorksPage tasks={tasks} addTask={addTask} removeTask={removeTask} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
+      ? <WorksPage tasks={tasks} tasksError={tasksError} refreshTasks={refreshTasks} addTask={addTask} removeTask={removeTask} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
       : route === 'points'
         ? <QuotaPage quota={quota} refreshQuota={refreshQuota} navigate={navigate} />
         : route === 'settings'
@@ -270,7 +287,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
               : admin
                 ? <StudioAdminPage admin={admin} onExit={() => navigate('create')} />
                 : <div className="page-frame empty-state"><Gear size={30} /><h3>当前账户没有运营权限</h3><p>运营权限只按服务端配置的 Router 用户标识开放。</p><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></div>
-            : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} inspirations={inspirations} quota={quota} tasks={tasks} addTask={addTask} refreshQuota={refreshQuota} navigate={navigate} />
+            : <CreatePage prompt={prompt} setPrompt={setPrompt} selectedInspiration={selectedInspiration} inspirations={inspirations} quota={quota} tasks={tasks} tasksError={tasksError} addTask={addTask} refreshQuota={refreshQuota} refreshTasks={refreshTasks} navigate={navigate} />
 
   return (
     <main className="app-shell" data-studio-workspace>
@@ -307,7 +324,7 @@ function AppHeader({ route, quota, session, isAdmin, navigate, onLogout }: { rou
   )
 }
 
-function CreatePage({ prompt, setPrompt, selectedInspiration, inspirations, quota, tasks, addTask, refreshQuota, navigate }: { prompt: string, setPrompt: (prompt: string) => void, selectedInspiration: string, inspirations: StudioInspiration[], quota: StudioQuotaBalance | null | undefined, tasks: StudioGenerationTask[] | undefined, addTask: (task: StudioGenerationTask) => void, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
+function CreatePage({ prompt, setPrompt, selectedInspiration, inspirations, quota, tasks, tasksError, addTask, refreshQuota, refreshTasks, navigate }: { prompt: string, setPrompt: (prompt: string) => void, selectedInspiration: string, inspirations: StudioInspiration[], quota: StudioQuotaBalance | null | undefined, tasks: StudioGenerationTask[] | undefined, tasksError: string, addTask: (task: StudioGenerationTask) => void, refreshQuota: () => Promise<void>, refreshTasks: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const [size, setSize] = useState<StudioGenerationInput['size']>('1536x1024')
   const [quality, setQuality] = useState<StudioGenerationInput['quality']>('medium')
@@ -358,9 +375,9 @@ function CreatePage({ prompt, setPrompt, selectedInspiration, inspirations, quot
 
   return (
     <>
-      <section className="hero" style={{ '--studio-hero-image': `url(${studioAssetPath('hero-studio.png')})` } as CSSProperties}><div className="hero-backdrop" /><div className="hero-content"><h1>今天想做什么<span>？</span></h1><p className="hero-subtitle">{quota?.free.enabled ? `不用研究提示词，今天还可免费创作 ${quota.free.remaining} 次` : quota === undefined ? '正在读取你的创作额度…' : '可以使用购买或订阅额度继续创作'}</p><div className={`composer ${error ? 'composer-error' : ''}`}><textarea ref={composerRef} value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(''); setRequestKey('') }} placeholder="描述你想要的画面…" maxLength={10000} /><div className="composer-toolbar"><div className="composer-actions"><button className="toolbar-button" type="button" disabled title="参考图编辑将在下一阶段开放"><ImageSquare size={19} /><span>添加参考图</span></button>{featured[0] && <button className="suggestion-chip" type="button" onClick={() => applyInspiration(featured[0])}><Sparkle size={17} weight="fill" />试试：{featured[0].title}</button>}</div><div className="generation-settings"><label><span>画面比例</span><select value={size} onChange={(event) => { setSize(event.target.value as StudioGenerationInput['size']); setRequestKey('') }}><option value="1024x1024">1:1</option><option value="1536x1024">3:2</option><option value="1024x1536">2:3</option></select></label><label><span>画质</span><select value={quality} onChange={(event) => { setQuality(event.target.value as StudioGenerationInput['quality']); setRequestKey('') }}><option value="medium">标准画质</option><option value="high">精细画质</option></select></label><div className="create-action"><button className="primary-button" type="button" onClick={() => void submit()} disabled={generating || quota === undefined}>{generating ? <span className="loading-dot" /> : <Sparkle size={18} weight="fill" />}{generating ? '正在创作' : '开始创作'}</button><span>{quotaUsageText(quota)}</span></div></div></div></div>{error && <p className="error-message" role="alert">{error}</p>}</div></section>
+      <section className="hero" style={{ '--studio-hero-image': `url(${studioAssetPath('hero-studio.png')})` } as CSSProperties}><div className="hero-backdrop" /><div className="hero-content"><h1>今天想做什么<span>？</span></h1><p className="hero-subtitle">{quota?.free.enabled ? `不用研究提示词，今天还可免费创作 ${quota.free.remaining} 次` : quota === undefined ? '正在读取你的创作额度…' : quota === null ? '额度暂时无法读取，请重试后再创作' : '可以使用购买或订阅额度继续创作'}</p><div className={`composer ${error ? 'composer-error' : ''}`}><textarea ref={composerRef} value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(''); setRequestKey('') }} placeholder="描述你想要的画面…" maxLength={10000} /><div className="composer-toolbar"><div className="composer-actions"><button className="toolbar-button" type="button" disabled title="参考图编辑将在下一阶段开放"><ImageSquare size={19} /><span>添加参考图</span></button>{featured[0] && <button className="suggestion-chip" type="button" onClick={() => applyInspiration(featured[0])}><Sparkle size={17} weight="fill" />试试：{featured[0].title}</button>}</div><div className="generation-settings"><label><span>画面比例</span><select value={size} onChange={(event) => { setSize(event.target.value as StudioGenerationInput['size']); setRequestKey('') }}><option value="1024x1024">1:1</option><option value="1536x1024">3:2</option><option value="1024x1536">2:3</option></select></label><label><span>画质</span><select value={quality} onChange={(event) => { setQuality(event.target.value as StudioGenerationInput['quality']); setRequestKey('') }}><option value="medium">标准画质</option><option value="high">精细画质</option></select></label><div className="create-action"><button className="primary-button" type="button" onClick={() => void submit()} disabled={generating || quota === undefined || quota === null}>{generating ? <span className="loading-dot" /> : <Sparkle size={18} weight="fill" />}{generating ? '正在创作' : '开始创作'}</button><span>{quotaUsageText(quota)}</span>{quota === null && <button className="text-button" type="button" onClick={() => void refreshQuota()}><ArrowCounterClockwise size={14} />重新读取额度</button>}</div></div></div></div>{error && <p className="error-message" role="alert">{error}</p>}</div></section>
       <section className="content-section inspiration-section"><div className="section-heading"><h2>从灵感开始</h2><p>选一个方向，提示词会自动准备好</p><button className="heading-link" onClick={() => navigate('inspiration')}>浏览灵感库 <ArrowRight size={16} /></button></div>{featured.length ? <div className="inspiration-grid">{featured.map((item) => <article key={item.id} className={`inspiration-card ${chosenInspiration === item.id ? 'selected' : ''}`} onClick={() => applyInspiration(item)}><img src={studioAssetPath(item.image)} alt={item.title} /><div className="card-shade" />{chosenInspiration === item.id && <span className="selected-mark"><CheckCircle size={18} weight="fill" /> 已选</span>}<div className="card-copy"><h3>{item.title}</h3><p>{item.description}</p></div><button type="button"><Sparkle size={15} weight="fill" /> 使用此灵感</button></article>)}</div> : <div className="recent-empty"><Compass size={25} /><span><strong>灵感正在准备中</strong><small>你仍然可以直接描述想要的画面。</small></span></div>}</section>
-      <section className="content-section recent-section"><div className="section-heading recent-heading"><div><h2>最近创作</h2><p>自动保存在作品库，随时继续</p></div><button className="text-button" onClick={() => navigate('works')}>查看全部 <ArrowRight size={17} /></button></div>{tasks === undefined ? <div className="recent-loading">正在读取真实作品…</div> : recent.length ? <div className="recent-grid">{recent.slice(0, 7).map((task) => <button className="recent-item" key={task.id} onClick={() => setSelectedTask(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="recent-meta"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)}</small></span></button>)}</div> : <div className="recent-empty"><Images size={25} /><span><strong>还没有作品</strong><small>完成第一次创作后会自动保存在这里。</small></span></div>}</section>
+      <section className="content-section recent-section"><div className="section-heading recent-heading"><div><h2>最近创作</h2><p>自动保存在作品库，随时继续</p></div><button className="text-button" onClick={() => navigate('works')}>查看全部 <ArrowRight size={17} /></button></div>{tasksError ? <div className="recent-empty"><Images size={25} /><span><strong>作品暂时无法读取</strong><small>{tasksError}</small></span><button className="secondary-button" onClick={() => void refreshTasks()}>重新读取作品</button></div> : tasks === undefined ? <div className="recent-loading">正在读取真实作品…</div> : recent.length ? <div className="recent-grid">{recent.slice(0, 7).map((task) => <button className="recent-item" key={task.id} onClick={() => setSelectedTask(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="recent-meta"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)}</small></span></button>)}</div> : <div className="recent-empty"><Images size={25} /><span><strong>还没有作品</strong><small>完成第一次创作后会自动保存在这里。</small></span></div>}</section>
       {selectedTask?.output && <TaskModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
     </>
   )
@@ -378,11 +395,15 @@ function InspirationPage({ items, useTemplate }: { items: StudioInspiration[], u
 
 function WorksPage({
   tasks,
+  tasksError,
+  refreshTasks,
   addTask,
   removeTask,
   useWork,
 }: {
   tasks: StudioGenerationTask[] | undefined
+  tasksError: string
+  refreshTasks: () => Promise<void>
   addTask: (task: StudioGenerationTask) => void
   removeTask: (id: string) => void
   useWork: (task: StudioGenerationTask | null) => void
@@ -393,21 +414,25 @@ function WorksPage({
   const [deletedTasks, setDeletedTasks] = useState<StudioGenerationTask[]>()
   const [deletedError, setDeletedError] = useState('')
   const visibleTasks = view === 'active' ? tasks : deletedTasks
+  const currentError = view === 'active' ? tasksError : deletedError
   const works = useMemo(() => (visibleTasks ?? []).filter((task) => task.output && task.input.prompt.includes(query)), [visibleTasks, query])
+
+  const loadDeletedTasks = async () => {
+    setDeletedTasks(undefined)
+    setDeletedError('')
+    try {
+      setDeletedTasks(await listStudioGenerations('deleted'))
+    } catch {
+      setDeletedError('最近删除暂时无法读取，请重试')
+    }
+  }
 
   const switchView = async (next: 'active' | 'deleted') => {
     setView(next)
     setSelected(null)
     setQuery('')
-    setDeletedError('')
     if (next === 'active') return
-    setDeletedTasks(undefined)
-    try {
-      setDeletedTasks(await listStudioGenerations('deleted'))
-    } catch (error) {
-      setDeletedTasks([])
-      setDeletedError(error instanceof Error ? error.message : '最近删除暂时无法读取')
-    }
+    await loadDeletedTasks()
   }
 
   const deleteTask = async (task: StudioGenerationTask) => {
@@ -425,11 +450,9 @@ function WorksPage({
   }
 
   return <div className="page-frame">
-    <header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{visibleTasks === undefined ? '正在读取真实作品…' : view === 'deleted' ? `${works.length} 个作品 · 7 天内可恢复` : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header>
+    <header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{currentError ? '作品列表读取失败' : visibleTasks === undefined ? '正在读取真实作品…' : view === 'deleted' ? `${works.length} 个作品 · 7 天内可恢复` : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header>
     <div className="works-toolbar"><div className="segmented-control"><button className={view === 'active' ? 'active' : ''} onClick={() => void switchView('active')}>全部作品</button><button className={view === 'deleted' ? 'active' : ''} onClick={() => void switchView('deleted')}>最近删除</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div></div>
-    {deletedError && <p className="auth-error" role="alert">{deletedError}</p>}
-    <div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{view === 'deleted' && task.purgeAt ? `${formatDate(task.purgeAt)} 后清理` : `${formatDate(task.createdAt)} · ${ratioName(task.input.size)}`}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>
-    {visibleTasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>{view === 'deleted' ? '最近没有删除的作品' : '还没有这样的作品'}</h3><p>{query ? '清空搜索，或者查看其他作品。' : view === 'deleted' ? '删除的作品会在这里保留 7 天。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}
+    {currentError ? <div className="empty-state" role="alert"><Images size={30} /><h3>作品暂时无法读取</h3><p>{currentError}</p><button className="secondary-button" onClick={() => void (view === 'active' ? refreshTasks() : loadDeletedTasks())}>重新读取作品</button></div> : <><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{view === 'deleted' && task.purgeAt ? `${formatDate(task.purgeAt)} 后清理` : `${formatDate(task.createdAt)} · ${ratioName(task.input.size)}`}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{visibleTasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>{view === 'deleted' ? '最近没有删除的作品' : '还没有这样的作品'}</h3><p>{query ? '清空搜索，或者查看其他作品。' : view === 'deleted' ? '删除的作品会在这里保留 7 天。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}</>}
     {selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={view === 'active' ? () => useWork(selected) : undefined} onDelete={view === 'active' ? () => deleteTask(selected) : undefined} onRestore={view === 'deleted' ? () => restoreTask(selected) : undefined} />}
   </div>
 }

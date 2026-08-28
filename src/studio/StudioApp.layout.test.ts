@@ -52,6 +52,20 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain("err.reason !== 'GENERATION_FINALIZATION_PENDING'")
   })
 
+  it('blocks creation while quota is unavailable and exposes a retry', () => {
+    expect(source).toContain('disabled={generating || quota === undefined || quota === null}')
+    expect(source).toContain('额度暂时无法读取，请重试后再创作')
+    expect(source).toContain('重新读取额度')
+  })
+
+  it('keeps failed work requests distinct from an empty library and exposes a retry', () => {
+    expect(source).toContain("setTasks(tasksResult.status === 'fulfilled' ? tasksResult.value : undefined)")
+    expect(source).toContain("setTasksError(tasksResult.status === 'rejected' ? '作品记录暂时无法读取，请重试' : '')")
+    expect(source).toContain('tasksError={tasksError}')
+    expect(source).toContain('重新读取作品')
+    expect(source).not.toContain('setDeletedTasks([])')
+  })
+
   it('implements the approved Demo product shell instead of an alternate workspace', () => {
     expect(source).toContain("import './studio.css'")
     expect(source).toContain('首页')
