@@ -171,7 +171,9 @@ test('soft-deleted tasks are owner-scoped, restorable for seven days, and purge 
   now = new Date('2026-09-04T12:00:00.001Z')
   assert.equal(await tasks.restoreTask(user.id, task.id), null)
   assert.deepEqual((await tasks.listPurgePending()).map((item) => item.id), [task.id])
-  const purged = await tasks.markPurged(task.id)
+  const purged = await tasks.purgeTask(task.id, async (output) => {
+    assert.equal(output.key, `${user.id}/${task.id}.png`)
+  })
   assert.equal(purged.output, null)
   assert.equal(purged.purgedAt, now.toISOString())
   assert.deepEqual(await tasks.listPurgePending(), [])

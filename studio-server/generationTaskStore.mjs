@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
+const ARTWORK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+
 export class TaskStoreError extends Error {
   constructor(message, reason = 'TASK_STORE_ERROR') {
     super(message)
@@ -93,11 +95,13 @@ export function createGenerationTaskStore(options = {}) {
       return transitionFromMany(id, ['created', 'reserved', 'running', 'output_stored'], value, clock, database)
     },
 
-    async getTask(userId, id) {
+    async getTask(userId, id, options = {}) {
+      const visibility = options.includeDeleted ? '' : 'AND deleted_at IS NULL'
       const result = await database.query(`
         SELECT *
         FROM studio_generation_tasks
         WHERE user_id = $1 AND id = $2
+          ${visibility}
       `, [String(userId ?? ''), String(id ?? '')])
       return mapTask(result.rows[0])
     },
@@ -105,14 +109,82 @@ export function createGenerationTaskStore(options = {}) {
     async listTasks(userId, options = {}) {
       const requested = options.limit === undefined ? 50 : Number(options.limit)
       const limit = Number.isInteger(requested) ? Math.min(100, Math.max(1, requested)) : 50
+      const visibility = options.deleted
+        ? 'deleted_at IS NOT NULL AND purged_at IS NULL AND purge_after > $3'
+        : 'deleted_at IS NULL'
+      const values = options.deleted
+        ? [String(userId ?? ''), limit, clock().getTime()]
+        : [String(userId ?? ''), limit]
       const result = await database.query(`
         SELECT *
         FROM studio_generation_tasks
-        WHERE user_id = $1
+        WHERE user_id = $1 AND ${visibility}
         ORDER BY created_at DESC, id DESC
         LIMIT $2
-      `, [String(userId ?? ''), limit])
+      `, values)
       return result.rows.map(mapTask)
+    },
+
+    async deleteTask(userId, id) {
+      const now = clock().getTime()
+      const result = await database.query(`
+        UPDATE studio_generation_tasks
+        SET deleted_at = $3, purge_after = $4, updated_at = $3
+        WHERE user_id = $1 AND id = $2
+          AND status = 'succeeded' AND output_json IS NOT NULL AND deleted_at IS NULL
+        RETURNING *
+      `, [String(userId ?? ''), String(id ?? ''), now, now + ARTWORK_RETENTION_MS])
+      return mapTask(result.rows[0])
+    },
+
+    async restoreTask(userId, id) {
+      const now = clock().getTime()
+      const result = await database.query(`
+        UPDATE studio_generation_tasks
+        SET deleted_at = NULL, purge_after = NULL, updated_at = $3
+        WHERE user_id = $1 AND id = $2
+          AND deleted_at IS NOT NULL AND purged_at IS NULL AND purge_after > $3
+        RETURNING *
+      `, [String(userId ?? ''), String(id ?? ''), now])
+      return mapTask(result.rows[0])
+    },
+
+    async listPurgePending(options = {}) {
+      const requested = options.limit === undefined ? 100 : Number(options.limit)
+      const limit = Number.isInteger(requested) ? Math.min(500, Math.max(1, requested)) : 100
+      const result = await database.query(`
+        SELECT *
+        FROM studio_generation_tasks
+        WHERE deleted_at IS NOT NULL AND purged_at IS NULL
+          AND purge_after <= $1 AND output_json IS NOT NULL
+        ORDER BY purge_after ASC, id ASC
+        LIMIT $2
+      `, [clock().getTime(), limit])
+      return result.rows.map(mapTask)
+    },
+
+    async purgeTask(id, removeOutput) {
+      if (!database.transaction || typeof removeOutput !== 'function') throw new Error('Studio artwork purge dependencies are invalid')
+      const taskId = String(id ?? '')
+      const now = clock().getTime()
+      return database.transaction(async (client) => {
+        const current = await client.query(`
+          SELECT *
+          FROM studio_generation_tasks
+          WHERE id = $1 AND deleted_at IS NOT NULL AND purged_at IS NULL
+            AND purge_after <= $2 AND output_json IS NOT NULL
+          FOR UPDATE
+        `, [taskId, now])
+        if (!current.rowCount) return null
+        await removeOutput(mapTask(current.rows[0]).output)
+        const result = await client.query(`
+          UPDATE studio_generation_tasks
+          SET output_json = NULL, purged_at = $2, updated_at = $2
+          WHERE id = $1 AND deleted_at IS NOT NULL AND purged_at IS NULL
+          RETURNING *
+        `, [taskId, now])
+        return mapTask(result.rows[0])
+      })
     },
 
     async listFinalizationPending() {
@@ -209,6 +281,9 @@ function mapTask(row) {
     reservationId: row.reservation_id ?? null,
     output: typeof row.output_json === 'string' ? JSON.parse(row.output_json) : row.output_json,
     errorReason: row.error_reason ?? null,
+    deletedAt: row.deleted_at === null || row.deleted_at === undefined ? null : new Date(Number(row.deleted_at)).toISOString(),
+    purgeAt: row.purge_after === null || row.purge_after === undefined ? null : new Date(Number(row.purge_after)).toISOString(),
+    purgedAt: row.purged_at === null || row.purged_at === undefined ? null : new Date(Number(row.purged_at)).toISOString(),
     createdAt: new Date(Number(row.created_at)).toISOString(),
     updatedAt: new Date(Number(row.updated_at)).toISOString(),
   }

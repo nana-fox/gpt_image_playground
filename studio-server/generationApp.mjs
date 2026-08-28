@@ -24,10 +24,30 @@ export function createStudioGenerationApp(options = {}) {
 
       try {
         if (request.method === 'GET' && url.pathname === '/api/generations') {
-          return json({ ok: true, data: (await tasks.listTasks(session.user.id)).map((task) => publicTask(task, publicBasePath)) })
+          if (url.searchParams.size > 1 || [...url.searchParams.keys()].some((key) => key !== 'view')) {
+            return jsonError(400, 'VALIDATION_ERROR', '作品列表参数无效')
+          }
+          const view = url.searchParams.get('view') ?? 'active'
+          if (view !== 'active' && view !== 'deleted') return jsonError(400, 'VALIDATION_ERROR', '作品列表参数无效')
+          const list = await tasks.listTasks(session.user.id, { deleted: view === 'deleted' })
+          return json({ ok: true, data: list.map((task) => publicTask(task, publicBasePath)) })
         }
 
+        const restoreMatch = url.pathname.match(/^\/api\/generations\/([A-Za-z0-9_-]+)\/restore$/)
         const taskMatch = url.pathname.match(/^\/api\/generations\/([A-Za-z0-9_-]+)$/)
+        if ((request.method === 'DELETE' && taskMatch) || (request.method === 'POST' && restoreMatch)) {
+          if (request.headers.get('origin') !== publicOrigin) {
+            return jsonError(403, 'ORIGIN_REJECTED', '请求来源无效')
+          }
+          if (!await verifyCsrf(request, sessions)) {
+            return jsonError(403, 'CSRF_REJECTED', '安全校验失败，请刷新页面后重试')
+          }
+          const changed = request.method === 'DELETE'
+            ? await tasks.deleteTask(session.user.id, taskMatch[1])
+            : await tasks.restoreTask(session.user.id, restoreMatch[1])
+          if (!changed) return jsonError(404, 'NOT_FOUND', '找不到这个作品')
+          return json({ ok: true, data: publicTask(changed, publicBasePath) })
+        }
         if (request.method === 'GET' && taskMatch) {
           const task = await tasks.getTask(session.user.id, taskMatch[1])
           if (!task) return jsonError(404, 'NOT_FOUND', '找不到这个创作任务')
@@ -36,7 +56,7 @@ export function createStudioGenerationApp(options = {}) {
 
         const artworkMatch = url.pathname.match(/^\/api\/artworks\/([A-Za-z0-9_-]+)$/)
         if (request.method === 'GET' && artworkMatch) {
-          const task = await tasks.getTask(session.user.id, artworkMatch[1])
+          const task = await tasks.getTask(session.user.id, artworkMatch[1], { includeDeleted: true })
           if (!task?.output || task.status !== 'succeeded') {
             return jsonError(404, 'NOT_FOUND', '找不到这个作品')
           }
@@ -133,6 +153,9 @@ function publicTask(task, publicBasePath) {
     errorReason: task.errorReason,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+    deletedAt: task.deletedAt ?? null,
+    purgeAt: task.purgeAt ?? null,
+    purgedAt: task.purgedAt ?? null,
     output: null,
   }
   if (task.output && task.status === 'succeeded') {

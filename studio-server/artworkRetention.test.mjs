@@ -9,8 +9,10 @@ test('purges expired outputs only after storage deletion', async () => {
   const result = await purgeExpiredArtworks({
     tasks: {
       listPurgePending: () => [task],
-      markPurged(id) {
+      async purgeTask(id, removeOutput) {
+        await removeOutput(task.output)
         events.push(['purged', id])
+        return { id }
       },
     },
     outputs: {
@@ -32,7 +34,8 @@ test('keeps failed storage deletions pending', async () => {
     const result = await purgeExpiredArtworks({
       tasks: {
         listPurgePending: () => [{ id: 'task-2', output: { key: 'user-1/task-2.png' } }],
-        markPurged() {
+        async purgeTask(_id, removeOutput) {
+          await removeOutput({ key: 'user-1/task-2.png' })
           marked = true
         },
       },

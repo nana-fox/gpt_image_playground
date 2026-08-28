@@ -51,9 +51,9 @@ describe('Studio generation client', () => {
 
   it('loads recently deleted works and sends CSRF-protected delete and restore requests', async () => {
     const deleted = { ...task, deletedAt: '2026-08-28T12:00:00.000Z', purgeAt: '2026-09-04T12:00:00.000Z' }
-    const request = vi.fn(async (path: string, init?: RequestInit) => Response.json({
+    const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => Response.json({
       ok: true,
-      data: path.endsWith('?view=deleted') ? [deleted] : init?.method === 'DELETE' ? deleted : task,
+      data: String(input).endsWith('?view=deleted') ? [deleted] : init?.method === 'DELETE' ? deleted : task,
     }))
 
     await expect(listStudioGenerations('deleted', request)).resolves.toEqual([deleted])

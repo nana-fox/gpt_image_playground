@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 import QRCode from 'qrcode'
 import {
   ArrowRight,
+  ArrowCounterClockwise,
   CaretDown,
   CheckCircle,
   Compass,
@@ -18,6 +19,7 @@ import {
   SignOut,
   SlidersHorizontal,
   Sparkle,
+  Trash,
   User,
   X,
 } from '@phosphor-icons/react'
@@ -36,7 +38,9 @@ import { getStudioAdminSession, type StudioAdminSession } from '../lib/studioAdm
 import { studioAssetPath } from '../lib/studioApi'
 import {
   createStudioGeneration,
+  deleteStudioGeneration,
   listStudioGenerations,
+  restoreStudioGeneration,
   StudioGenerationError,
   type StudioGenerationInput,
   type StudioGenerationTask,
@@ -268,10 +272,11 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
 
   const refreshQuota = async () => setQuota(await getStudioQuota())
   const addTask = (task: StudioGenerationTask) => setTasks((current) => [task, ...(current ?? []).filter((item) => item.id !== task.id)])
+  const removeTask = (id: string) => setTasks((current) => (current ?? []).filter((item) => item.id !== id))
   const content = route === 'inspiration'
     ? <InspirationPage useTemplate={useTemplate} />
     : route === 'works'
-      ? <WorksPage tasks={tasks} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
+      ? <WorksPage tasks={tasks} addTask={addTask} removeTask={removeTask} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
       : route === 'points'
         ? <QuotaPage quota={quota} refreshQuota={refreshQuota} navigate={navigate} />
         : route === 'settings'
@@ -387,11 +392,62 @@ function InspirationPage({ useTemplate }: { useTemplate: (item: InspirationItem)
   return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 每周更新</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>换个关键词或浏览其他分类。</p><button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button></div>}{selected && <Modal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></Modal>}</div>
 }
 
-function WorksPage({ tasks, useWork }: { tasks: StudioGenerationTask[] | undefined, useWork: (task: StudioGenerationTask | null) => void }) {
+function WorksPage({
+  tasks,
+  addTask,
+  removeTask,
+  useWork,
+}: {
+  tasks: StudioGenerationTask[] | undefined
+  addTask: (task: StudioGenerationTask) => void
+  removeTask: (id: string) => void
+  useWork: (task: StudioGenerationTask | null) => void
+}) {
+  const [view, setView] = useState<'active' | 'deleted'>('active')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<StudioGenerationTask | null>(null)
-  const works = useMemo(() => (tasks ?? []).filter((task) => task.output && task.input.prompt.includes(query)), [tasks, query])
-  return <div className="page-frame"><header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{tasks === undefined ? '正在读取真实作品…' : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header><div className="works-toolbar"><div className="segmented-control"><button className="active">全部作品</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div></div><div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{formatDate(task.createdAt)} · {ratioName(task.input.size)}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>{tasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>还没有这样的作品</h3><p>{query ? '清空搜索，或者开始一次新创作。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}{selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={() => useWork(selected)} />}</div>
+  const [deletedTasks, setDeletedTasks] = useState<StudioGenerationTask[]>()
+  const [deletedError, setDeletedError] = useState('')
+  const visibleTasks = view === 'active' ? tasks : deletedTasks
+  const works = useMemo(() => (visibleTasks ?? []).filter((task) => task.output && task.input.prompt.includes(query)), [visibleTasks, query])
+
+  const switchView = async (next: 'active' | 'deleted') => {
+    setView(next)
+    setSelected(null)
+    setQuery('')
+    setDeletedError('')
+    if (next === 'active') return
+    setDeletedTasks(undefined)
+    try {
+      setDeletedTasks(await listStudioGenerations('deleted'))
+    } catch (error) {
+      setDeletedTasks([])
+      setDeletedError(error instanceof Error ? error.message : '最近删除暂时无法读取')
+    }
+  }
+
+  const deleteTask = async (task: StudioGenerationTask) => {
+    const deleted = await deleteStudioGeneration(task.id)
+    removeTask(task.id)
+    setDeletedTasks((current) => current === undefined ? current : [deleted, ...current.filter((item) => item.id !== task.id)])
+    setSelected(null)
+  }
+
+  const restoreTask = async (task: StudioGenerationTask) => {
+    const restored = await restoreStudioGeneration(task.id)
+    setDeletedTasks((current) => (current ?? []).filter((item) => item.id !== task.id))
+    addTask(restored)
+    setSelected(null)
+  }
+
+  return <div className="page-frame">
+    <header className="page-title-row"><div><span className="eyebrow">你的创作空间</span><h1>作品库</h1><p>{visibleTasks === undefined ? '正在读取真实作品…' : view === 'deleted' ? `${works.length} 个作品 · 7 天内可恢复` : `${works.length} 个作品 · 云端自动保存`}</p></div><button className="primary-button" onClick={() => useWork(null)}><Plus size={18} /> 新建创作</button></header>
+    <div className="works-toolbar"><div className="segmented-control"><button className={view === 'active' ? 'active' : ''} onClick={() => void switchView('active')}>全部作品</button><button className={view === 'deleted' ? 'active' : ''} onClick={() => void switchView('deleted')}>最近删除</button></div><div className="search-field small"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品" /></div></div>
+    {deletedError && <p className="auth-error" role="alert">{deletedError}</p>}
+    <div className="works-grid">{works.map((task, idx) => <button className={`work-card work-${idx % 4 + 1}`} key={task.id} onClick={() => setSelected(task)}><img src={task.output!.url} alt={task.input.prompt} /><span className="work-overlay"><strong>{task.input.prompt}</strong><small>{view === 'deleted' && task.purgeAt ? `${formatDate(task.purgeAt)} 后清理` : `${formatDate(task.createdAt)} · ${ratioName(task.input.size)}`}</small><span><Eye size={15} /> 查看详情</span></span></button>)}</div>
+    {visibleTasks !== undefined && !works.length && <div className="empty-state"><Images size={30} /><h3>{view === 'deleted' ? '最近没有删除的作品' : '还没有这样的作品'}</h3><p>{query ? '清空搜索，或者查看其他作品。' : view === 'deleted' ? '删除的作品会在这里保留 7 天。' : '完成第一次创作后，作品会自动出现在这里。'}</p>{query && <button className="secondary-button" onClick={() => setQuery('')}>清空搜索</button>}</div>}
+    {selected?.output && <TaskModal task={selected} onClose={() => setSelected(null)} onReuse={view === 'active' ? () => useWork(selected) : undefined} onDelete={view === 'active' ? () => deleteTask(selected) : undefined} onRestore={view === 'deleted' ? () => restoreTask(selected) : undefined} />}
+  </div>
 }
 
 function QuotaPage({ quota, refreshQuota, navigate }: { quota: StudioQuotaBalance | null | undefined, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
@@ -486,9 +542,22 @@ function Modal({ children, onClose, className = '' }: { children: ReactNode, onC
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`base-modal ${className}`} role="dialog" aria-modal="true"><button className="modal-close" onClick={onClose} aria-label="关闭"><X size={20} /></button>{children}</section></div>
 }
 
-function TaskModal({ task, onClose, onReuse }: { task: StudioGenerationTask, onClose: () => void, onReuse?: () => void }) {
+function TaskModal({ task, onClose, onReuse, onDelete, onRestore }: { task: StudioGenerationTask, onClose: () => void, onReuse?: () => void, onDelete?: () => Promise<void>, onRestore?: () => Promise<void> }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   if (!task.output) return null
-  return <Modal onClose={onClose} className="work-modal"><div className="work-preview"><img src={task.output.url} alt={task.input.prompt} /></div><div className="work-detail"><span className="success-label"><CheckCircle size={18} weight="fill" /> 已完成</span><h2>{task.input.prompt}</h2><p>创建于 {formatDate(task.createdAt)}，作品已安全保存在云端。</p><dl><div><dt>画面比例</dt><dd>{ratioName(task.input.size)}</dd></div><div><dt>精细度</dt><dd>{qualityName(task.input.quality)}</dd></div><div><dt>作品状态</dt><dd>仅你可见</dd></div></dl><div className="result-actions">{onReuse && <button className="secondary-button" onClick={onReuse}><Sparkle size={17} /> 复用描述</button>}<a className="primary-button" href={task.output.url} download><DownloadSimple size={18} /> 下载</a></div></div></Modal>
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true)
+    setError('')
+    try {
+      await action()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '操作失败，请稍后重试')
+      setBusy(false)
+    }
+  }
+  return <Modal onClose={onClose} className="work-modal"><div className="work-preview"><img src={task.output.url} alt={task.input.prompt} /></div><div className="work-detail"><span className="success-label">{onRestore ? <><Trash size={18} /> 最近删除</> : <><CheckCircle size={18} weight="fill" /> 已完成</>}</span><h2>{task.input.prompt}</h2><p>{onRestore && task.purgeAt ? `可在 ${formatDate(task.purgeAt)} 前恢复，之后图片将永久清理。` : `创建于 ${formatDate(task.createdAt)}，作品已安全保存在云端。`}</p><dl><div><dt>画面比例</dt><dd>{ratioName(task.input.size)}</dd></div><div><dt>精细度</dt><dd>{qualityName(task.input.quality)}</dd></div><div><dt>作品状态</dt><dd>{onRestore ? '等待清理' : '仅你可见'}</dd></div></dl>{error && <p className="auth-error work-modal-error" role="alert">{error}</p>}{confirmDelete ? <div className="retention-warning"><strong>确定删除这个作品？</strong><p>作品会进入“最近删除”，7 天内可以恢复。</p><div><button className="secondary-button" disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button className="danger-button" disabled={busy} onClick={() => onDelete && void run(onDelete)}>{busy ? '正在删除…' : '确认删除'}</button></div></div> : <div className="result-actions">{onDelete && <button className="danger-button" onClick={() => setConfirmDelete(true)}><Trash size={17} /> 删除作品</button>}{onReuse && <button className="secondary-button" onClick={onReuse}><Sparkle size={17} /> 复用描述</button>}{onRestore ? <button className="primary-button" disabled={busy} onClick={() => void run(onRestore)}><ArrowCounterClockwise size={18} /> {busy ? '正在恢复…' : '恢复作品'}</button> : <a className="primary-button" href={task.output.url} download><DownloadSimple size={18} /> 下载</a>}</div>}</div></Modal>
 }
 
 function quotaHeader(quota: StudioQuotaBalance | null | undefined) {

@@ -390,6 +390,17 @@ select:focus-visible {
   text-decoration: none;
 }
 
+.danger-button {
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .primary-button {
   color: white;
   background: linear-gradient(135deg, #4c7df3, #3368e9);
@@ -3997,6 +4008,30 @@ button {
 .work-detail dd {
   margin: 0;
   font-size: 12px;
+}
+
+.retention-warning {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  border-radius: 14px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.retention-warning p {
+  margin: 6px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.retention-warning > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.work-modal-error {
+  margin-bottom: 14px;
 }
 
 .balance-card {

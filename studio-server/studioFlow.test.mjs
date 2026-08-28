@@ -110,4 +110,25 @@ test('real HTTP flow logs in, consumes quota once, persists and serves the artwo
   const artwork = await fetch(`${serverOrigin}${task.output.url}`, { headers: { Cookie: cookie } })
   assert.equal(artwork.headers.get('content-type'), 'image/png')
   assert.deepEqual(Buffer.from(await artwork.arrayBuffer()), png)
+
+  const deleted = await fetch(`${serverOrigin}/api/generations/${task.id}`, {
+    method: 'DELETE',
+    headers: { Cookie: cookie, Origin: origin, 'X-CSRF-Token': csrf },
+  })
+  assert.equal(deleted.status, 200)
+  assert.ok(Number.isFinite(Date.parse((await deleted.json()).data.purgeAt)))
+  const activeAfterDelete = await fetch(`${serverOrigin}/api/generations`, { headers: { Cookie: cookie } })
+  assert.deepEqual((await activeAfterDelete.json()).data, [])
+  const recentlyDeleted = await fetch(`${serverOrigin}/api/generations?view=deleted`, { headers: { Cookie: cookie } })
+  assert.deepEqual((await recentlyDeleted.json()).data.map((item) => item.id), [task.id])
+  assert.equal((await fetch(`${serverOrigin}${task.output.url}`, { headers: { Cookie: cookie } })).status, 200)
+
+  const restored = await fetch(`${serverOrigin}/api/generations/${task.id}/restore`, {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: origin, 'X-CSRF-Token': csrf },
+  })
+  assert.equal(restored.status, 200)
+  assert.equal((await restored.json()).data.deletedAt, null)
+  const activeAfterRestore = await fetch(`${serverOrigin}/api/generations`, { headers: { Cookie: cookie } })
+  assert.deepEqual((await activeAfterRestore.json()).data.map((item) => item.id), [task.id])
 })

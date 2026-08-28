@@ -17,6 +17,9 @@ export type StudioGenerationTask = {
   errorReason: string | null
   createdAt: string
   updatedAt: string
+  deletedAt?: string | null
+  purgeAt?: string | null
+  purgedAt?: string | null
   output: null | {
     url: string
     revisedPrompt?: string
@@ -66,11 +69,33 @@ export async function createStudioGeneration(
   throw new StudioGenerationError('创作任务仍在处理中，请稍后重试', 0, 'NETWORK_ERROR')
 }
 
-export function listStudioGenerations(request: typeof fetch = fetch) {
-  return call(studioApiPath('generations'), { credentials: 'same-origin' }, request).then((data) => {
+export function listStudioGenerations(
+  viewOrRequest: 'active' | 'deleted' | typeof fetch = 'active',
+  request: typeof fetch = fetch,
+) {
+  const view = typeof viewOrRequest === 'function' ? 'active' : viewOrRequest
+  const requester = typeof viewOrRequest === 'function' ? viewOrRequest : request
+  const path = view === 'deleted' ? `${studioApiPath('generations')}?view=deleted` : studioApiPath('generations')
+  return call(path, { credentials: 'same-origin' }, requester).then((data) => {
     if (!Array.isArray(data)) throw protocolError()
     return data.map(normalizeTask)
   })
+}
+
+export function deleteStudioGeneration(id: string, request: typeof fetch = fetch) {
+  return call(studioApiPath(`generations/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readStudioCookie('nanafox_studio_csrf') },
+  }, request).then(normalizeTask)
+}
+
+export function restoreStudioGeneration(id: string, request: typeof fetch = fetch) {
+  return call(studioApiPath(`generations/${encodeURIComponent(id)}/restore`), {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readStudioCookie('nanafox_studio_csrf') },
+  }, request).then(normalizeTask)
 }
 
 async function call(path: string, init: RequestInit, request: typeof fetch) {
@@ -120,6 +145,9 @@ function normalizeTask(value: unknown): StudioGenerationTask {
     || !(task.errorReason === null || typeof task.errorReason === 'string')
     || typeof task.createdAt !== 'string'
     || typeof task.updatedAt !== 'string'
+    || !(task.deletedAt === undefined || task.deletedAt === null || typeof task.deletedAt === 'string')
+    || !(task.purgeAt === undefined || task.purgeAt === null || typeof task.purgeAt === 'string')
+    || !(task.purgedAt === undefined || task.purgedAt === null || typeof task.purgedAt === 'string')
     || !(output === null || (output && typeof output.url === 'string' && output.url.startsWith(studioApiPath('artworks/'))))
   ) {
     throw protocolError()

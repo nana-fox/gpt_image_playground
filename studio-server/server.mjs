@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 import { createArtworkStore } from './artworkStore.mjs'
+import { purgeExpiredArtworks } from './artworkRetention.mjs'
 import { createAuthRateLimiter } from './authRateLimiter.mjs'
 import { createStudioAdminApp } from './adminApp.mjs'
 import { createStudioAuthApp } from './authApp.mjs'
@@ -272,6 +273,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     server,
     ready: Promise.all([database.ready, generationRuntime?.ready ?? Promise.resolve()]),
     close(callback) {
+      generationRuntime?.close()
       server.close(async () => {
         await database.close()
         callback?.()
@@ -290,6 +292,11 @@ function createGenerationRuntime(config, sessions, quota, tasks) {
     model: config.generation.model,
   })
   const generations = createGenerationService({ tasks, quota, images, outputs })
+  const cleanup = () => purgeExpiredArtworks({ tasks, outputs })
+  const cleanupTimer = setInterval(() => {
+    void cleanup().catch((error) => console.error('Studio artwork retention cycle failed', error))
+  }, 6 * 60 * 60 * 1000)
+  cleanupTimer.unref()
   return {
     app: createStudioGenerationApp({
       publicOrigin: config.publicOrigin,
@@ -299,7 +306,10 @@ function createGenerationRuntime(config, sessions, quota, tasks) {
       tasks,
       outputs,
     }),
-    ready: generations.recoverPending(),
+    ready: Promise.all([generations.recoverPending(), cleanup()]),
+    close() {
+      clearInterval(cleanupTimer)
+    },
   }
 }
 

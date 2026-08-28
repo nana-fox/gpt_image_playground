@@ -13,13 +13,13 @@
 | 符号 | 证据 (file:line) | 签名 | 用途 |
 |-----|-----------------|-----|-----|
 | `createStudioGenerationApp` | `studio-server/generationApp.mjs:10` | `(options = {}) -> generationApp` | 增加本人删除、最近删除和恢复 API |
-| `createGenerationTaskStore` | `studio-server/generationTaskStore.mjs:11` | `(options = {}) -> taskStore` | 在现有任务行保存删除与清理状态 |
+| `createGenerationTaskStore` | `studio-server/generationTaskStore.mjs:13` | `(options = {}) -> taskStore` | 在现有任务行保存删除与清理状态 |
 | `createR2ArtworkStore` | `studio-server/r2ArtworkStore.mjs:8` | `(options = {}) -> artworkStore` | 复用现有私有对象删除能力 |
 | `createArtworkStore` | `studio-server/artworkStore.mjs:15` | `(options = {}) -> artworkStore` | 保持本地开发模式语义一致 |
-| `createGenerationRuntime` | `studio-server/server.mjs:283` | `(config, sessions, quota, tasks) -> generationRuntime` | 启动并停止清理循环 |
-| `listStudioGenerations` | `src/lib/studioGeneration.ts:69` | `(request = fetch) -> Promise<StudioGenerationTask[]>` | 扩展 active/deleted 作品读取与删除恢复请求 |
-| `WorksPage` | `src/studio/StudioApp.tsx:390` | `({ tasks, useWork }) -> JSX` | 增加最近删除与用户反馈 |
-| `TaskModal` | `src/studio/StudioApp.tsx:489` | `({ task, onClose, onReuse }) -> JSX` | 增加二次确认、删除和恢复动作 |
+| `createGenerationRuntime` | `studio-server/server.mjs:285` | `(config, sessions, quota, tasks) -> generationRuntime` | 启动并停止清理循环 |
+| `listStudioGenerations` | `src/lib/studioGeneration.ts:72` | `(viewOrRequest = 'active', request = fetch) -> Promise<StudioGenerationTask[]>` | 扩展 active/deleted 作品读取与删除恢复请求 |
+| `WorksPage` | `src/studio/StudioApp.tsx:395` | `({ tasks, addTask, removeTask, useWork }) -> JSX` | 增加最近删除与用户反馈 |
+| `TaskModal` | `src/studio/StudioApp.tsx:545` | `({ task, onClose, onReuse, onDelete, onRestore }) -> JSX` | 增加二次确认、删除和恢复动作 |
 
 ## L1.2 同类路径对照
 
@@ -47,7 +47,7 @@
 |-----------|-----------|------|
 | 删除返回 soft-deleted task | 从正常列表移除，加入最近删除 | `soft deletes and restores only the owner's completed artwork` |
 | 删除/恢复返回 `null` | 不存在、越权、非成功作品或已过期 | API 统一 404 |
-| purge 成功 | R2 删除后清空 `output_json` 并写 `purged_at` | `purges expired outputs only after storage deletion` |
+| purge 成功 | 持有任务行锁时删除 R2，随后清空 `output_json` 并写 `purged_at` | `purges expired outputs only after storage deletion` |
 | purge 失败 | 保持待清理行，下轮重试 | `keeps failed storage deletions pending` |
 
 ## L1.5 负向断言
@@ -91,7 +91,7 @@ succeeded + active
        失败 -> 数据库不变，下一轮重试
 ```
 
-并发：删除与恢复都以当前列条件更新；同一任务只有一个状态转换成功。清理先删对象、后写墓碑，避免数据库声称已删除但 R2 仍保留。
+并发：删除与恢复都以当前列条件更新；清理用 `FOR UPDATE` 锁定单个到期任务，在同一数据库事务内先删对象、后写墓碑。恢复会等待该行锁，避免作品恢复成功后对象又被后台删除；R2 失败时事务回滚并在下一轮重试。
 
 ## L2.6 权限/安全
 
