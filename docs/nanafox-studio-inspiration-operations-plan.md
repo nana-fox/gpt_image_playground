@@ -6,7 +6,7 @@
 
 - 前台从 PostgreSQL 读取已上架灵感，不再把五条内容写死在 React。
 - 运营端可新增、编辑、上下架、设置首页推荐和排序；每次写入使用版本号并进入管理员审计日志。
-- 首发封面从五张已随 Studio 发布的受控图片中选择，不接受外部 URL、不上传文件。真实运营需要自定义封面时，再增加独立的图片上传和 R2 `inspirations/` 前缀。
+- 首发封面从九张已随 Studio 发布的受控图片中选择，不接受外部 URL、不上传文件。真实运营需要自定义封面时，再增加独立的图片上传和 R2 `inspirations/` 前缀。
 - 不做硬删除；下架即可保留历史配置和审计证据。
 
 ## L1.1 引用验证
@@ -22,7 +22,7 @@
 
 ## 数据与状态
 
-`studio_inspirations` 保存：`id/category/title/description/prompt/image_asset/enabled/featured/sort_order/version/created_at/updated_at`。migration 007 把当前五条真实 Demo 内容作为首批数据写入，避免切换后空页。
+`studio_inspirations` 保存：`id/category/title/description/prompt/image_asset/enabled/featured/sort_order/version/created_at/updated_at`。migration 007 把当前九条真实 Demo 内容作为首批数据写入，避免切换后空页；首页沿用前五条推荐。
 
 ```text
 运营新增 -> 默认未上架 -> 编辑并预览 -> 上架
@@ -39,7 +39,7 @@
 | `POST /api/admin/inspirations` | admin + Origin + CSRF | 新增未上架或已上架灵感 |
 | `PATCH /api/admin/inspirations/:id` | admin + Origin + CSRF | 乐观版本更新，冲突返回 409 |
 
-前台响应不包含管理员审计字段；运营写入不接受未知字段。封面只允许 `inspiration-product.png`、`inspiration-portrait.png`、`inspiration-social.png`、`inspiration-illustration.png` 和 `inspiration-interior.png`，避免路径穿越和第三方追踪。
+前台响应不包含管理员审计字段；运营写入不接受未知字段。封面只允许当前随 Studio 发布的九张灵感/作品示例图，避免路径穿越和第三方追踪。
 
 ## 负向断言
 

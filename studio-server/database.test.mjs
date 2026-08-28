@@ -71,6 +71,11 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     FROM studio_inspirations
     ORDER BY sort_order, id
   `)
-  assert.deepEqual(inspirations.rows.map((row) => row.id), ['product', 'portrait', 'social', 'illustration', 'interior'])
-  assert.equal(inspirations.rows.every((row) => row.enabled && row.featured), true)
+  assert.deepEqual(inspirations.rows.map((row) => row.id), [
+    'product', 'portrait', 'social', 'illustration', 'interior', 'perfume', 'alley', 'flowers', 'cat',
+  ])
+  assert.equal(inspirations.rows.every((row) => row.enabled), true)
+  assert.deepEqual(inspirations.rows.filter((row) => row.featured).map((row) => row.id), [
+    'product', 'portrait', 'social', 'illustration', 'interior',
+  ])
 })

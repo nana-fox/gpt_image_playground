@@ -18,7 +18,9 @@ test('inspirations are seeded, versioned and audited in PostgreSQL', { skip: !co
   const store = createInspirationStore({ database, clock: () => new Date('2026-08-28T12:00:00.000Z') })
 
   const seeded = await store.listPublished()
-  assert.deepEqual(seeded.map((item) => item.id), ['product', 'portrait', 'social', 'illustration', 'interior'])
+  assert.deepEqual(seeded.map((item) => item.id), [
+    'product', 'portrait', 'social', 'illustration', 'interior', 'perfume', 'alley', 'flowers', 'cat',
+  ])
 
   const created = await store.create({
     category: '萌宠',
