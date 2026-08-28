@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createStudioAuthApp } from './authApp.mjs'
+import { AuthRateLimitError } from './authRateLimiter.mjs'
 import { RouterAuthError } from './routerAuthClient.mjs'
 
 const origin = 'https://studio.nanafox.com'
@@ -62,11 +63,38 @@ function cookieValue(response, name) {
   return value?.split(';', 1)[0] ?? ''
 }
 
+function createRateLimiter() {
+  const counts = new Map()
+  const calls = []
+  return {
+    calls,
+    consume(buckets) {
+      calls.push(buckets)
+      for (const bucket of buckets) {
+        const key = `${bucket.scope}:${bucket.key}`
+        if ((counts.get(key) ?? 0) >= bucket.limit) throw new AuthRateLimitError(60)
+      }
+      for (const bucket of buckets) {
+        const key = `${bucket.scope}:${bucket.key}`
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+    },
+  }
+}
+
+test('Studio auth refuses to start without a rate limiter', () => {
+  assert.throws(
+    () => createStudioAuthApp({ publicOrigin: origin, store: createStore(), routerAuth: {} }),
+    /rate limiter/i,
+  )
+})
+
 test('verification and registration stay behind the Studio backend', async () => {
   const calls = []
   const app = createStudioAuthApp({
     publicOrigin: origin,
     store: createStore(),
+    rateLimiter: createRateLimiter(),
     routerAuth: {
       async sendVerifyCode(email, locale) {
         calls.push(['send', email, locale])
@@ -99,12 +127,55 @@ test('verification and registration stay behind the Studio backend', async () =>
   assert.match(cookieValue(register, 'nanafox_studio_csrf'), /^nanafox_studio_csrf=csrf-1$/)
 })
 
+test('rate limits verification by normalized email and client IP before calling Router', async () => {
+  const limiter = createRateLimiter()
+  let routerCalls = 0
+  const app = createStudioAuthApp({
+    publicOrigin: origin,
+    store: createStore(),
+    rateLimiter: limiter,
+    routerAuth: {
+      async sendVerifyCode() {
+        routerCalls += 1
+        return { sent: true }
+      },
+    },
+  })
+  const verify = (email, ip = '203.0.113.10') => app.handle(jsonRequest('/api/auth/send-verify-code', { email }, {
+    headers: { 'X-Forwarded-For': ip },
+  }))
+
+  assert.equal((await verify('Member@Example.com')).status, 200)
+  assert.equal((await verify('member@example.com')).status, 200)
+  assert.equal((await verify('MEMBER@example.com')).status, 200)
+  const blocked = await verify('member@example.com')
+  assert.equal(blocked.status, 429)
+  assert.equal(blocked.headers.get('Retry-After'), '60')
+  assert.deepEqual(await blocked.json(), {
+    ok: false,
+    error: { reason: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试' },
+  })
+  assert.equal(routerCalls, 3)
+  assert.deepEqual(limiter.calls[0], [
+    { scope: 'verify-email', key: 'member@example.com', limit: 3, windowMs: 600000 },
+    { scope: 'verify-ip', key: '203.0.113.10', limit: 10, windowMs: 600000 },
+  ])
+
+  for (let idx = 0; idx < 7; idx += 1) {
+    assert.equal((await verify(`other-${idx}@example.com`)).status, 200)
+  }
+  const ipBlocked = await verify('last@example.com')
+  assert.equal(ipBlocked.status, 429)
+  assert.equal(routerCalls, 10)
+})
+
 test('login creates only a Studio session and session lookup returns the local user', async () => {
   const store = createStore()
   const app = createStudioAuthApp({
     publicOrigin: origin,
     publicBasePath: '/tools/image-studio/',
     store,
+    rateLimiter: createRateLimiter(),
     quota: {
       getBalance(userId) {
         assert.equal(userId, 'local-1')
@@ -164,6 +235,7 @@ test('quota balance requires a valid Studio session', async () => {
   const app = createStudioAuthApp({
     publicOrigin: origin,
     store: createStore(),
+    rateLimiter: createRateLimiter(),
     routerAuth: {},
     quota: { getBalance: () => assert.fail('quota store must not be called') },
   })
@@ -177,6 +249,7 @@ test('2FA challenge does not create a Studio session until verification succeeds
   const app = createStudioAuthApp({
     publicOrigin: origin,
     store: createStore(),
+    rateLimiter: createRateLimiter(),
     routerAuth: {
       async login() {
         return { requires_2fa: true, temp_token: 'studio-challenge' }
@@ -214,6 +287,7 @@ test('logout requires the matching Studio session and CSRF pair', async () => {
     publicOrigin: origin,
     publicBasePath: '/tools/image-studio/',
     store,
+    rateLimiter: createRateLimiter(),
     routerAuth: {},
   })
   const cookies = `nanafox_studio_session=${created.sessionToken}; nanafox_studio_csrf=${created.csrfToken}`
@@ -236,6 +310,7 @@ test('unsafe requests and Router failures return bounded errors', async () => {
   const app = createStudioAuthApp({
     publicOrigin: origin,
     store: createStore(),
+    rateLimiter: createRateLimiter(),
     routerAuth: {
       async login() {
         throw new RouterAuthError('invalid email or password', {

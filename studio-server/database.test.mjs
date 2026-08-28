@@ -23,6 +23,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
   `)
   assert.deepEqual(tables.rows.map((row) => row.tablename), [
     'studio_admin_audit_log',
+    'studio_auth_rate_limits',
     'studio_credit_grants',
     'studio_generation_tasks',
     'studio_payment_channel',
