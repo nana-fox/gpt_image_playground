@@ -50,6 +50,30 @@ test('operators configure draft plans with optimistic versions', { skip: !testCo
   )
 })
 
+test('operators switch the payment channel with optimistic versions and an audit record', { skip: !testConnectionString }, async (t) => {
+  const { database, store } = await withPayments(t)
+  assert.deepEqual(await store.getPaymentChannel(), { acceptingOrders: false, version: 1 })
+
+  const opened = await store.updatePaymentChannel({ acceptingOrders: true, expectedVersion: 1 }, {
+    actorSubject: identity.subject,
+  })
+  assert.deepEqual(opened, { acceptingOrders: true, version: 2 })
+  await assert.rejects(
+    () => store.updatePaymentChannel({ acceptingOrders: false, expectedVersion: 1 }, { actorSubject: identity.subject }),
+    (error) => error instanceof PaymentStoreError && error.reason === 'PAYMENT_CHANNEL_VERSION_CONFLICT',
+  )
+
+  const audit = await database.query(`
+    SELECT actor_subject, action, before_json, after_json
+    FROM studio_admin_audit_log
+    WHERE action = 'payment_channel.update'
+  `)
+  assert.equal(audit.rowCount, 1)
+  assert.equal(audit.rows[0].actor_subject, identity.subject)
+  assert.deepEqual(audit.rows[0].before_json, { acceptingOrders: false, version: 1 })
+  assert.deepEqual(audit.rows[0].after_json, { acceptingOrders: true, version: 2 })
+})
+
 test('pack fulfillment is atomic and duplicate callbacks never duplicate credits', { skip: !testConnectionString }, async (t) => {
   const { database, store, user, quota } = await withPayments(t)
   const pack = (await store.listAdminPlans()).find((plan) => plan.id === 'pack-60')

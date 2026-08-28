@@ -25,6 +25,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     'studio_admin_audit_log',
     'studio_credit_grants',
     'studio_generation_tasks',
+    'studio_payment_channel',
     'studio_payment_events',
     'studio_payment_orders',
     'studio_payment_plans',
@@ -49,4 +50,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     { id: 'pro', enabled: false },
     { id: 'pack-60', enabled: false },
   ])
+
+  const channel = await database.query('SELECT accepting_orders, version FROM studio_payment_channel WHERE id = 1')
+  assert.deepEqual(channel.rows, [{ accepting_orders: false, version: 1 }])
 })

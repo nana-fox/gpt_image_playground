@@ -74,6 +74,12 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).toContain('grantStudioCredits')
     expect(adminSource).toContain('getStudioPaymentPlans')
     expect(adminSource).toContain('updateStudioPaymentPlan')
+    expect(adminSource).toContain('getStudioPaymentChannel')
+    expect(adminSource).toContain('updateStudioPaymentChannel')
+    expect(adminSource).toContain('支付渠道')
+    expect(adminSource).toContain('服务端凭证')
+    expect(adminSource).not.toContain('APIv3 Key')
+    expect(adminSource).not.toContain('商户私钥')
     expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
   })
 

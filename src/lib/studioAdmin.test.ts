@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getStudioAdminSession,
+  getStudioPaymentChannel,
   getStudioPaymentPlans,
   getStudioQuotaPolicy,
   grantStudioCredits,
   searchStudioUsers,
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
+  updateStudioPaymentChannel,
 } from './studioAdmin'
 
 beforeEach(() => {
@@ -101,6 +103,36 @@ describe('Studio operations client', () => {
         sortOrder: plan.sortOrder,
         expectedVersion: plan.version,
       }),
+    })
+  })
+
+  it('loads and switches the safe payment channel status', async () => {
+    const channel = {
+      provider: 'wxpay_native' as const,
+      credentialsReady: true,
+      acceptingOrders: false,
+      checkoutAvailable: false,
+      notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+      version: 1,
+    }
+    const load = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: channel }))
+    await expect(getStudioPaymentChannel(load)).resolves.toEqual(channel)
+
+    const save = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      ok: true,
+      data: { ...channel, acceptingOrders: true, checkoutAvailable: true, version: 2 },
+    }))
+    await expect(updateStudioPaymentChannel({ ...channel, acceptingOrders: true }, save)).resolves.toEqual({
+      ...channel,
+      acceptingOrders: true,
+      checkoutAvailable: true,
+      version: 2,
+    })
+    expect(save).toHaveBeenCalledWith('/api/admin/payment-channel', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
+      body: JSON.stringify({ acceptingOrders: true, expectedVersion: 1 }),
     })
   })
 })

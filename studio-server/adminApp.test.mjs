@@ -57,6 +57,27 @@ function createDependencies(subject = adminSubject, role = 'admin') {
         return { id, ...plan, version: plan.expectedVersion + 1 }
       },
     },
+    paymentChannel: {
+      getChannelStatus: () => ({
+        provider: 'wxpay_native',
+        credentialsReady: true,
+        acceptingOrders: false,
+        checkoutAvailable: false,
+        notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+        version: 1,
+      }),
+      updateChannel: (input, audit) => {
+        calls.push(['updateChannel', input, audit])
+        return {
+          provider: 'wxpay_native',
+          credentialsReady: true,
+          acceptingOrders: input.acceptingOrders,
+          checkoutAvailable: input.acceptingOrders,
+          notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+          version: input.expectedVersion + 1,
+        }
+      },
+    },
   }
 }
 
@@ -85,6 +106,7 @@ test('current Router administrators can access Studio operations automatically',
     sessions: allowed.sessions,
     quota: allowed.quota,
     payments: allowed.payments,
+    paymentChannel: allowed.paymentChannel,
   })
 
   const me = await app.handle(request('/api/admin/me'))
@@ -105,6 +127,7 @@ test('current Router administrators can access Studio operations automatically',
     sessions: deniedDependencies.sessions,
     quota: deniedDependencies.quota,
     payments: deniedDependencies.payments,
+    paymentChannel: deniedDependencies.paymentChannel,
   })
   const denied = await deniedApp.handle(request('/api/admin/me'))
   assert.equal(denied.status, 403)
@@ -125,6 +148,7 @@ test('admin access follows Router demotion and fails closed when Router is unava
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
   })
 
   assert.equal((await app.handle(request('/api/admin/me'))).status, 200)
@@ -147,6 +171,7 @@ test('operators can inspect and update the daily free policy', async () => {
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
   })
 
   const current = await app.handle(request('/api/admin/quota-policy'))
@@ -178,6 +203,7 @@ test('operators can find a user and grant idempotent credits with an audit actor
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
   })
 
   const users = await app.handle(request('/api/admin/users?query=member&limit=10'))
@@ -216,6 +242,7 @@ test('admin writes require same-origin JSON and the Studio CSRF pair', async () 
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
   })
 
   const wrongOrigin = await app.handle(request('/api/admin/quota-policy', {
@@ -244,6 +271,7 @@ test('operators inspect and update payment plans without changing their kind', a
     sessions: dependencies.sessions,
     quota: dependencies.quota,
     payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
   })
 
   const plans = await app.handle(request('/api/admin/payment-plans'))
@@ -272,4 +300,41 @@ test('operators inspect and update payment plans without changing their kind', a
     input,
     { actorSubject: adminSubject },
   ]])
+})
+
+test('operators inspect and switch payment checkout without receiving merchant secrets', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    routerAuth: dependencies.routerAuth,
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    payments: dependencies.payments,
+    paymentChannel: dependencies.paymentChannel,
+  })
+
+  const current = await app.handle(request('/api/admin/payment-channel'))
+  assert.equal(current.status, 200)
+  const currentBody = await current.json()
+  assert.deepEqual(currentBody.data, {
+    provider: 'wxpay_native',
+    credentialsReady: true,
+    acceptingOrders: false,
+    checkoutAvailable: false,
+    notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+    version: 1,
+  })
+
+  const updated = await app.handle(request('/api/admin/payment-channel', {
+    method: 'PATCH',
+    body: { acceptingOrders: true, expectedVersion: 1 },
+  }))
+  assert.equal(updated.status, 200)
+  assert.equal((await updated.json()).data.checkoutAvailable, true)
+  assert.deepEqual(dependencies.calls, [[
+    'updateChannel',
+    { acceptingOrders: true, expectedVersion: 1 },
+    { actorSubject: adminSubject },
+  ]])
+  assert.equal(JSON.stringify(currentBody).includes('apiV3Key'), false)
 })

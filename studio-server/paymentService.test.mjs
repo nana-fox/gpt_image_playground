@@ -17,13 +17,54 @@ const plan = {
   sortOrder: 10,
   version: 1,
 }
+const openChannel = { acceptingOrders: true, version: 1 }
 
-test('lists configured plans but marks checkout unavailable until the provider is enabled', async () => {
-  const disabled = createPaymentService({ enabled: false, store: { listPlans: () => [plan] } })
+test('lists configured plans but only marks checkout available when credentials and operations are both enabled', async () => {
+  const disabled = createPaymentService({ enabled: false, store: { listPlans: () => [plan], getPaymentChannel: () => openChannel } })
   assert.equal((await disabled.listPlans())[0].purchasable, false)
 
-  const enabled = createPaymentService({ enabled: true, store: { listPlans: () => [plan] }, provider: {} })
+  const closed = createPaymentService({
+    enabled: true,
+    store: { listPlans: () => [plan], getPaymentChannel: () => ({ acceptingOrders: false, version: 1 }) },
+    provider: {},
+  })
+  assert.equal((await closed.listPlans())[0].purchasable, false)
+
+  const enabled = createPaymentService({
+    enabled: true,
+    store: { listPlans: () => [plan], getPaymentChannel: () => openChannel },
+    provider: {},
+  })
   assert.equal((await enabled.listPlans())[0].purchasable, true)
+})
+
+test('exposes safe payment channel status and rejects opening without server credentials', async () => {
+  const updates = []
+  const service = createPaymentService({
+    enabled: false,
+    notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+    store: {
+      getPaymentChannel: () => ({ acceptingOrders: false, version: 3 }),
+      updatePaymentChannel: (input, audit) => {
+        updates.push([input, audit])
+        return { acceptingOrders: input.acceptingOrders, version: 4 }
+      },
+    },
+  })
+
+  assert.deepEqual(await service.getChannelStatus(), {
+    provider: 'wxpay_native',
+    credentialsReady: false,
+    acceptingOrders: false,
+    checkoutAvailable: false,
+    notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
+    version: 3,
+  })
+  await assert.rejects(
+    () => service.updateChannel({ acceptingOrders: true, expectedVersion: 3 }, { actorSubject: 'admin-1' }),
+    (error) => error instanceof PaymentError && error.reason === 'PAYMENT_CREDENTIALS_NOT_READY',
+  )
+  assert.deepEqual(updates, [])
 })
 
 test('creates one Native order from the server-side plan snapshot', async () => {
@@ -40,6 +81,7 @@ test('creates one Native order from the server-side plan snapshot', async () => 
     codeUrl: null,
   }
   const store = {
+    getPaymentChannel: async () => openChannel,
     createOrder: async (input) => {
       calls.push(['createOrder', input])
       return { created: true, order }
@@ -86,7 +128,11 @@ test('creates one Native order from the server-side plan snapshot', async () => 
 })
 
 test('never creates an order when payment is disabled', async () => {
-  const service = createPaymentService({ enabled: false, store: {}, clock: () => now })
+  const service = createPaymentService({
+    enabled: false,
+    store: { getPaymentChannel: () => openChannel },
+    clock: () => now,
+  })
   await assert.rejects(
     () => service.createOrder('user-1', 'plus', 'checkout-1', '203.0.113.1'),
     (error) => error instanceof PaymentError && error.reason === 'PAYMENT_NOT_CONFIGURED',
@@ -109,6 +155,7 @@ test('fulfills a paid pack exactly once through the store transaction', async ()
       }),
     },
     store: {
+      getPaymentChannel: () => openChannel,
       fulfillOrder: async (notification) => {
         notifications.push(notification)
         return { id: 'order-1', status: 'completed' }
@@ -123,7 +170,11 @@ test('fulfills a paid pack exactly once through the store transaction', async ()
 })
 
 test('rejects invalid create keys before touching the store', async () => {
-  const service = createPaymentService({ enabled: true, store: { createOrder: assert.fail }, provider: {} })
+  const service = createPaymentService({
+    enabled: true,
+    store: { getPaymentChannel: () => openChannel, createOrder: assert.fail },
+    provider: {},
+  })
   await assert.rejects(
     () => service.createOrder('user-1', 'plus', '', '203.0.113.1'),
     (error) => error instanceof PaymentError && error.reason === 'VALIDATION_ERROR',
@@ -161,6 +212,7 @@ test('polling reconciles a paid provider order when the callback was missed', as
       },
     },
     store: {
+      getPaymentChannel: () => openChannel,
       getUserOrder: async () => pending,
       fulfillOrder: async (notification) => {
         calls.push(['fulfillOrder', notification])
@@ -172,4 +224,51 @@ test('polling reconciles a paid provider order when the callback was missed', as
   assert.equal((await service.getOrder('user-1', 'order-1')).status, 'completed')
   assert.deepEqual(calls[0], ['queryOrder', 'studio_order1'])
   assert.equal(calls[1][1].eventId, 'query:wx-transaction-1')
+})
+
+test('closing new checkout still reconciles and fulfills existing paid orders', async () => {
+  const pending = {
+    id: 'order-1',
+    userId: 'user-1',
+    outTradeNo: 'studio_order1',
+    status: 'pending',
+    provider: 'wxpay_native',
+    plan,
+    amountCents: 2900,
+    currency: 'CNY',
+    codeUrl: 'weixin://pay',
+    expiresAt: '2026-08-28T08:15:00.000Z',
+  }
+  const notifications = []
+  const service = createPaymentService({
+    enabled: true,
+    provider: {
+      queryOrder: async () => ({
+        status: 'success',
+        outTradeNo: 'studio_order1',
+        transactionId: 'wx-transaction-query',
+      }),
+      verifyNotification: () => ({
+        eventId: 'event-1',
+        outTradeNo: 'studio_order1',
+        transactionId: 'wx-transaction-webhook',
+      }),
+    },
+    store: {
+      getPaymentChannel: () => ({ acceptingOrders: false, version: 2 }),
+      getUserOrder: async () => pending,
+      fulfillOrder: async (notification) => {
+        notifications.push(notification)
+        return { ...pending, status: 'completed' }
+      },
+    },
+  })
+
+  await assert.rejects(
+    () => service.createOrder('user-1', 'plus', 'checkout-2', '203.0.113.1'),
+    (error) => error instanceof PaymentError && error.reason === 'PAYMENT_NOT_ACCEPTING',
+  )
+  assert.equal((await service.getOrder('user-1', 'order-1')).status, 'completed')
+  assert.equal((await service.handleWebhook('{}', {})).status, 'completed')
+  assert.equal(notifications.length, 2)
 })
