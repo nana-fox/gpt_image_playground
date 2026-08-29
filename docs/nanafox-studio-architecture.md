@@ -7,6 +7,7 @@
 NanaFox Studio 是独立 ToC 产品，不是 Router 的一个皮肤，也不把 Router 的 API 额度直接当成产品额度。
 
 - 前端：继续复用当前 GPT Image Playground 的成熟创作能力，并以已确认 Demo 的页面、导航和闭环为产品界面。
+- UI 规范：视觉变量、响应式边界、组件复用和验收矩阵见 `docs/nanafox-studio-ui-guidelines.md`；现阶段以代码为事实来源，避免另建一套与实现脱节的设计系统。
 - 后端：放在当前仓库的 `studio-server/`，独立部署、独立配置、独立数据库。
 - 用户身份：注册、验证码和身份主记录由 Router 提供；Studio 通过服务端身份适配接口校验，建立自己的 Session 和 `identity_subject` 映射。不是浏览器跳转式 SSO。
 - 业务数据：Studio 自己保存免费次数、订阅、加量包、额度流水、生成任务、作品元数据和运营配置。

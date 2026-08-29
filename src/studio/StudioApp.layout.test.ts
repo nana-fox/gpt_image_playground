@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import mainSource from '../main.tsx?raw'
 import viteSource from '../../vite.config.ts?raw'
 import source from './StudioApp.tsx?raw'
 import adminSource from './StudioAdminPage.tsx?raw'
+
+const styles = readFileSync(new URL('./studio.css', import.meta.url), 'utf8')
 
 describe('NanaFox Studio product shell', () => {
   it('loads only in the Studio deployment flavor', () => {
@@ -128,5 +131,22 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain("setAccountOpen(false); navigate('points')")
     expect(source).toContain("setAccountOpen(false); navigate('settings')")
     expect(source).toContain("setAccountOpen(false); navigate('admin')")
+  })
+
+  it('keeps header popovers and long account identities usable on narrow screens', () => {
+    expect(source).toContain('aria-label="账户菜单"')
+    expect(source).toContain('aria-expanded={accountOpen}')
+    expect(source).toContain('aria-expanded={quotaOpen}')
+    expect(styles).toContain('.account-summary > span:last-child')
+    expect(styles).toContain('overflow-wrap: anywhere')
+    expect(styles).toContain('position: fixed')
+    expect(styles).toContain('left: 12px')
+    expect(styles).toContain('right: 12px')
+  })
+
+  it('reuses defined visual tokens in the live quota card', () => {
+    expect(styles).not.toContain('var(--panel)')
+    expect(styles).not.toContain('var(--border)')
+    expect(styles).not.toContain('var(--blue-soft)')
   })
 })
