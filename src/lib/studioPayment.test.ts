@@ -23,6 +23,7 @@ describe('Studio payment client', () => {
         credits: 100,
         durationDays: 30,
         purchasable: false,
+        paymentMethods: [{ providerKey: 'alipay', name: '支付宝' }],
       }],
     }))
 
@@ -36,6 +37,7 @@ describe('Studio payment client', () => {
       credits: 100,
       durationDays: 30,
       purchasable: false,
+      paymentMethods: [{ providerKey: 'alipay', name: '支付宝' }],
     }])
   })
 
@@ -66,7 +68,7 @@ describe('Studio payment client', () => {
       },
     }))
 
-    expect((await createStudioPaymentOrder('plus', 'checkout-1', request as typeof fetch)).status).toBe('pending')
+    expect((await createStudioPaymentOrder('plus', 'checkout-1', 'wxpay', request as typeof fetch)).status).toBe('pending')
     expect(request.mock.calls[0][1]).toMatchObject({
       method: 'POST',
       headers: {
@@ -83,7 +85,7 @@ describe('Studio payment client', () => {
       error: { reason: 'PAYMENT_NOT_CONFIGURED', message: '微信支付尚未开放' },
     }, { status: 503 }))
 
-    await expect(createStudioPaymentOrder('plus', 'checkout-1', request as typeof fetch)).rejects.toEqual(
+    await expect(createStudioPaymentOrder('plus', 'checkout-1', 'alipay', request as typeof fetch)).rejects.toEqual(
       expect.objectContaining<Partial<StudioPaymentError>>({ reason: 'PAYMENT_NOT_CONFIGURED', status: 503 }),
     )
   })

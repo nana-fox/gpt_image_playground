@@ -7,6 +7,7 @@ import {
   createStudioInspiration,
   getStudioAdminInspirations,
   getStudioPaymentChannel,
+  getStudioPaymentProviders,
   getStudioPaymentPlans,
   getStudioQuotaPolicy,
   grantStudioCredits,
@@ -14,6 +15,7 @@ import {
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
   updateStudioPaymentChannel,
+  updateStudioPaymentProvider,
   updateStudioInspiration,
 } from './studioAdmin'
 
@@ -137,6 +139,37 @@ describe('Studio operations client', () => {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
       body: JSON.stringify({ acceptingOrders: true, expectedVersion: 1 }),
     })
+  })
+
+  it('loads and updates masked Studio payment providers', async () => {
+    const provider = {
+      id: 'alipay-default',
+      providerKey: 'alipay' as const,
+      name: '支付宝',
+      enabled: false,
+      configured: false,
+      notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/alipay/alipay-default',
+      version: 1,
+      config: { appId: '', privateKeyConfigured: false, publicKeyConfigured: false },
+    }
+    const load = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: [provider] }))
+    await expect(getStudioPaymentProviders(load)).resolves.toEqual([provider])
+
+    const save = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: { ...provider, enabled: true, configured: true, version: 2 } }))
+    await updateStudioPaymentProvider({
+      ...provider,
+      enabled: true,
+      config: { ...provider.config, appId: '2026000000000000', privateKey: 'private', publicKey: 'public' },
+    }, save)
+    expect(save).toHaveBeenCalledWith('/api/admin/payment-providers/alipay-default', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: '支付宝',
+        enabled: true,
+        expectedVersion: 1,
+        config: { appId: '2026000000000000', privateKey: 'private', publicKey: 'public' },
+      }),
+    }))
   })
 
   it('loads, creates and updates versioned inspirations', async () => {
