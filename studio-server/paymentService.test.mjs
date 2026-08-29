@@ -272,3 +272,64 @@ test('closing new checkout still reconciles and fulfills existing paid orders', 
   assert.equal((await service.handleWebhook('{}', {})).status, 'completed')
   assert.equal(notifications.length, 2)
 })
+
+test('selects the requested Studio provider and returns an Alipay checkout URL', async () => {
+  const calls = []
+  const alipay = {
+    id: 'alipay-default',
+    providerKey: 'alipay',
+    identity: { appId: '2026000000000000', mchId: null },
+    client: {
+      createCheckoutOrder: async (input) => {
+        calls.push(['createCheckoutOrder', input])
+        return { payUrl: 'https://openapi.alipay.com/gateway.do?signed=true' }
+      },
+    },
+  }
+  const order = {
+    id: 'order-2',
+    userId: 'user-1',
+    outTradeNo: 'studio_20260828_order2',
+    status: 'pending',
+    provider: 'alipay_page',
+    providerInstanceId: 'alipay-default',
+    plan,
+    amountCents: 2900,
+    currency: 'CNY',
+    expiresAt: '2026-08-28T08:15:00.000Z',
+    codeUrl: null,
+    payUrl: null,
+  }
+  const service = createPaymentService({
+    enabled: true,
+    store: {
+      listPlans: async () => [plan],
+      getPaymentChannel: async () => openChannel,
+      createOrder: async (input) => {
+        calls.push(['createOrder', input])
+        return { created: true, order }
+      },
+      attachCheckout: async (id, checkout) => ({ ...order, ...checkout }),
+      failOrder: assert.fail,
+    },
+    providers: {
+      listEnabled: async () => [{ providerKey: 'alipay', name: '支付宝' }],
+      getEnabled: async (providerKey) => {
+        calls.push(['getEnabled', providerKey])
+        return providerKey === 'alipay' ? alipay : null
+      },
+    },
+    clock: () => now,
+    orderId: () => 'order-2',
+    outTradeNo: () => 'studio_20260828_order2',
+  })
+
+  const plans = await service.listPlans()
+  assert.deepEqual(plans[0].paymentMethods, [{ providerKey: 'alipay', name: '支付宝' }])
+  const result = await service.createOrder('user-1', 'plus', 'checkout-2', '203.0.113.1', 'alipay')
+
+  assert.equal(result.provider, 'alipay_page')
+  assert.equal(result.payUrl, 'https://openapi.alipay.com/gateway.do?signed=true')
+  assert.equal(calls[1][0], 'getEnabled')
+  assert.equal(calls[2][1].providerInstanceId, 'alipay-default')
+})
