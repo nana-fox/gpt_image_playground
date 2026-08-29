@@ -1,4 +1,5 @@
 import { createAlipayClient } from './alipayClient.mjs'
+import { validatePaymentProviderConfig } from './paymentProviderConfig.mjs'
 import { createWxpayClient } from './wxpayClient.mjs'
 
 export function createPaymentProviders(options = {}) {
@@ -9,7 +10,7 @@ export function createPaymentProviders(options = {}) {
 
   return {
     async listEnabled() {
-      return (await store.listEnabled()).map((provider) => ({
+      return (await store.listEnabled()).map(build).filter(Boolean).map((provider) => ({
         id: provider.id,
         providerKey: provider.providerKey,
         name: provider.name,
@@ -28,13 +29,19 @@ export function createPaymentProviders(options = {}) {
   function build(provider) {
     if (!provider) return null
     const config = provider.config
-    const client = provider.providerKey === 'wxpay'
-      ? createWxpayClient({ ...config, notifyUrl: provider.notifyUrl })
-      : createAlipayClient({
-          ...config,
-          notifyUrl: provider.notifyUrl,
-          returnUrl: `${new URL(publicBasePath, `${publicOrigin}/`).toString()}#/points`,
-        })
+    let client
+    try {
+      validatePaymentProviderConfig(provider.providerKey, config)
+      client = provider.providerKey === 'wxpay'
+        ? createWxpayClient({ ...config, notifyUrl: provider.notifyUrl })
+        : createAlipayClient({
+            ...config,
+            notifyUrl: provider.notifyUrl,
+            returnUrl: `${new URL(publicBasePath, `${publicOrigin}/`).toString()}#/points`,
+          })
+    } catch {
+      return null
+    }
     return {
       id: provider.id,
       providerKey: provider.providerKey,
