@@ -16,6 +16,8 @@
 
 生产采用 `studio.nanafox.com`，避免继续把独立产品部署在 Router path 下。测试阶段保留现有 path 是为了复用已验收的隔离入口，不代表生产架构仍嵌入 Router。
 
+测试环境发布前必须先做 DNS 与 SSH 双重核对：`router-test.nanafox.com` 当前解析到 `108.160.133.141`，发布用户为该主机上的 `root` 或 `nio`。`jpq`/`114.55.14.204` 不是 NanaFox Studio 测试服务器，不得用于 Studio 构建、部署或验收。若 DNS 解析变化，以当次 `dig` 结果和目标机现有 `nanafox-studio-test` 容器同时匹配为准，不能只依赖 SSH alias。
+
 ## 2. 发布前必须准备的资源
 
 ### 2.1 PostgreSQL
@@ -382,3 +384,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 公网页面、静态制品、`/api/health` 和 `/api/ready` 均为 200；未登录运营和套餐接口为 401。临时 Studio Session 验证真实 Router 管理员读取 `/api/admin/me` 与 `/api/admin/payment-providers` 均为 200，Session 随后删除。
 - 同一公网构建制品使用隔离响应完成支付渠道页和支付宝配置弹窗视觉自审：无横向溢出、无控制台错误；截图位于 `output/playwright/studio-payment-admin.png` 和 `output/playwright/studio-alipay-provider-modal.png`。Chrome 与应用内浏览器的截图/DOM 通道连续超时，因此不把它们记为真实登录态视觉证据。
 - `STUDIO_PAYMENT_ENABLED=false`、运营收款开关关闭且两个供应商均未配置；没有创建订单、提交商户凭证或发生真实资金交易。开放收费前仍需完成真实商户凭证录入、回调平台配置和小额支付/重复回调/退款门禁。
+
+### 11.14 2026-08-29 账户菜单 UI 修正版测试发布证据
+
+- 发布前重新核对 `router-test.nanafox.com -> 108.160.133.141`，目标机现有 `nanafox-studio-test`、Secret 文件和 8788 监听均匹配；明确排除 `jpq`/`114.55.14.204`。
+- Studio Git commit：`e4e3dd1`；测试镜像：`nanafox-studio:test-e4e3dd1-path`；直接回滚容器：`nanafox-studio-test-rollback-751d0fd-20260829-ui`。
+- 8790 暗部署先通过容器 health/ready、未登录 Session 401 和新旧菜单 CSS 选择器核对，再切换 8788。切换后容器 health、`/api/health`、`/api/ready` 及对应公网 path 均通过，容器 restart count 为 0。
+- 公网制品为 `assets/index-Uti0L1wS.js` 与 Studio chunk `StudioApp-DHdfNrgJ.css`；账户菜单桌面宽度为 280px，移动端使用 `min(320px, calc(100vw - 24px))`，旧 226px/`min-width: 320px` 规则已不在当前制品。
+- `sub2api-prod` 保持 `sub2api:prod-image-creation-v1-6966a8f5c`、healthy、restart count 0；Router/Sub2API 代码、配置和容器均未修改或重启。
+- Chrome 与应用内浏览器的刷新、截图和 DOM 通道连续超时，因此本次只记录部署、接口与静态制品证据，不把真实登录态的最终视觉验收记为通过。
