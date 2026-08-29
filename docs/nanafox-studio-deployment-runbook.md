@@ -370,3 +370,15 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 8790 暗部署的 health、ready、首页、子路径静态资源和安全头通过。Studio 使用签名 adapter 已到达 Router 业务层；测试 Router 当前关闭密码找回，因此返回 `PASSWORD_RESET_DISABLED`。未擅自打开邮件能力，真实邮件和旧 Session 失效仍是配置启用后的测试环境验收项。
 - 公网首页、静态资源、health 和 ready 均为 200；未登录 Session、作品和运营接口均为 401。Chrome 使用真实 Router 管理员 Session 复验创作首页、自动运营入口、每日 3 次、3/3 套餐和 9/9 灵感；支付仍为未开放且凭证未完整。隔离会话验证找回/重置页无溢出、无控制台错误，reset token 在页面读取后立即从 URL 清除；390×844 移动创作、登录和找回页也无横向溢出。
 - 只替换 `sub2api-test` 和 `nanafox-studio-test`；`sub2api-prod` 未重启、未替换，Router test/prod 为 200，PostgreSQL/Redis 保持 healthy。清理了本次临时源码、可重建 build cache 和多余旧回滚容器/镜像，两个系统各保留一个直接回滚点，根盘由 97% 恢复到 85%。
+
+### 11.13 2026-08-29 Studio 多支付供应商测试发布证据
+
+- Studio Git commit：`751d0fd`，测试镜像：`nanafox-studio:test-751d0fd-path`，直接回滚容器：`nanafox-studio-test-rollback-f40e582-20260829`。本次没有修改 Router/Sub2API 仓库、配置、数据库或容器。
+- 切换前 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-payment-providers-20260829T022418Z/`；dump 为 38,119 bytes、`pg_restore -l` 为 89 行，SHA-256 为 `8ba36af0df9799483a1f72929194a98db6b262af6661c03e5909c67c7c312bba`。
+- migration 009 新增 Studio 自有支付供应商表，并为订单增加供应商实例和支付宝跳转地址。升级后 migration 为 `1..9`，原有 2 个用户、1 个生成任务和 0 个支付订单保持不变；微信、支付宝各有一个默认停用且未配置的供应商实例。
+- 供应商敏感配置使用 `STUDIO_PAYMENT_CONFIG_KEY` 进行 AES-256-GCM 加密后保存在 Studio PostgreSQL；浏览器、运营读取接口和审计记录只返回掩码状态。加密主钥只存在 Studio 测试服务器的 `0600` runtime Secret 文件，不进入数据库、镜像或前端。
+- 前端 52 个文件、605 个测试通过；服务端使用真实 PostgreSQL 和私有 R2 运行 131/131、无跳过，行覆盖率 92.06%；生产依赖审计为 0 个已知漏洞。真实 R2 PUT/GET/同内容幂等/冲突/DELETE 合约通过。
+- 8790 暗部署发现未配置供应商回调曾返回 500，因此未切流；`751d0fd` 在供应商构造入口统一 fail-closed，回归测试和第二次暗部署确认返回 `503 PAYMENT_NOT_CONFIGURED` 后才切换 8788。
+- 公网页面、静态制品、`/api/health` 和 `/api/ready` 均为 200；未登录运营和套餐接口为 401。临时 Studio Session 验证真实 Router 管理员读取 `/api/admin/me` 与 `/api/admin/payment-providers` 均为 200，Session 随后删除。
+- 同一公网构建制品使用隔离响应完成支付渠道页和支付宝配置弹窗视觉自审：无横向溢出、无控制台错误；截图位于 `output/playwright/studio-payment-admin.png` 和 `output/playwright/studio-alipay-provider-modal.png`。Chrome 与应用内浏览器的截图/DOM 通道连续超时，因此不把它们记为真实登录态视觉证据。
+- `STUDIO_PAYMENT_ENABLED=false`、运营收款开关关闭且两个供应商均未配置；没有创建订单、提交商户凭证或发生真实资金交易。开放收费前仍需完成真实商户凭证录入、回调平台配置和小额支付/重复回调/退款门禁。
