@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { createPaymentProviderStore } from './paymentProviderStore.mjs'
 import { createPaymentStore, PaymentStoreError } from './paymentStore.mjs'
 import { testConnectionString, withPostgres } from './postgresTest.mjs'
 import { createQuotaStore } from './quotaStore.mjs'
@@ -72,6 +73,41 @@ test('operators switch the payment channel with optimistic versions and an audit
   assert.equal(audit.rows[0].actor_subject, identity.subject)
   assert.deepEqual(audit.rows[0].before_json, { acceptingOrders: false, version: 1 })
   assert.deepEqual(audit.rows[0].after_json, { acceptingOrders: true, version: 2 })
+})
+
+test('payment provider secrets are encrypted in PostgreSQL and excluded from audit records', { skip: !testConnectionString }, async (t) => {
+  const { database } = await withPayments(t)
+  const store = createPaymentProviderStore({
+    database,
+    encryptionKey: 'oKxkmzPR9LMVDNBhbN2vfNIFKsWKUzZvWKYBlckgjko=',
+    publicOrigin: 'https://router-test.nanafox.com',
+    publicBasePath: '/tools/image-studio/',
+    clock: () => now,
+  })
+  const privateKey = 'merchant-private-key-that-must-not-leak'
+  const publicKey = 'alipay-public-key-that-must-not-leak'
+
+  const updated = await store.update('alipay-default', {
+    name: '支付宝',
+    enabled: true,
+    expectedVersion: 1,
+    config: {
+      appId: '2026000000000000',
+      privateKey,
+      publicKey,
+    },
+  }, { actorSubject: identity.subject })
+
+  assert.equal(updated.configured, true)
+  assert.equal(JSON.stringify(updated).includes(privateKey), false)
+  const stored = await database.query('SELECT config_ciphertext FROM studio_payment_providers WHERE id = $1', ['alipay-default'])
+  assert.equal(stored.rowCount, 1)
+  assert.equal(stored.rows[0].config_ciphertext.includes(privateKey), false)
+  assert.equal((await store.getEnabled('alipay')).config.privateKey, privateKey)
+  const audit = await database.query("SELECT before_json, after_json FROM studio_admin_audit_log WHERE action = 'payment_provider.update'")
+  assert.equal(audit.rowCount, 1)
+  assert.equal(JSON.stringify(audit.rows[0]).includes(privateKey), false)
+  assert.equal(JSON.stringify(audit.rows[0]).includes(publicKey), false)
 })
 
 test('pack fulfillment is atomic and duplicate callbacks never duplicate credits', { skip: !testConnectionString }, async (t) => {
