@@ -62,6 +62,7 @@ describe('Studio payment client', () => {
         amountCents: 2900,
         currency: 'CNY',
         codeUrl: init?.method === 'POST' ? 'weixin://wxpay/bizpayurl?pr=test' : null,
+        payUrl: null,
         expiresAt: '2026-08-28T08:15:00.000Z',
         paidAt: null,
         completedAt: null,

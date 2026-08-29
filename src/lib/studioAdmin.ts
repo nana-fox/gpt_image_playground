@@ -52,6 +52,30 @@ export type StudioPaymentChannel = {
   version: number
 }
 
+type StudioPaymentProviderConfig = {
+  appId: string
+  privateKeyConfigured: boolean
+  publicKeyConfigured: boolean
+  privateKey?: string
+  publicKey?: string
+  mchId?: string
+  serialNo?: string
+  publicKeyId?: string
+  apiV3KeyConfigured?: boolean
+  apiV3Key?: string
+}
+
+export type StudioPaymentProvider = {
+  id: string
+  providerKey: 'wxpay' | 'alipay'
+  name: string
+  enabled: boolean
+  configured: boolean
+  notifyUrl: string
+  version: number
+  config: StudioPaymentProviderConfig
+}
+
 export type StudioAdminInspiration = StudioInspiration & {
   enabled: boolean
 }
@@ -131,6 +155,36 @@ export async function updateStudioPaymentChannel(channel: StudioPaymentChannel, 
     credentials: 'same-origin',
     headers: writeHeaders(),
     body: JSON.stringify({ acceptingOrders: channel.acceptingOrders, expectedVersion: channel.version }),
+  }, request))
+}
+
+export async function getStudioPaymentProviders(request: typeof fetch = fetch): Promise<StudioPaymentProvider[]> {
+  const data = await call('admin/payment-providers', { credentials: 'same-origin' }, request)
+  if (!Array.isArray(data)) throw protocolError()
+  return data.map(normalizePaymentProvider)
+}
+
+export async function updateStudioPaymentProvider(provider: StudioPaymentProvider, request: typeof fetch = fetch): Promise<StudioPaymentProvider> {
+  const config = provider.providerKey === 'wxpay'
+    ? {
+        appId: provider.config.appId,
+        mchId: provider.config.mchId ?? '',
+        serialNo: provider.config.serialNo ?? '',
+        privateKey: provider.config.privateKey ?? '',
+        publicKey: provider.config.publicKey ?? '',
+        publicKeyId: provider.config.publicKeyId ?? '',
+        apiV3Key: provider.config.apiV3Key ?? '',
+      }
+    : {
+        appId: provider.config.appId,
+        privateKey: provider.config.privateKey ?? '',
+        publicKey: provider.config.publicKey ?? '',
+      }
+  return normalizePaymentProvider(await call(`admin/payment-providers/${encodeURIComponent(provider.id)}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify({ name: provider.name, enabled: provider.enabled, expectedVersion: provider.version, config }),
   }, request))
 }
 
@@ -266,6 +320,32 @@ function normalizePaymentChannel(value: unknown): StudioPaymentChannel {
     || !positiveCount(channel.version)
   ) throw protocolError()
   return channel as StudioPaymentChannel
+}
+
+function normalizePaymentProvider(value: unknown): StudioPaymentProvider {
+  const provider = value as Partial<StudioPaymentProvider> | undefined
+  const config = provider?.config as Partial<StudioPaymentProviderConfig> | undefined
+  if (
+    !provider
+    || typeof provider.id !== 'string'
+    || (provider.providerKey !== 'wxpay' && provider.providerKey !== 'alipay')
+    || typeof provider.name !== 'string'
+    || typeof provider.enabled !== 'boolean'
+    || typeof provider.configured !== 'boolean'
+    || typeof provider.notifyUrl !== 'string'
+    || !positiveCount(provider.version)
+    || !config
+    || typeof config.appId !== 'string'
+    || typeof config.privateKeyConfigured !== 'boolean'
+    || typeof config.publicKeyConfigured !== 'boolean'
+  ) throw protocolError()
+  if (provider.providerKey === 'wxpay' && (
+    typeof config.mchId !== 'string'
+    || typeof config.serialNo !== 'string'
+    || typeof config.publicKeyId !== 'string'
+    || typeof config.apiV3KeyConfigured !== 'boolean'
+  )) throw protocolError()
+  return provider as StudioPaymentProvider
 }
 
 function normalizeAdminInspiration(value: unknown): StudioAdminInspiration {

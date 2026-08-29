@@ -20,11 +20,13 @@ import {
   createStudioInspiration,
   getStudioAdminInspirations,
   getStudioPaymentChannel,
+  getStudioPaymentProviders,
   getStudioQuotaPolicy,
   getStudioPaymentPlans,
   grantStudioCredits,
   searchStudioUsers,
   updateStudioPaymentChannel,
+  updateStudioPaymentProvider,
   updateStudioInspiration,
   updateStudioQuotaPolicy,
   updateStudioPaymentPlan,
@@ -33,6 +35,7 @@ import {
   type StudioAdminSession,
   type StudioAdminUser,
   type StudioPaymentChannel,
+  type StudioPaymentProvider,
   type StudioQuotaPolicy,
 } from '../lib/studioAdmin'
 import { studioAssetPath } from '../lib/studioApi'
@@ -65,6 +68,7 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [policy, setPolicy] = useState<StudioQuotaPolicy>()
   const [plans, setPlans] = useState<StudioAdminPaymentPlan[]>([])
   const [paymentChannel, setPaymentChannel] = useState<StudioPaymentChannel>()
+  const [paymentProviders, setPaymentProviders] = useState<StudioPaymentProvider[]>([])
   const [inspirations, setInspirations] = useState<StudioAdminInspiration[]>([])
   const [query, setQuery] = useState('')
   const [searched, setSearched] = useState(false)
@@ -75,17 +79,19 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [expiresAt, setExpiresAt] = useState('')
   const [confirmingGrant, setConfirmingGrant] = useState(false)
   const [editingPlan, setEditingPlan] = useState<StudioAdminPaymentPlan | null>(null)
+  const [editingProvider, setEditingProvider] = useState<StudioPaymentProvider | null>(null)
   const [editingInspiration, setEditingInspiration] = useState<StudioAdminInspiration | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel(), getStudioAdminInspirations()])
-      .then(([nextPolicy, nextPlans, nextPaymentChannel, nextInspirations]) => {
+    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel(), getStudioPaymentProviders(), getStudioAdminInspirations()])
+      .then(([nextPolicy, nextPlans, nextPaymentChannel, nextPaymentProviders, nextInspirations]) => {
         setPolicy(nextPolicy)
         setPlans(nextPlans)
         setPaymentChannel(nextPaymentChannel)
+        setPaymentProviders(nextPaymentProviders)
         setInspirations(nextInspirations)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '运营配置加载失败'))
@@ -190,6 +196,31 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
       setMessage(updated.acceptingOrders ? '支付渠道已开始接收新订单。' : '已停止新订单，历史订单仍会继续查单和履约。')
     } catch (err) {
       setError(err instanceof Error ? err.message : '支付渠道保存失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const editProvider = (provider: StudioPaymentProvider) => {
+    setEditingProvider({
+      ...provider,
+      config: { ...provider.config, privateKey: '', publicKey: '', apiV3Key: '' },
+    })
+  }
+
+  const savePaymentProvider = async () => {
+    if (!editingProvider) return
+    setBusy(`provider:${editingProvider.id}`)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await updateStudioPaymentProvider(editingProvider)
+      setPaymentProviders((current) => current.map((provider) => provider.id === updated.id ? updated : provider))
+      setPaymentChannel(await getStudioPaymentChannel())
+      setMessage(`${updated.name} 已保存，${updated.enabled ? '现在可供用户选择' : '当前未启用'}。`)
+      setEditingProvider(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '支付供应商保存失败')
     } finally {
       setBusy('')
     }
@@ -315,14 +346,22 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
         </>}
 
         {section === 'payment' && <>
-          <header className="operations-heading"><span className="eyebrow">收款配置</span><h1>支付渠道</h1><p>运营端只控制是否接收新订单。商户号、证书和密钥保留在服务端，不会写入页面或数据库。</p></header>
+          <header className="operations-heading"><span className="eyebrow">收款配置</span><h1>支付渠道</h1><p>在 Studio 内配置微信和支付宝。敏感凭证加密保存在 Studio PostgreSQL，页面只显示配置状态。</p></header>
           <section className="operations-card compact-card">
-            <div className="operations-card-heading"><div><h2>微信 Native 支付</h2><p>用户在浏览器中扫码完成支付，到账后自动发放套餐额度。</p></div><span className={`status-pill ${paymentChannel?.checkoutAvailable ? 'online' : ''}`}>{paymentChannel?.checkoutAvailable ? '可下单' : '未开放'}</span></div>
+            <div className="operations-card-heading"><div><h2>收款总开关</h2><p>关闭后不再创建新订单，已有订单仍可回调、查单和发放额度。</p></div><span className={`status-pill ${paymentChannel?.checkoutAvailable ? 'online' : ''}`}>{paymentChannel?.checkoutAvailable ? '可下单' : '未开放'}</span></div>
             {paymentChannel ? <div className="operations-form">
-              <div className="operations-field-grid"><label><span>服务端凭证</span><input value={paymentChannel.credentialsReady ? '已完整配置' : '尚未配置完整'} readOnly /><small>凭证只通过部署环境和只读文件挂载提供。</small></label><label><span>支付回调地址</span><input value={paymentChannel.notifyUrl} readOnly /><small>需要在微信支付商户平台保持可访问。</small></label></div>
-              <label className="operations-switch"><span><strong>接收新的支付订单</strong><small>{paymentChannel.credentialsReady ? '关闭后不再创建新订单，已存在订单仍继续回调和履约。' : '请先由部署人员配置微信支付凭证，再开放下单。'}</small></span><input type="checkbox" checked={paymentChannel.acceptingOrders} disabled={!paymentChannel.credentialsReady} onChange={(event) => setPaymentChannel({ ...paymentChannel, acceptingOrders: event.target.checked })} /></label>
+              <label className="operations-switch"><span><strong>接收新的支付订单</strong><small>{paymentChannel.credentialsReady ? '至少一个供应商已配置并启用，可以开放用户购买。' : '请先完成下方微信或支付宝配置。'}</small></span><input type="checkbox" checked={paymentChannel.acceptingOrders} disabled={!paymentChannel.credentialsReady} onChange={(event) => setPaymentChannel({ ...paymentChannel, acceptingOrders: event.target.checked })} /></label>
               <div className="operations-form-actions"><span>配置版本 {paymentChannel.version}</span><button className="primary-button" disabled={busy === 'payment-channel'} onClick={() => void savePaymentChannel()}>{busy === 'payment-channel' ? '正在保存…' : '保存支付渠道设置'}</button></div>
             </div> : <div className="recent-loading">正在读取真实配置…</div>}
+          </section>
+          <section className="operations-card">
+            <div className="operations-card-heading"><div><h2>支付供应商</h2><p>首发支持微信 Native 扫码和支付宝电脑网站支付。</p></div></div>
+            <div className="operations-provider-grid">{paymentProviders.map((provider) => <article key={provider.id}>
+              <div><span className={`payment-logo ${provider.providerKey === 'wxpay' ? 'wechat' : 'alipay'}`}>{provider.providerKey === 'wxpay' ? '微' : '支'}</span><span><small>{provider.providerKey === 'wxpay' ? '微信 Native' : '支付宝网页支付'}</small><strong>{provider.name}</strong></span><span className={`status-pill ${provider.enabled ? 'online' : ''}`}>{provider.enabled ? '已启用' : provider.configured ? '已配置' : '待配置'}</span></div>
+              <dl><div><dt>App ID</dt><dd>{provider.config.appId || '尚未填写'}</dd></div>{provider.providerKey === 'wxpay' && <div><dt>商户号</dt><dd>{provider.config.mchId || '尚未填写'}</dd></div>}<div><dt>凭证</dt><dd>{provider.configured ? '已加密保存' : '尚未完整配置'}</dd></div></dl>
+              <label><span>异步通知地址</span><input value={provider.notifyUrl} readOnly /></label>
+              <button className="secondary-button" onClick={() => editProvider(provider)}><PencilSimple size={16} />配置供应商</button>
+            </article>)}</div>
           </section>
         </>}
       </div>
@@ -331,6 +370,8 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
     {confirmingGrant && selected && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmingGrant(false) }}><section className="operations-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="grant-title"><button className="modal-close" onClick={() => setConfirmingGrant(false)} aria-label="关闭"><X size={20} /></button><span className="metric-icon"><Plus size={21} /></span><h2 id="grant-title">确认发放</h2><p>请核对账户和额度。提交后会写入审计记录，不能通过当前页面撤销。</p><dl><div><dt>用户</dt><dd>{selected.email}</dd></div><div><dt>增加额度</dt><dd>{units} 次</dd></div><div><dt>业务编号</dt><dd>{reference}</dd></div><div><dt>有效期</dt><dd>{expiresAt ? new Date(expiresAt).toLocaleString('zh-CN') : '不过期'}</dd></div></dl><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setConfirmingGrant(false)}>返回修改</button><button className="primary-button" disabled={busy === 'grant'} onClick={() => void grant()}>{busy === 'grant' ? '正在发放…' : '确认发放'}</button></div></section></div>}
 
     {editingPlan && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingPlan(null) }}><section className="operations-modal plan-editor" role="dialog" aria-modal="true" aria-labelledby="plan-editor-title"><button className="modal-close" onClick={() => setEditingPlan(null)} aria-label="关闭"><X size={20} /></button><span className="eyebrow">{editingPlan.kind === 'subscription' ? '订阅套餐' : '一次性加量包'}</span><h2 id="plan-editor-title">编辑套餐</h2><p>修改会影响之后创建的新订单，历史订单继续使用原快照。</p><div className="operations-form"><label className="operations-switch"><span><strong>在用户端销售</strong><small>关闭后不会出现在额度与方案页面。</small></span><input type="checkbox" checked={editingPlan.enabled} onChange={(event) => setEditingPlan({ ...editingPlan, enabled: event.target.checked })} /></label><label><span>套餐名称</span><input value={editingPlan.name} maxLength={100} onChange={(event) => setEditingPlan({ ...editingPlan, name: event.target.value })} /></label><div className="operations-field-grid"><label><span>价格（元）</span><input type="number" min="0.01" max="1000000" step="0.01" value={(editingPlan.priceCents / 100).toFixed(2)} onChange={(event) => setEditingPlan({ ...editingPlan, priceCents: Math.round(Number(event.target.value) * 100) })} /></label><label><span>包含次数</span><input type="number" min="1" max="100000" value={editingPlan.credits} onChange={(event) => setEditingPlan({ ...editingPlan, credits: Number(event.target.value) })} /></label><label><span>有效天数</span><input type="number" min="1" max="3650" value={editingPlan.durationDays} onChange={(event) => setEditingPlan({ ...editingPlan, durationDays: Number(event.target.value) })} /></label></div><label><span>用户说明</span><textarea value={editingPlan.description} maxLength={300} onChange={(event) => setEditingPlan({ ...editingPlan, description: event.target.value })} /></label></div><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setEditingPlan(null)}>取消</button><button className="primary-button" disabled={busy === `plan:${editingPlan.id}`} onClick={() => void savePlan()}>{busy === `plan:${editingPlan.id}` ? '正在保存…' : '保存套餐'}</button></div></section></div>}
+
+    {editingProvider && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingProvider(null) }}><section className="operations-modal provider-editor" role="dialog" aria-modal="true" aria-labelledby="provider-editor-title"><button className="modal-close" onClick={() => setEditingProvider(null)} aria-label="关闭"><X size={20} /></button><span className="eyebrow">支付供应商</span><h2 id="provider-editor-title">配置{editingProvider.providerKey === 'wxpay' ? '微信支付' : '支付宝'}</h2><p>密钥提交后只会加密保存；再次编辑时留空可保留原值。</p><div className="operations-form"><label className="operations-switch"><span><strong>允许用户选择此支付方式</strong><small>必须完整填写凭证后才能启用。</small></span><input type="checkbox" checked={editingProvider.enabled} onChange={(event) => setEditingProvider({ ...editingProvider, enabled: event.target.checked })} /></label><label><span>显示名称</span><input value={editingProvider.name} maxLength={100} onChange={(event) => setEditingProvider({ ...editingProvider, name: event.target.value })} /></label><label><span>App ID</span><input value={editingProvider.config.appId} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, appId: event.target.value } })} /></label>{editingProvider.providerKey === 'wxpay' && <><div className="operations-field-grid"><label><span>商户号</span><input value={editingProvider.config.mchId ?? ''} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, mchId: event.target.value } })} /></label><label><span>商户证书序列号</span><input value={editingProvider.config.serialNo ?? ''} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, serialNo: event.target.value } })} /></label><label><span>微信支付公钥 ID</span><input value={editingProvider.config.publicKeyId ?? ''} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, publicKeyId: event.target.value } })} /></label></div><label><span>API v3 密钥</span><input type="password" value={editingProvider.config.apiV3Key ?? ''} placeholder={editingProvider.config.apiV3KeyConfigured ? '已配置，留空保持不变' : '32 位 API v3 密钥'} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, apiV3Key: event.target.value } })} /></label></>}<label><span>商户应用私钥</span><textarea value={editingProvider.config.privateKey ?? ''} placeholder={editingProvider.config.privateKeyConfigured ? '已配置，留空保持不变' : '粘贴完整 PEM 私钥'} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, privateKey: event.target.value } })} /></label><label><span>{editingProvider.providerKey === 'wxpay' ? '微信支付公钥' : '支付宝公钥'}</span><textarea value={editingProvider.config.publicKey ?? ''} placeholder={editingProvider.config.publicKeyConfigured ? '已配置，留空保持不变' : '粘贴平台公钥'} onChange={(event) => setEditingProvider({ ...editingProvider, config: { ...editingProvider.config, publicKey: event.target.value } })} /></label><label><span>异步通知地址</span><input value={editingProvider.notifyUrl} readOnly /><small>把这个地址填写到对应支付平台；不要使用 Router 的回调地址。</small></label></div><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setEditingProvider(null)}>取消</button><button className="primary-button" disabled={busy === `provider:${editingProvider.id}`} onClick={() => void savePaymentProvider()}>{busy === `provider:${editingProvider.id}` ? '正在保存…' : '加密保存供应商'}</button></div></section></div>}
 
     {editingInspiration && <div className="operations-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingInspiration(null) }}><section className="operations-modal inspiration-editor" role="dialog" aria-modal="true" aria-labelledby="inspiration-editor-title"><button className="modal-close" onClick={() => setEditingInspiration(null)} aria-label="关闭"><X size={20} /></button><span className="eyebrow">内容运营</span><h2 id="inspiration-editor-title">{editingInspiration.id ? '编辑灵感' : '新增灵感'}</h2><p>提示词会在用户选择灵感后带入创作框。首发封面使用随 Studio 发布的受控图片。</p><img className="inspiration-editor-preview" src={studioAssetPath(editingInspiration.image)} alt="当前封面预览" /><div className="operations-form"><div className="operations-field-grid"><label><span>分类</span><input value={editingInspiration.category} maxLength={30} required onChange={(event) => setEditingInspiration({ ...editingInspiration, category: event.target.value })} /></label><label><span>标题</span><input value={editingInspiration.title} maxLength={100} required onChange={(event) => setEditingInspiration({ ...editingInspiration, title: event.target.value })} /></label></div><label><span>一句话说明</span><input value={editingInspiration.description} maxLength={300} required onChange={(event) => setEditingInspiration({ ...editingInspiration, description: event.target.value })} /></label><label><span>创作提示词</span><textarea value={editingInspiration.prompt} maxLength={10000} required onChange={(event) => setEditingInspiration({ ...editingInspiration, prompt: event.target.value })} /></label><div className="operations-field-grid"><label><span>封面图片</span><select value={editingInspiration.image} onChange={(event) => setEditingInspiration({ ...editingInspiration, image: event.target.value })}>{inspirationImages.map((image) => <option key={image} value={image}>{image}</option>)}</select></label><label><span>排序</span><input type="number" min="0" max="100000" value={editingInspiration.sortOrder} onChange={(event) => setEditingInspiration({ ...editingInspiration, sortOrder: Number(event.target.value) })} /></label></div><label className="operations-switch"><span><strong>在灵感页上架</strong><small>关闭后用户端立即隐藏，但内容和审计记录会保留。</small></span><input type="checkbox" checked={editingInspiration.enabled} onChange={(event) => setEditingInspiration({ ...editingInspiration, enabled: event.target.checked })} /></label><label className="operations-switch"><span><strong>设为首页推荐</strong><small>只有已上架内容会在首页推荐区展示。</small></span><input type="checkbox" checked={editingInspiration.featured} onChange={(event) => setEditingInspiration({ ...editingInspiration, featured: event.target.checked })} /></label></div><div className="operations-modal-actions"><button className="secondary-button" onClick={() => setEditingInspiration(null)}>取消</button><button className="primary-button" disabled={busy === 'inspiration' || !editingInspiration.title.trim() || !editingInspiration.description.trim() || !editingInspiration.prompt.trim()} onClick={() => void saveInspiration()}>{busy === 'inspiration' ? '正在保存…' : '保存灵感'}</button></div></section></div>}
   </div>

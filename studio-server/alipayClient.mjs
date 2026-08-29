@@ -1,4 +1,4 @@
-import { AlipaySdk } from 'alipay-sdk'
+import { createSign, createVerify } from 'node:crypto'
 
 export class PaymentProviderError extends Error {
   constructor(message, reason = 'PAYMENT_PROVIDER_ERROR', status = 502) {
@@ -15,42 +15,27 @@ export function createAlipayClient(options = {}) {
   const publicKey = required(options.publicKey, 'Alipay public key')
   const notifyUrl = required(options.notifyUrl, 'Alipay notify URL')
   const returnUrl = required(options.returnUrl, 'Alipay return URL')
-  const sdk = options.sdk ?? new AlipaySdk({ appId, privateKey, alipayPublicKey: publicKey, signType: 'RSA2' })
+  const sdk = options.sdk
 
   return {
     async createCheckoutOrder(input) {
-      const url = await sdk.pageExecute('alipay.trade.page.pay', 'GET', {
-        notifyUrl,
-        returnUrl,
-        bizContent: {
-          out_trade_no: required(input?.outTradeNo, 'Alipay order number'),
-          product_code: 'FAST_INSTANT_TRADE_PAY',
-          subject: required(input?.description, 'Alipay order description').slice(0, 256),
-          total_amount: amount(Number(input?.amountCents)),
-          timeout_express: '15m',
-        },
-      })
+      const bizContent = {
+        out_trade_no: required(input?.outTradeNo, 'Alipay order number'),
+        product_code: 'FAST_INSTANT_TRADE_PAY',
+        subject: required(input?.description, 'Alipay order description').slice(0, 256),
+        total_amount: amount(Number(input?.amountCents)),
+        timeout_express: '15m',
+      }
+      const url = sdk
+        ? await sdk.pageExecute('alipay.trade.page.pay', 'GET', { notifyUrl, returnUrl, bizContent })
+        : pageUrl({ appId, privateKey, notifyUrl, returnUrl, bizContent })
       if (!String(url).startsWith('https://')) throw providerError('支付宝没有返回有效收银台地址')
       return { payUrl: String(url) }
     },
 
-    async queryOrder(outTradeNo) {
-      const result = await sdk.exec('alipay.trade.query', { bizContent: { out_trade_no: outTradeNo } })
-      if (!['TRADE_SUCCESS', 'TRADE_FINISHED'].includes(result?.tradeStatus)) return { status: 'pending' }
-      return {
-        status: 'success',
-        outTradeNo: result.outTradeNo,
-        transactionId: result.tradeNo,
-        amountCents: cents(result.totalAmount),
-        currency: 'CNY',
-        appId,
-        mchId: null,
-      }
-    },
-
     verifyNotification(rawBody) {
       const values = Object.fromEntries(new URLSearchParams(String(rawBody ?? '')))
-      if (!sdk.checkNotifySignV2(values)) {
+      if (!(sdk ? sdk.checkNotifySignV2(values) : verify(values, publicKey))) {
         throw new PaymentProviderError('支付宝回调签名无效', 'PAYMENT_SIGNATURE_INVALID', 401)
       }
       if (values.app_id !== appId || !['TRADE_SUCCESS', 'TRADE_FINISHED'].includes(values.trade_status)) {
@@ -67,6 +52,58 @@ export function createAlipayClient(options = {}) {
       }
     },
   }
+}
+
+function pageUrl({ appId, privateKey, notifyUrl, returnUrl, bizContent }) {
+  const params = {
+    app_id: appId,
+    biz_content: JSON.stringify(bizContent),
+    charset: 'utf-8',
+    format: 'JSON',
+    method: 'alipay.trade.page.pay',
+    notify_url: notifyUrl,
+    return_url: returnUrl,
+    sign_type: 'RSA2',
+    timestamp: new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(new Date()),
+    version: '1.0',
+  }
+  const signer = createSign('RSA-SHA256')
+  signer.update(signingText(params), 'utf8')
+  signer.end()
+  const query = new URLSearchParams({ ...params, sign: signer.sign(pem(privateKey, 'PRIVATE KEY'), 'base64') })
+  return `https://openapi.alipay.com/gateway.do?${query}`
+}
+
+function verify(values, publicKey) {
+  const signature = String(values.sign ?? '').trim()
+  if (!signature) return false
+  const verifier = createVerify('RSA-SHA256')
+  verifier.update(signingText(values), 'utf8')
+  verifier.end()
+  return verifier.verify(pem(publicKey, 'PUBLIC KEY'), signature, 'base64')
+}
+
+function signingText(values) {
+  return Object.keys(values)
+    .filter((key) => key !== 'sign' && key !== 'sign_type' && values[key] !== '' && values[key] !== undefined)
+    .sort()
+    .map((key) => `${key}=${values[key]}`)
+    .join('&')
+}
+
+function pem(value, label) {
+  const normalized = String(value ?? '').trim()
+  if (normalized.includes('-----BEGIN')) return normalized
+  return `-----BEGIN ${label}-----\n${normalized.match(/.{1,64}/g)?.join('\n') ?? ''}\n-----END ${label}-----`
 }
 
 function amount(value) {

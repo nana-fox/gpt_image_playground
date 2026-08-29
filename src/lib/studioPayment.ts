@@ -11,16 +11,23 @@ export type StudioPaymentPlan = {
   credits: number
   durationDays: number
   purchasable: boolean
+  paymentMethods: StudioPaymentMethod[]
+}
+
+export type StudioPaymentMethod = {
+  providerKey: 'wxpay' | 'alipay'
+  name: string
 }
 
 export type StudioPaymentOrder = {
   id: string
   status: 'pending' | 'completed' | 'expired' | 'failed'
-  provider: 'wxpay_native'
+  provider: 'wxpay_native' | 'alipay_page'
   plan: Omit<StudioPaymentPlan, 'purchasable'>
   amountCents: number
   currency: 'CNY'
   codeUrl: string | null
+  payUrl: string | null
   expiresAt: string
   paidAt: string | null
   completedAt: string | null
@@ -44,7 +51,7 @@ export async function listStudioPaymentPlans(request: typeof fetch = fetch): Pro
   return data.map(normalizePlan)
 }
 
-export async function createStudioPaymentOrder(planId: string, idempotencyKey: string, request: typeof fetch = fetch) {
+export async function createStudioPaymentOrder(planId: string, idempotencyKey: string, providerKey: StudioPaymentMethod['providerKey'], request: typeof fetch = fetch) {
   return normalizeOrder(await call('payments/orders', {
     method: 'POST',
     credentials: 'same-origin',
@@ -52,7 +59,7 @@ export async function createStudioPaymentOrder(planId: string, idempotencyKey: s
       'Content-Type': 'application/json',
       'X-CSRF-Token': readStudioCookie('nanafox_studio_csrf'),
     },
-    body: JSON.stringify({ planId, idempotencyKey }),
+    body: JSON.stringify({ planId, idempotencyKey, providerKey }),
   }, request))
 }
 
@@ -97,6 +104,12 @@ function normalizePlan(value: unknown): StudioPaymentPlan {
     || !positiveInteger(plan.credits)
     || !positiveInteger(plan.durationDays)
     || typeof plan.purchasable !== 'boolean'
+    || !Array.isArray(plan.paymentMethods)
+    || plan.paymentMethods.some((method) => (
+      !method
+      || (method.providerKey !== 'wxpay' && method.providerKey !== 'alipay')
+      || typeof method.name !== 'string'
+    ))
   ) throw protocolError()
   return plan as StudioPaymentPlan
 }
@@ -107,16 +120,17 @@ function normalizeOrder(value: unknown): StudioPaymentOrder {
     !order
     || typeof order.id !== 'string'
     || !['pending', 'completed', 'expired', 'failed'].includes(String(order.status))
-    || order.provider !== 'wxpay_native'
+    || (order.provider !== 'wxpay_native' && order.provider !== 'alipay_page')
     || !order.plan
     || !positiveInteger(order.amountCents)
     || order.currency !== 'CNY'
     || !(order.codeUrl === null || typeof order.codeUrl === 'string')
+    || !(order.payUrl === null || typeof order.payUrl === 'string')
     || typeof order.expiresAt !== 'string'
     || !(order.paidAt === null || typeof order.paidAt === 'string')
     || !(order.completedAt === null || typeof order.completedAt === 'string')
   ) throw protocolError()
-  normalizePlan({ ...order.plan, purchasable: true })
+  normalizePlan({ ...order.plan, purchasable: true, paymentMethods: [] })
   return order as StudioPaymentOrder
 }
 
