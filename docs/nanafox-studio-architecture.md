@@ -205,7 +205,7 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 - 日志记录 request id、task id、状态码和耗时，不记录提示词全文、签名 URL、Cookie 和 Secret。
 - 管理员加额、套餐变更和删除操作必须有审计记录与幂等 reference。
 - 管理 API 通过签名内部身份适配器同时核对 stable subject、邮箱、账户状态和 Router 当前角色；只有 `role=admin` 放行。前端菜单仅用于展示，不构成权限判断；身份服务不可用或返回未知角色时失败关闭为 503。
-- 微信商户私钥、APIv3 Key、平台公钥只从服务器 Secret 文件加载；支付默认关闭，开启支付时缺任一配置即启动失败。
+- 微信和支付宝凭证由 Studio 运营端配置，整体使用 AES-256-GCM 加密后进入 Studio PostgreSQL；`STUDIO_PAYMENT_CONFIG_KEY` 只在服务器 Secret，缺失或解密失败时支付失败关闭。
 - 支付回调先验签和校验商户/金额再履约；日志不记录通知原文、二维码内容、私钥、APIv3 Key 或用户提示词。
 
 ## 11. 演进触发条件

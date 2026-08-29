@@ -1,6 +1,6 @@
 # NanaFox Studio 支付实施计划
 
-> 状态：2026-08-28 实施基线。首发只做微信支付 Native 扫码；Studio 独立保存套餐、订单、订阅和额度，中转站仅作为已验证实现参考，不承载 Studio 余额或履约。
+> 状态：2026-08-29 支付供应商基线。Studio 支持微信 Native 和支付宝电脑网站支付；独立保存供应商、套餐、订单、订阅和额度。中转站只作为交互与支付行为参考，不修改其代码，也不复用其订单、回调或数据库。
 
 ## L1.1 引用验证
 
@@ -29,15 +29,17 @@
 | 金额 | 尚无支付表 | 数据库和 API 全程使用人民币分整数 | 避免浮点金额误差 |
 | 订单归属 | Studio 用户已有本地 ID | 订单只关联 `studio_users.id` | 不把 Router 钱包或用户余额引入 Studio |
 | 套餐配置 | 前端有 Plus/Pro 占位 | PostgreSQL 保存名称、类型、价格、额度、期限、启用状态和版本 | 运营端可改且支付订单保存不可变快照 |
-| 支付渠道 | 微信 Native 服务端能力已实现 | `STUDIO_PAYMENT_ENABLED` 只表示凭证就绪；运营端 `accepting_orders` 独立控制是否接新单 | 停止销售不能中断已付款订单的回调与查单履约 |
-| 商户凭证 | 尚未配置 | 只从服务端 secret/file 读取 | 不入数据库、不下发前端、不进镜像 |
-| SDK | Node 无已采用官方依赖 | 使用 Node `crypto`/`fetch` 实现 APIv3 最小协议面 | 不引入非官方支付 SDK；保留可测试边界 |
+| 支付渠道 | 微信 Native 已实现 | `STUDIO_PAYMENT_ENABLED` 是部署级总开关；运营端 `accepting_orders` 独立控制是否接新单 | 停止销售不能中断已付款订单的回调与履约 |
+| 商户凭证 | 运营端配置微信/支付宝 | 配置整体用 AES-256-GCM 加密后保存到 Studio PostgreSQL；加密主密钥只在 `STUDIO_PAYMENT_CONFIG_KEY` | 页面、API、审计和日志均不返回明文凭证 |
+| 供应商数量 | Router 支持多实例 | Studio 首发固定微信、支付宝各一个实例 | 当前没有负载均衡或多商户需求；需要时再扩展 |
+| SDK | 支付链路需最小依赖 | 微信使用现有 Node `crypto`/`fetch` APIv3 客户端；支付宝使用 Node `crypto` 实现 RSA2 页面签名与回调验签 | 官方支付宝 SDK 最新版仍带已披露高危间接依赖，不进入生产依赖 |
 
 ## L1.4 Return 语义
 
 | return 形态 | caller 解读 | 测试名 |
 |-----------|-----------|--------|
-| `{ status: 'pending', codeUrl, expiresAt }` | 展示真实扫码入口并轮询本地订单 | `creates one native order from the server-side plan snapshot` |
+| `{ status: 'pending', codeUrl, expiresAt }` | 展示微信真实扫码入口并轮询本地订单 | `creates one native order from the server-side plan snapshot` |
+| `{ status: 'pending', payUrl, expiresAt }` | 保存订单 ID 后跳转支付宝；返回 Studio 后继续读取本地订单 | `selects the requested Studio provider and returns an Alipay checkout URL` |
 | `{ status: 'completed' }` | 刷新额度并关闭支付层 | `fulfills a paid pack exactly once` |
 | `PAYMENT_NOT_CONFIGURED` | 套餐可浏览，购买按钮说明暂未开放 | `never creates an order when payment is disabled` |
 | `PAYMENT_AMOUNT_MISMATCH` | 回调失败、无额度变更 | `rejects a paid notification with a changed amount` |
@@ -72,17 +74,18 @@
 
 | 假设 | 验证路径 | 环境 | 假设不成立时行为 |
 |-----|--------|-----|--------------|
-| PostgreSQL 可用且迁移 003 已完成 | `/api/ready` + schema migration | 测试/生产 | 实例不就绪，不接流量 |
-| 外部回调可到达 `${STUDIO_PUBLIC_ORIGIN}${STUDIO_PUBLIC_BASE_PATH}api/payments/webhooks/wechat` | 微信商户平台回调测试 | 测试/生产 | 保持支付关闭 |
+| PostgreSQL 可用且迁移 009 已完成 | `/api/ready` + schema migration | 测试/生产 | 实例不就绪，不接流量 |
+| 外部回调可到达 `.../api/payments/webhooks/{providerKey}/{providerId}` | 微信/支付宝平台回调测试 | 测试/生产 | 对应供应商保持关闭 |
 | 服务端时间与 NTP 同步 | 主机时钟监控 | 测试/生产 | 拒绝超时签名并告警 |
 | 微信 API 可从日本服务器访问 | 预下单探针 | 测试/生产 | 下单返回渠道不可用，不创建第二份额度 |
-| 商户私钥和平台公钥只读挂载 | 容器内权限检查 | 测试/生产 | 启动失败，不降级为跳过验签 |
+| `STUDIO_PAYMENT_CONFIG_KEY` 稳定且只在服务器 Secret 中 | 容器环境与加密读回测试 | 测试/生产 | 无法解密时供应商失败关闭，不允许下单 |
 
 ## L2.2 状态机
 
 ```text
 create: none -> pending
-  -> Native 预下单成功：pending + code_url + expires_at
+  -> 微信预下单成功：pending + code_url + expires_at
+  -> 支付宝下单成功：pending + pay_url + expires_at
   -> 渠道失败：failed（不履约）
 pending
   -> 已验签 SUCCESS，商户/金额一致：paid -> completed
@@ -112,7 +115,7 @@ completed
 |-----|-----|-----|
 | 身份来源 | 下单/查单来自 Studio HttpOnly session；回调来自微信 RSA 签名 | `studio-server/authApp.mjs:15` |
 | 授权边界 | 用户只读写自己的订单；套餐修改沿用管理员 subject + CSRF | `studio-server/adminApp.mjs:20` |
-| 凭证泄漏面 | 商户私钥、APIv3 key、平台公钥仅服务端文件挂载 | `studio-server/server.mjs:20` |
+| 凭证泄漏面 | 凭证仅以加密 ciphertext 入库；主密钥仅在服务器 Secret | `studio-server/paymentProviderStore.mjs` |
 | SSRF | 微信 API host 固定为 `api.mch.weixin.qq.com`，无用户 URL | 新客户端单元测试固定请求 host |
 | 租户隔离 | 所有用户订单查询同时限定 `id` 与 `user_id` | PostgreSQL 查询测试 |
 | 日志脱敏 | 不输出 request body、签名、证书和密钥 | webhook 负向测试 + 日志 review |
@@ -143,7 +146,8 @@ completed
 3. billing app + 事务履约；测试加量包与订阅重复回调只发放一次。
 4. 前端真实套餐、扫码弹层、状态轮询和运营套餐编辑；禁止模拟成功入口。
 5. 测试环境默认关闭渠道；配置测试商户后，以一分钱隐藏套餐完成真支付、额度到账、重复回调和过期回收验收。
-6. migration 004 增加单例渠道状态；运营端只配置是否接单及查看脱敏状态，不保存或展示 APIv3 key、私钥、证书内容；测试关闭接单后迟到回调仍能履约。
+6. migration 004 增加单例渠道状态；migration 009 增加两个 Studio 供应商、加密配置、实例化回调和支付宝订单字段。
+7. 运营端可以填写微信/支付宝配置，但 API 只返回 App ID、商户号和“已配置”标识；密钥留空更新时保留旧值。
 
 ## 剩余风险登记
 
@@ -152,5 +156,7 @@ completed
 | 尚无微信商户号/证书，无法完成真实资金验收 | 待用户提供 secret 后测试 | NanaFox owner | `studio-wxpay-test-merchant` |
 | 更换商户时旧订单回调仍需旧平台公钥/APIv3 key | 已知；首发先等 pending 订单过期再切换 | NanaFox ops | `studio-wxpay-key-rotation` |
 | JSAPI 需要公众号 AppID、OpenID 和微信内 OAuth | 接受；首发不做 | NanaFox product | `studio-wxpay-jsapi` |
-| 退款、自动续费、支付宝 | 接受；有真实订单需求后再做 | NanaFox product | `studio-payment-phase-2` |
+| 支付宝尚未取得生产应用凭证，无法完成真实资金验收 | 待用户提供凭证后测试 | NanaFox owner | `studio-alipay-live-acceptance` |
+| 退款、自动续费 | 接受；首发订单只做购买和幂等履约 | NanaFox product | `studio-payment-phase-2` |
+| 每种支付方式只有一个供应商实例 | 接受；出现多商户或故障切换需求再扩展 | NanaFox product | `studio-payment-multi-instance` |
 | Sub2API PostgreSQL/Redis 以 `0.0.0.0` 发布宿主端口 | 已知；非本次引入，不阻塞 Studio 支付开发 | NanaFox ops | `sub2api-private-db-ports` |

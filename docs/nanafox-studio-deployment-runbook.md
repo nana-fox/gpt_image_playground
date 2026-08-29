@@ -82,19 +82,13 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 | `STUDIO_R2_REGION` | R2 | 固定 `auto` |
 | `STUDIO_ARTWORK_ROOT` | 仅本地回退 | filesystem 模式目录；R2 模式不使用 |
 | `STUDIO_PAYMENT_ENABLED` | 支付 | 默认 `false`；测试小额支付验收完成前不得开启 |
-| `STUDIO_WXPAY_APP_ID` | 微信支付 | 商户绑定的 AppID；不是个人微信号 |
-| `STUDIO_WXPAY_MCH_ID` | 微信支付 | 微信支付商户号 |
-| `STUDIO_WXPAY_MERCHANT_SERIAL_NO` | 微信支付 | 商户 API 证书序列号 |
-| `STUDIO_WXPAY_PRIVATE_KEY_FILE` | 微信支付 | 商户私钥 PEM 文件绝对路径 |
-| `STUDIO_WXPAY_PUBLIC_KEY_FILE` | 微信支付 | 微信支付公钥 PEM 文件绝对路径；不是商户公钥 |
-| `STUDIO_WXPAY_PUBLIC_KEY_ID` | 微信支付 | 与微信支付公钥匹配的 `PUB_KEY_ID_...`；不是商户 API 证书序列号 |
-| `STUDIO_WXPAY_API_V3_KEY` | 微信支付 | 32 字节 APIv3 Key |
+| `STUDIO_PAYMENT_CONFIG_KEY` | 支付配置 | `openssl rand -base64 32` 生成；用于加密 Studio PostgreSQL 内的供应商配置，测试/生产独立且必须备份 |
 
-旧变量 `STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE`、`STUDIO_WXPAY_PLATFORM_SERIAL_NO` 仅保留部署兼容，不再用于新配置。Studio 首发统一采用微信支付公钥验签模式，不填写微信支付平台证书序列号。
+微信和支付宝凭证在 Studio 运营端录入，不再通过 `STUDIO_WXPAY_*` 环境变量配置。微信填写 AppID、商户号、商户证书序列号、商户私钥、微信支付公钥、公钥 ID 和 APIv3 Key；支付宝填写应用 AppID、应用私钥和支付宝公钥。
 
 Secret 文件权限必须为 `0600`，商户私钥文件可进一步设为 `0400`，属主为 Studio 服务账号。不得使用 `Environment=` 把 Secret 展开进公开的进程列表、CI 输出或镜像层；部署完成后检查日志未回显连接串、Cookie 或 Key。
 
-测试支付回调地址为 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/wechat`，生产为 `https://studio.nanafox.com/api/payments/webhooks/wechat`。商户资料更换时先关闭新下单并核对所有待支付订单，再整体替换同一商户身份的一组配置；不能把新旧商户号、证书和 APIv3 Key 混用。
+测试回调地址由运营端按供应商显示，例如 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/wxpay/wxpay-default` 和 `.../alipay/alipay-default`；生产域名对应 `https://studio.nanafox.com/api/...`。不要填写 Router 的 `/api/v1/payment/webhook/*`。商户资料更换时先关闭新下单并核对待支付订单，再整体替换同一商户身份的一组配置。
 
 测试服务器当前使用用户级 Secret，避免要求 `nio` 获得免密 sudo：
 
