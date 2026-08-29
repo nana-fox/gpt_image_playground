@@ -330,6 +330,6 @@ test('selects the requested Studio provider and returns an Alipay checkout URL',
 
   assert.equal(result.provider, 'alipay_page')
   assert.equal(result.payUrl, 'https://openapi.alipay.com/gateway.do?signed=true')
-  assert.equal(calls[1][0], 'getEnabled')
-  assert.equal(calls[2][1].providerInstanceId, 'alipay-default')
+  assert.equal(calls[0][0], 'getEnabled')
+  assert.equal(calls[1][1].providerInstanceId, 'alipay-default')
 })
