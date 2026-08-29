@@ -35,6 +35,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     'studio_payment_events',
     'studio_payment_orders',
     'studio_payment_plans',
+    'studio_payment_providers',
     'studio_quota_policy',
     'studio_quota_reservations',
     'studio_schema_migrations',
@@ -59,6 +60,12 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
 
   const channel = await database.query('SELECT accepting_orders, version FROM studio_payment_channel WHERE id = 1')
   assert.deepEqual(channel.rows, [{ accepting_orders: false, version: 1 }])
+
+  const providers = await database.query('SELECT id, provider_key, enabled FROM studio_payment_providers ORDER BY id')
+  assert.deepEqual(providers.rows, [
+    { id: 'alipay-default', provider_key: 'alipay', enabled: false },
+    { id: 'wxpay-default', provider_key: 'wxpay', enabled: false },
+  ])
 
   const retentionColumns = await database.query(`
     SELECT column_name
