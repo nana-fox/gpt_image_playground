@@ -369,7 +369,29 @@ function AppHeader({ route, quota, session, isAdmin, navigate, onLogout }: { rou
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const accountAreaRef = useRef<HTMLDivElement>(null)
   const displayName = session.user.displayName || session.user.email
+
+  useEffect(() => {
+    if (!quotaOpen && !accountOpen) return
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!accountAreaRef.current?.contains(event.target as Node)) {
+        setQuotaOpen(false)
+        setAccountOpen(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setQuotaOpen(false)
+      setAccountOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [accountOpen, quotaOpen])
 
   const signOut = async () => {
     setSigningOut(true)
@@ -385,7 +407,7 @@ function AppHeader({ route, quota, session, isAdmin, navigate, onLogout }: { rou
     <header className="topbar">
       <button className="brand" onClick={() => navigate('create')}><span>NanaFox</span> 创作</button>
       <nav className="primary-nav" aria-label="主导航"><button className={route === 'create' ? 'active' : ''} onClick={() => navigate('create')}><House size={18} />首页</button><button className={route === 'inspiration' ? 'active' : ''} onClick={() => navigate('inspiration')}><Compass size={18} />灵感</button><button className={route === 'works' ? 'active' : ''} onClick={() => navigate('works')}><Images size={18} />作品</button></nav>
-      <div className="account-area"><div className="points-wrap"><button className="points-button quota-header-button" aria-label={`创作额度：${quotaHeader(quota)}`} aria-expanded={quotaOpen} aria-haspopup="dialog" aria-controls="quota-popover" onClick={() => { setQuotaOpen(!quotaOpen); setAccountOpen(false) }}><strong>{quotaHeader(quota)}</strong><span>{quota?.subscriber ? '订阅额度' : quota?.credits ? `另有 ${quota.credits} 次` : '免费额度'}</span></button>{quotaOpen && <div className="points-popover quota-popover" id="quota-popover" role="dialog" aria-label="创作额度"><div><Sparkle size={20} weight="duotone" /><strong>{quota?.free.enabled ? '今日免费创作' : '查看创作额度'}</strong></div><p>{quotaDescription(quota)}</p><button onClick={() => { setQuotaOpen(false); navigate('points') }}>查看额度与方案 <ArrowRight size={15} /></button></div>}</div><div className="account-menu-wrap"><button className="avatar-button" aria-label="账户菜单" aria-expanded={accountOpen} aria-haspopup="menu" aria-controls="account-popover" onClick={() => { setAccountOpen(!accountOpen); setQuotaOpen(false) }}><span className="studio-avatar">{displayName.slice(0, 1).toUpperCase()}</span><CaretDown size={13} /></button>{accountOpen && <div className="account-popover" id="account-popover" role="menu"><div className="account-summary"><span className="studio-avatar large">{displayName.slice(0, 1).toUpperCase()}</span><span><strong title={displayName}>{displayName}</strong><small>{quota?.subscriber ? `${quota.planId?.toUpperCase()} 套餐` : '免费账户'}</small></span></div><button role="menuitem" onClick={() => { setAccountOpen(false); navigate('points') }}><Receipt size={17} />额度与订阅</button><button role="menuitem" onClick={() => { setAccountOpen(false); navigate('settings') }}><Gear size={17} />账户设置</button>{isAdmin && <button role="menuitem" onClick={() => { setAccountOpen(false); navigate('admin') }}><SlidersHorizontal size={17} />运营管理</button>}<button role="menuitem" className="danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></div>}</div></div>
+      <div className="account-area" ref={accountAreaRef}><div className="points-wrap"><button className="points-button quota-header-button" aria-label={`创作额度：${quotaHeader(quota)}`} aria-expanded={quotaOpen} aria-haspopup="dialog" aria-controls="quota-popover" onClick={() => { setQuotaOpen(!quotaOpen); setAccountOpen(false) }}><strong>{quotaHeader(quota)}</strong><span>{quota?.subscriber ? '订阅额度' : quota?.credits ? `另有 ${quota.credits} 次` : '免费额度'}</span></button>{quotaOpen && <div className="points-popover quota-popover" id="quota-popover" role="dialog" aria-label="创作额度"><div><Sparkle size={20} weight="duotone" /><strong>{quota?.free.enabled ? '今日免费创作' : '查看创作额度'}</strong></div><p>{quotaDescription(quota)}</p><button onClick={() => { setQuotaOpen(false); navigate('points') }}>查看额度与方案 <ArrowRight size={15} /></button></div>}</div><div className="account-menu-wrap"><button className="avatar-button" aria-label="账户菜单" aria-expanded={accountOpen} aria-haspopup="menu" aria-controls="account-popover" onClick={() => { setAccountOpen(!accountOpen); setQuotaOpen(false) }}><span className="studio-avatar">{displayName.slice(0, 1).toUpperCase()}</span><CaretDown size={13} /></button>{accountOpen && <div className="account-popover" id="account-popover" role="menu"><div className="account-summary"><span className="studio-avatar large">{displayName.slice(0, 1).toUpperCase()}</span><span><strong title={displayName}>{displayName}</strong><small>{quota?.subscriber ? `${quota.planId?.toUpperCase()} 套餐` : '免费账户'}</small></span></div><button role="menuitem" onClick={() => { setAccountOpen(false); navigate('points') }}><Receipt size={17} />额度与订阅</button><button role="menuitem" onClick={() => { setAccountOpen(false); navigate('settings') }}><Gear size={17} />账户设置</button>{isAdmin && <button role="menuitem" onClick={() => { setAccountOpen(false); navigate('admin') }}><SlidersHorizontal size={17} />运营管理</button>}<button role="menuitem" className="danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></div>}</div></div>
     </header>
   )
 }
@@ -634,6 +656,22 @@ function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout:
 }
 
 function Modal({ children, onClose, className = '' }: { children: ReactNode, onClose: () => void, className?: string }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    const previousRootOverflow = document.documentElement.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.documentElement.style.overflow = previousRootOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [onClose])
+
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`base-modal ${className}`} role="dialog" aria-modal="true"><button className="modal-close" onClick={onClose} aria-label="关闭"><X size={20} /></button>{children}</section></div>
 }
 

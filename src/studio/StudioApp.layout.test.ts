@@ -140,8 +140,14 @@ describe('NanaFox Studio product shell', () => {
     expect(styles).toContain('.account-summary > span:last-child')
     expect(styles).toContain('overflow-wrap: anywhere')
     expect(styles).toContain('position: fixed')
-    expect(styles).toContain('left: 12px')
+    expect(styles).toContain('width: 280px')
+    expect(styles).toContain('width: min(320px, calc(100vw - 24px))')
     expect(styles).toContain('right: 12px')
+    expect(styles).toContain('min-width: 0')
+    expect(styles).not.toContain('width: 100vw')
+    expect(source).toContain("document.addEventListener('pointerdown', closeOnPointerDown)")
+    expect(source).toContain("if (event.key !== 'Escape') return")
+    expect(source).toContain("document.documentElement.style.overflow = 'hidden'")
   })
 
   it('reuses defined visual tokens in the live quota card', () => {

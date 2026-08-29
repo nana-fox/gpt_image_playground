@@ -23,7 +23,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   background: var(--page);
@@ -3503,7 +3503,7 @@ button {
   z-index: 30;
   top: 56px;
   right: 0;
-  width: 250px;
+  width: 280px;
   max-width: calc(100vw - 24px);
   padding: 8px;
   border: 1px solid var(--line);
@@ -5957,7 +5957,7 @@ button {
 
   .admin-sidebar {
     position: static;
-    width: 100vw;
+    width: 100%;
     height: auto;
     padding: 14px 16px;
     grid-template-columns: auto 1fr;
@@ -7181,10 +7181,10 @@ button {
   .account-popover {
     position: fixed;
     top: 70px;
-    left: 12px;
     right: 12px;
-    width: auto;
-    max-width: none;
+    left: auto;
+    width: min(320px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
   }
 
   .mobile-tabbar {

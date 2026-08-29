@@ -97,6 +97,27 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
       .catch((err) => setError(err instanceof Error ? err.message : '运营配置加载失败'))
   }, [])
 
+  useEffect(() => {
+    if (!confirmingGrant && !editingPlan && !editingProvider && !editingInspiration) return
+    const previousOverflow = document.body.style.overflow
+    const previousRootOverflow = document.documentElement.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setConfirmingGrant(false)
+      setEditingPlan(null)
+      setEditingProvider(null)
+      setEditingInspiration(null)
+    }
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.documentElement.style.overflow = previousRootOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [confirmingGrant, editingInspiration, editingPlan, editingProvider])
+
   const showSection = (next: AdminSection) => {
     setSection(next)
     setError('')
