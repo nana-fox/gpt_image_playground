@@ -140,7 +140,13 @@ export function createPaymentStore(options = {}) {
       const expiresAt = Date.parse(input?.expiresAt)
       if (!id || id.length > 64 || !userId || !idempotencyKey || idempotencyKey.length > 200) throw validationError('订单参数无效')
       if (!/^[A-Za-z0-9_-]{1,32}$/.test(outTradeNo) || !Number.isFinite(expiresAt)) throw validationError('订单参数无效')
-      if (!appId || !mchId) throw new PaymentStoreError('微信支付尚未配置', 'PAYMENT_NOT_CONFIGURED', 503)
+      const provider = String(input?.provider ?? 'wxpay_native').trim()
+      const providerInstanceId = input?.providerInstanceId ? String(input.providerInstanceId).trim() : null
+      const providerAppId = String(input?.providerIdentity?.appId ?? appId).trim() || null
+      const providerMchId = String(input?.providerIdentity?.mchId ?? mchId).trim() || null
+      if (!['wxpay_native', 'alipay_page'].includes(provider) || !providerAppId || provider === 'wxpay_native' && !providerMchId) {
+        throw new PaymentStoreError('支付供应商尚未配置', 'PAYMENT_NOT_CONFIGURED', 503)
+      }
 
       return database.transaction(async (client) => {
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`${userId}:${idempotencyKey}`])
@@ -163,15 +169,16 @@ export function createPaymentStore(options = {}) {
         const inserted = await client.query(`
           INSERT INTO studio_payment_orders
             (id, user_id, idempotency_key, out_trade_no, status, provider,
-             provider_app_id, provider_mch_id, plan_id, plan_kind, plan_name,
+             provider_app_id, provider_mch_id, provider_instance_id, plan_id, plan_kind, plan_name,
              plan_description, amount_cents, currency, credits, duration_days,
              expires_at, created_at, updated_at)
           VALUES
-            ($1, $2, $3, $4, 'pending', 'wxpay_native', $5, $6, $7, $8, $9,
-             $10, $11, $12, $13, $14, $15, $16, $16)
+            ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11,
+             $12, $13, $14, $15, $16, $17, $18, $18)
           RETURNING *
         `, [
-          id, userId, idempotencyKey, outTradeNo, appId, mchId, plan.id, plan.kind,
+          id, userId, idempotencyKey, outTradeNo, provider, providerAppId, providerMchId,
+          providerInstanceId, plan.id, plan.kind,
           plan.name, plan.description, plan.priceCents, plan.currency, plan.credits,
           plan.durationDays, expiresAt, now,
         ])
@@ -188,6 +195,22 @@ export function createPaymentStore(options = {}) {
         WHERE id = $3 AND status = 'pending'
         RETURNING *
       `, [normalized, clock().getTime(), id])
+      if (!result.rowCount) throw new PaymentStoreError('订单状态已变化', 'PAYMENT_ORDER_CONFLICT', 409)
+      return mapOrder(result.rows[0])
+    },
+
+    async attachCheckout(id, checkout) {
+      const codeUrl = checkout?.codeUrl ? String(checkout.codeUrl).trim() : null
+      const payUrl = checkout?.payUrl ? String(checkout.payUrl).trim() : null
+      if (codeUrl && (!codeUrl.startsWith('weixin://') || codeUrl.length > 2048)) throw validationError('支付二维码无效')
+      if (payUrl && (!payUrl.startsWith('https://') || payUrl.length > 4096)) throw validationError('支付地址无效')
+      if (!codeUrl && !payUrl) throw validationError('支付收银台无效')
+      const result = await database.query(`
+        UPDATE studio_payment_orders
+        SET code_url = $1, pay_url = $2, updated_at = $3
+        WHERE id = $4 AND status = 'pending'
+        RETURNING *
+      `, [codeUrl, payUrl, clock().getTime(), id])
       if (!result.rowCount) throw new PaymentStoreError('订单状态已变化', 'PAYMENT_ORDER_CONFLICT', 409)
       return mapOrder(result.rows[0])
     },
@@ -274,9 +297,9 @@ export function createPaymentStore(options = {}) {
 
 const ORDER_SELECT = `
   SELECT id, user_id, idempotency_key, out_trade_no, status, provider,
-    provider_app_id, provider_mch_id, provider_transaction_id,
+    provider_app_id, provider_mch_id, provider_instance_id, provider_transaction_id,
     plan_id, plan_kind, plan_name, plan_description, amount_cents, currency,
-    credits, duration_days, code_url, failed_reason, expires_at, paid_at,
+    credits, duration_days, code_url, pay_url, failed_reason, expires_at, paid_at,
     completed_at, created_at, updated_at
   FROM studio_payment_orders
 `
@@ -284,7 +307,7 @@ const ORDER_SELECT = `
 function validateNotification(row, notification) {
   if (
     notification?.appId !== row.provider_app_id
-    || notification?.mchId !== row.provider_mch_id
+    || row.provider_mch_id !== null && notification?.mchId !== row.provider_mch_id
     || notification?.currency !== row.currency
   ) throw new PaymentStoreError('支付通知与商户订单不匹配', 'PAYMENT_NOTIFICATION_MISMATCH', 401)
   if (Number(notification?.amountCents) !== Number(row.amount_cents)) {
@@ -322,6 +345,7 @@ function mapOrder(row) {
     outTradeNo: row.out_trade_no,
     status: row.status,
     provider: row.provider,
+    providerInstanceId: row.provider_instance_id,
     plan: {
       id: row.plan_id,
       kind: row.plan_kind,
@@ -335,6 +359,7 @@ function mapOrder(row) {
     amountCents: Number(row.amount_cents),
     currency: row.currency,
     codeUrl: row.code_url,
+    payUrl: row.pay_url,
     expiresAt: new Date(Number(row.expires_at)).toISOString(),
     paidAt: row.paid_at === null ? null : new Date(Number(row.paid_at)).toISOString(),
     completedAt: row.completed_at === null ? null : new Date(Number(row.completed_at)).toISOString(),

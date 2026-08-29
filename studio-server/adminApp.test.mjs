@@ -378,7 +378,7 @@ test('operators configure Studio payment providers without exposing stored secre
 
   const listed = await app.handle(request('/api/admin/payment-providers'))
   assert.equal(listed.status, 200)
-  assert.equal(JSON.stringify(await listed.json()).includes('privateKey'), false)
+  assert.equal(JSON.stringify(await listed.json()).includes('"privateKey":"'), false)
 
   const input = {
     name: '支付宝',

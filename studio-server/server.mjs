@@ -1,5 +1,4 @@
 import { createServer } from 'node:http'
-import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -20,11 +19,12 @@ import { createInspirationStore } from './inspirationStore.mjs'
 import { createStudioPaymentApp } from './paymentApp.mjs'
 import { createPaymentService } from './paymentService.mjs'
 import { createPaymentStore } from './paymentStore.mjs'
+import { createPaymentProviderStore } from './paymentProviderStore.mjs'
+import { createPaymentProviders } from './paymentProviders.mjs'
 import { createQuotaStore } from './quotaStore.mjs'
 import { createR2ArtworkStore } from './r2ArtworkStore.mjs'
 import { createRouterAuthClient } from './routerAuthClient.mjs'
 import { createSessionStore } from './sessionStore.mjs'
-import { createWxpayClient } from './wxpayClient.mjs'
 
 export function readStudioServerConfig(env = process.env) {
   const routerBaseUrl = required(env.ROUTER_AUTH_BASE_URL, 'ROUTER_AUTH_BASE_URL')
@@ -35,6 +35,10 @@ export function readStudioServerConfig(env = process.env) {
   const databaseUrl = required(env.STUDIO_DATABASE_URL, 'STUDIO_DATABASE_URL')
   const generationEnabled = parseBoolean(env.STUDIO_GENERATION_ENABLED, 'STUDIO_GENERATION_ENABLED')
   const paymentEnabled = parseBoolean(env.STUDIO_PAYMENT_ENABLED, 'STUDIO_PAYMENT_ENABLED')
+  const paymentConfigKey = String(env.STUDIO_PAYMENT_CONFIG_KEY ?? '').trim()
+  if (paymentConfigKey && Buffer.from(paymentConfigKey, 'base64').length !== 32) {
+    throw new Error('STUDIO_PAYMENT_CONFIG_KEY must be a base64 encoded 32-byte key')
+  }
   const port = env.STUDIO_PORT ? Number(env.STUDIO_PORT) : 8788
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STUDIO_PORT is invalid')
 
@@ -47,6 +51,7 @@ export function readStudioServerConfig(env = process.env) {
     databaseUrl,
     generationEnabled,
     paymentEnabled,
+    paymentConfigKey,
     host: String(env.STUDIO_HOST ?? '127.0.0.1').trim() || '127.0.0.1',
     port,
   }
@@ -70,20 +75,6 @@ export function readStudioServerConfig(env = process.env) {
             type: 'filesystem',
             root: required(env.STUDIO_ARTWORK_ROOT, 'STUDIO_ARTWORK_ROOT'),
           },
-    }
-  }
-  if (paymentEnabled) {
-    const publicKeyFile = env.STUDIO_WXPAY_PUBLIC_KEY_FILE ?? env.STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE
-    const publicKeyId = env.STUDIO_WXPAY_PUBLIC_KEY_ID ?? env.STUDIO_WXPAY_PLATFORM_SERIAL_NO
-    config.payment = {
-      appId: required(env.STUDIO_WXPAY_APP_ID, 'STUDIO_WXPAY_APP_ID'),
-      mchId: required(env.STUDIO_WXPAY_MCH_ID, 'STUDIO_WXPAY_MCH_ID'),
-      serialNo: required(env.STUDIO_WXPAY_MERCHANT_SERIAL_NO, 'STUDIO_WXPAY_MERCHANT_SERIAL_NO'),
-      privateKeyFile: required(env.STUDIO_WXPAY_PRIVATE_KEY_FILE, 'STUDIO_WXPAY_PRIVATE_KEY_FILE'),
-      publicKeyFile: required(publicKeyFile, 'STUDIO_WXPAY_PUBLIC_KEY_FILE'),
-      publicKeyId: required(publicKeyId, 'STUDIO_WXPAY_PUBLIC_KEY_ID'),
-      apiV3Key: required(env.STUDIO_WXPAY_API_V3_KEY, 'STUDIO_WXPAY_API_V3_KEY'),
-      notifyUrl: new URL(`${publicBasePath}api/payments/webhooks/wechat`, `${publicOrigin}/`).toString(),
     }
   }
   if (String(env.STUDIO_STATIC_ROOT ?? '').trim()) config.staticRoot = String(env.STUDIO_STATIC_ROOT).trim()
@@ -220,9 +211,17 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   const authRateLimiter = createAuthRateLimiter({ database, secret: config.routerSecret })
   const paymentStore = createPaymentStore({
     database,
-    providerIdentity: config.payment
-      ? { appId: config.payment.appId, mchId: config.payment.mchId }
-      : {},
+  })
+  const paymentProviderStore = createPaymentProviderStore({
+    database,
+    encryptionKey: config.paymentConfigKey,
+    publicOrigin: config.publicOrigin,
+    publicBasePath: config.publicBasePath,
+  })
+  const paymentProviders = createPaymentProviders({
+    store: paymentProviderStore,
+    publicOrigin: config.publicOrigin,
+    publicBasePath: config.publicBasePath,
   })
   const tasks = createGenerationTaskStore({ database })
   const inspirations = createInspirationStore({ database })
@@ -240,26 +239,11 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     quota,
     rateLimiter: authRateLimiter,
   })
-  const paymentProvider = config.paymentEnabled
-    ? createWxpayClient({
-        appId: config.payment.appId,
-        mchId: config.payment.mchId,
-        serialNo: config.payment.serialNo,
-        privateKey: readFileSync(config.payment.privateKeyFile, 'utf8'),
-        publicKey: readFileSync(config.payment.publicKeyFile, 'utf8'),
-        publicKeyId: config.payment.publicKeyId,
-        apiV3Key: config.payment.apiV3Key,
-        notifyUrl: config.payment.notifyUrl,
-      })
-    : null
   const payments = createPaymentService({
     enabled: config.paymentEnabled,
     store: paymentStore,
-    provider: paymentProvider,
-    notifyUrl: config.payment?.notifyUrl ?? new URL(
-      `${config.publicBasePath}api/payments/webhooks/wechat`,
-      `${config.publicOrigin}/`,
-    ).toString(),
+    providers: paymentProviders,
+    notifyUrl: new URL(`${config.publicBasePath}api/payments/webhooks`, `${config.publicOrigin}/`).toString(),
   })
   const paymentApp = createStudioPaymentApp({
     publicOrigin: config.publicOrigin,
@@ -274,6 +258,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     quota,
     payments: paymentStore,
     paymentChannel: payments,
+    paymentProviders: paymentProviderStore,
     inspirations,
   })
   const generationRuntime = config.generationEnabled

@@ -16,6 +16,20 @@ export function createStudioPaymentApp(options = {}) {
     async handle(request) {
       const url = new URL(request.url)
       try {
+        const alipayWebhook = url.pathname.match(/^\/api\/payments\/webhooks\/alipay\/([a-z0-9_-]{1,64})$/)
+        if (request.method === 'POST' && alipayWebhook) {
+          const rawBody = await readBody(request, MAX_WEBHOOK_BYTES)
+          await payments.handleWebhook(rawBody, request.headers, alipayWebhook[1])
+          return new Response('success', {
+            headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' },
+          })
+        }
+        const wxpayWebhook = url.pathname.match(/^\/api\/payments\/webhooks\/wxpay\/([a-z0-9_-]{1,64})$/)
+        if (request.method === 'POST' && wxpayWebhook) {
+          const rawBody = await readBody(request, MAX_WEBHOOK_BYTES)
+          await payments.handleWebhook(rawBody, request.headers, wxpayWebhook[1])
+          return json({ code: 'SUCCESS', message: '成功' })
+        }
         if (request.method === 'POST' && url.pathname === '/api/payments/webhooks/wechat') {
           const rawBody = await readBody(request, MAX_WEBHOOK_BYTES)
           await payments.handleWebhook(rawBody, request.headers)
@@ -33,11 +47,12 @@ export function createStudioPaymentApp(options = {}) {
         if (request.method === 'POST' && url.pathname === '/api/payments/orders') {
           await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
           const input = await readJson(request)
-          if (Object.keys(input).some((key) => !['planId', 'idempotencyKey'].includes(key))) throw validationError()
+          if (Object.keys(input).some((key) => !['planId', 'idempotencyKey', 'providerKey'].includes(key))) throw validationError()
           const planId = String(input.planId ?? '').trim()
           const idempotencyKey = String(input.idempotencyKey ?? '').trim()
+          const providerKey = String(input.providerKey ?? '').trim()
           const clientIp = getClientIp(request)
-          return json({ ok: true, data: await payments.createOrder(session.user.id, planId, idempotencyKey, clientIp) }, 201)
+          return json({ ok: true, data: await payments.createOrder(session.user.id, planId, idempotencyKey, clientIp, providerKey) }, 201)
         }
         const orderMatch = url.pathname.match(/^\/api\/payments\/orders\/([A-Za-z0-9-]{1,64})$/)
         if (request.method === 'GET' && orderMatch) {

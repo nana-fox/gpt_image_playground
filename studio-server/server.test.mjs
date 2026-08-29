@@ -35,6 +35,7 @@ test('Studio server configuration fails closed and keeps secrets server-side', (
     databaseUrl: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     generationEnabled: false,
     paymentEnabled: false,
+    paymentConfigKey: '',
     host: '127.0.0.1',
     port: 8788,
   })
@@ -62,7 +63,7 @@ test('Studio server accepts an isolated public base path', () => {
   }), /STUDIO_PUBLIC_BASE_PATH/)
 })
 
-test('WeChat payment is disabled by default and enabled only with server-side credentials', () => {
+test('Studio payments are disabled by default and provider secrets use one server encryption key', () => {
   const base = {
     ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
     ROUTER_AUTH_KEY_ID: 'studio-current',
@@ -71,49 +72,15 @@ test('WeChat payment is disabled by default and enabled only with server-side cr
     STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
     STUDIO_PAYMENT_ENABLED: 'true',
   }
-  assert.throws(() => readStudioServerConfig(base), /STUDIO_WXPAY_APP_ID/)
+  assert.equal(readStudioServerConfig(base).paymentEnabled, true)
+  assert.throws(() => readStudioServerConfig({ ...base, STUDIO_PAYMENT_CONFIG_KEY: 'invalid' }), /STUDIO_PAYMENT_CONFIG_KEY/)
   const config = readStudioServerConfig({
     ...base,
     STUDIO_PUBLIC_BASE_PATH: '/tools/image-studio/',
-    STUDIO_WXPAY_APP_ID: 'wx-studio-app',
-    STUDIO_WXPAY_MCH_ID: '1900000001',
-    STUDIO_WXPAY_MERCHANT_SERIAL_NO: 'MERCHANT-SERIAL',
-    STUDIO_WXPAY_PRIVATE_KEY_FILE: '/run/secrets/wxpay-private-key.pem',
-    STUDIO_WXPAY_PUBLIC_KEY_FILE: '/run/secrets/wxpay-public-key.pem',
-    STUDIO_WXPAY_PUBLIC_KEY_ID: 'PUB_KEY_ID_TEST',
-    STUDIO_WXPAY_API_V3_KEY: '0123456789abcdef0123456789abcdef',
+    STUDIO_PAYMENT_CONFIG_KEY: 'oKxkmzPR9LMVDNBhbN2vfNIFKsWKUzZvWKYBlckgjko=',
   })
   assert.equal(config.paymentEnabled, true)
-  assert.deepEqual(config.payment, {
-    appId: 'wx-studio-app',
-    mchId: '1900000001',
-    serialNo: 'MERCHANT-SERIAL',
-    privateKeyFile: '/run/secrets/wxpay-private-key.pem',
-    publicKeyFile: '/run/secrets/wxpay-public-key.pem',
-    publicKeyId: 'PUB_KEY_ID_TEST',
-    apiV3Key: '0123456789abcdef0123456789abcdef',
-    notifyUrl: 'https://studio.nanafox.com/tools/image-studio/api/payments/webhooks/wechat',
-  })
-})
-
-test('legacy WeChat payment public key environment names remain compatible', () => {
-  const config = readStudioServerConfig({
-    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
-    ROUTER_AUTH_KEY_ID: 'studio-current',
-    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
-    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
-    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
-    STUDIO_PAYMENT_ENABLED: 'true',
-    STUDIO_WXPAY_APP_ID: 'wx-studio-app',
-    STUDIO_WXPAY_MCH_ID: '1900000001',
-    STUDIO_WXPAY_MERCHANT_SERIAL_NO: 'MERCHANT-SERIAL',
-    STUDIO_WXPAY_PRIVATE_KEY_FILE: '/run/secrets/wxpay-private-key.pem',
-    STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE: '/run/secrets/wxpay-public-key.pem',
-    STUDIO_WXPAY_PLATFORM_SERIAL_NO: 'PUB_KEY_ID_TEST',
-    STUDIO_WXPAY_API_V3_KEY: '0123456789abcdef0123456789abcdef',
-  })
-  assert.equal(config.payment.publicKeyFile, '/run/secrets/wxpay-public-key.pem')
-  assert.equal(config.payment.publicKeyId, 'PUB_KEY_ID_TEST')
+  assert.equal(config.paymentConfigKey, 'oKxkmzPR9LMVDNBhbN2vfNIFKsWKUzZvWKYBlckgjko=')
 })
 
 test('enabled generation configuration fails closed without provider storage settings', () => {

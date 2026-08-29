@@ -11,6 +11,7 @@ export function createStudioAdminApp(options = {}) {
   const quota = options.quota
   const payments = options.payments
   const paymentChannel = options.paymentChannel
+  const paymentProviders = options.paymentProviders
   const inspirations = options.inspirations
   if (!routerAuth?.resolve || !sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
     throw new Error('Studio operations dependencies are required')
@@ -63,6 +64,10 @@ export function createStudioAdminApp(options = {}) {
         if (request.method === 'GET' && url.pathname === '/api/admin/payment-channel') {
           if (!paymentChannel) return jsonError(503, 'PAYMENT_UNAVAILABLE', '支付渠道服务暂时不可用')
           return json({ ok: true, data: await paymentChannel.getChannelStatus() })
+        }
+        if (request.method === 'GET' && url.pathname === '/api/admin/payment-providers') {
+          if (!paymentProviders) return jsonError(503, 'PAYMENT_UNAVAILABLE', '支付供应商服务暂时不可用')
+          return json({ ok: true, data: await paymentProviders.list() })
         }
         if (request.method === 'GET' && url.pathname === '/api/admin/inspirations') {
           if (!inspirations) return jsonError(503, 'INSPIRATION_UNAVAILABLE', '灵感服务暂时不可用')
@@ -126,6 +131,20 @@ export function createStudioAdminApp(options = {}) {
             data: await paymentChannel.updateChannel(normalizePaymentChannel(await readJson(request)), {
               actorSubject: session.user.identitySubject,
             }),
+          })
+        }
+
+        const providerMatch = url.pathname.match(/^\/api\/admin\/payment-providers\/([a-z0-9_-]{1,64})$/)
+        if (request.method === 'PATCH' && providerMatch) {
+          if (!paymentProviders) return jsonError(503, 'PAYMENT_UNAVAILABLE', '支付供应商服务暂时不可用')
+          await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
+          return json({
+            ok: true,
+            data: await paymentProviders.update(
+              providerMatch[1],
+              normalizePaymentProvider(await readJson(request)),
+              { actorSubject: session.user.identitySubject },
+            ),
           })
         }
 
@@ -262,6 +281,33 @@ function normalizePaymentChannel(input) {
     throw validationError('支付渠道配置无效')
   }
   return { acceptingOrders: input.acceptingOrders, expectedVersion }
+}
+
+function normalizePaymentProvider(input) {
+  if (Object.keys(input).some((key) => !['name', 'enabled', 'expectedVersion', 'config'].includes(key))) {
+    throw validationError('支付供应商配置无效')
+  }
+  const config = input.config
+  const expectedVersion = Number(input.expectedVersion)
+  const name = String(input.name ?? '').trim()
+  if (
+    !name
+    || name.length > 100
+    || typeof input.enabled !== 'boolean'
+    || !Number.isInteger(expectedVersion)
+    || expectedVersion < 1
+    || !config
+    || typeof config !== 'object'
+    || Array.isArray(config)
+  ) throw validationError('支付供应商配置无效')
+  const allowed = ['appId', 'mchId', 'serialNo', 'privateKey', 'publicKey', 'publicKeyId', 'apiV3Key']
+  if (Object.keys(config).some((key) => !allowed.includes(key))) throw validationError('支付供应商配置无效')
+  return {
+    name,
+    enabled: input.enabled,
+    expectedVersion,
+    config: Object.fromEntries(Object.entries(config).map(([key, value]) => [key, String(value ?? '').trim()])),
+  }
 }
 
 function normalizeInspiration(input, update = false) {
