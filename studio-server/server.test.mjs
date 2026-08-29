@@ -79,8 +79,8 @@ test('WeChat payment is disabled by default and enabled only with server-side cr
     STUDIO_WXPAY_MCH_ID: '1900000001',
     STUDIO_WXPAY_MERCHANT_SERIAL_NO: 'MERCHANT-SERIAL',
     STUDIO_WXPAY_PRIVATE_KEY_FILE: '/run/secrets/wxpay-private-key.pem',
-    STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE: '/run/secrets/wxpay-platform-public-key.pem',
-    STUDIO_WXPAY_PLATFORM_SERIAL_NO: 'PLATFORM-SERIAL',
+    STUDIO_WXPAY_PUBLIC_KEY_FILE: '/run/secrets/wxpay-public-key.pem',
+    STUDIO_WXPAY_PUBLIC_KEY_ID: 'PUB_KEY_ID_TEST',
     STUDIO_WXPAY_API_V3_KEY: '0123456789abcdef0123456789abcdef',
   })
   assert.equal(config.paymentEnabled, true)
@@ -89,11 +89,31 @@ test('WeChat payment is disabled by default and enabled only with server-side cr
     mchId: '1900000001',
     serialNo: 'MERCHANT-SERIAL',
     privateKeyFile: '/run/secrets/wxpay-private-key.pem',
-    platformPublicKeyFile: '/run/secrets/wxpay-platform-public-key.pem',
-    platformSerialNo: 'PLATFORM-SERIAL',
+    publicKeyFile: '/run/secrets/wxpay-public-key.pem',
+    publicKeyId: 'PUB_KEY_ID_TEST',
     apiV3Key: '0123456789abcdef0123456789abcdef',
     notifyUrl: 'https://studio.nanafox.com/tools/image-studio/api/payments/webhooks/wechat',
   })
+})
+
+test('legacy WeChat payment public key environment names remain compatible', () => {
+  const config = readStudioServerConfig({
+    ROUTER_AUTH_BASE_URL: 'https://router.nanafox.com',
+    ROUTER_AUTH_KEY_ID: 'studio-current',
+    ROUTER_AUTH_CURRENT_SECRET: signingMaterial,
+    STUDIO_PUBLIC_ORIGIN: 'https://studio.nanafox.com',
+    STUDIO_DATABASE_URL: 'postgresql://studio:secret@postgres:5432/nanafox_studio',
+    STUDIO_PAYMENT_ENABLED: 'true',
+    STUDIO_WXPAY_APP_ID: 'wx-studio-app',
+    STUDIO_WXPAY_MCH_ID: '1900000001',
+    STUDIO_WXPAY_MERCHANT_SERIAL_NO: 'MERCHANT-SERIAL',
+    STUDIO_WXPAY_PRIVATE_KEY_FILE: '/run/secrets/wxpay-private-key.pem',
+    STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE: '/run/secrets/wxpay-public-key.pem',
+    STUDIO_WXPAY_PLATFORM_SERIAL_NO: 'PUB_KEY_ID_TEST',
+    STUDIO_WXPAY_API_V3_KEY: '0123456789abcdef0123456789abcdef',
+  })
+  assert.equal(config.payment.publicKeyFile, '/run/secrets/wxpay-public-key.pem')
+  assert.equal(config.payment.publicKeyId, 'PUB_KEY_ID_TEST')
 })
 
 test('enabled generation configuration fails closed without provider storage settings', () => {

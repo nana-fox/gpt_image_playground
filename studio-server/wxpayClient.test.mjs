@@ -17,8 +17,8 @@ test('creates a signed Native order and verifies the WeChat response', async () 
     mchId: '1900000001',
     serialNo: 'MERCHANT-SERIAL',
     privateKey: merchant.privateKey.export({ type: 'pkcs8', format: 'pem' }),
-    platformPublicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
-    platformSerialNo: 'PLATFORM-SERIAL',
+    publicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
+    publicKeyId: 'PUB_KEY_ID_TEST',
     apiV3Key,
     notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
     clock: () => now,
@@ -41,7 +41,7 @@ test('creates a signed Native order and verifies the WeChat response', async () 
           'Content-Type': 'application/json',
           'Wechatpay-Timestamp': timestamp,
           'Wechatpay-Nonce': nonce,
-          'Wechatpay-Serial': 'PLATFORM-SERIAL',
+          'Wechatpay-Serial': 'PUB_KEY_ID_TEST',
           'Wechatpay-Signature': signature,
         },
       })
@@ -92,7 +92,7 @@ test('verifies and decrypts a successful WeChat callback', () => {
   assert.deepEqual(client.verifyNotification(body, {
     'wechatpay-timestamp': timestamp,
     'wechatpay-nonce': nonce,
-    'wechatpay-serial': 'PLATFORM-SERIAL',
+    'wechatpay-serial': 'PUB_KEY_ID_TEST',
     'wechatpay-signature': signature,
   }), {
     eventId: 'event-1',
@@ -121,8 +121,8 @@ test('queries a merchant order and normalizes a successful transaction', async (
     mchId: '1900000001',
     serialNo: 'MERCHANT-SERIAL',
     privateKey: merchant.privateKey.export({ type: 'pkcs8', format: 'pem' }),
-    platformPublicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
-    platformSerialNo: 'PLATFORM-SERIAL',
+    publicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
+    publicKeyId: 'PUB_KEY_ID_TEST',
     apiV3Key,
     notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
     clock: () => now,
@@ -135,7 +135,7 @@ test('queries a merchant order and normalizes a successful transaction', async (
         headers: {
           'Wechatpay-Timestamp': timestamp,
           'Wechatpay-Nonce': nonce,
-          'Wechatpay-Serial': 'PLATFORM-SERIAL',
+          'Wechatpay-Serial': 'PUB_KEY_ID_TEST',
           'Wechatpay-Signature': signature,
         },
       })
@@ -161,7 +161,7 @@ test('rejects stale or unsigned callbacks before decrypting them', () => {
   assert.throws(() => client.verifyNotification('{}', {
     'wechatpay-timestamp': oldTimestamp,
     'wechatpay-nonce': 'nonce',
-    'wechatpay-serial': 'PLATFORM-SERIAL',
+    'wechatpay-serial': 'PUB_KEY_ID_TEST',
     'wechatpay-signature': signature,
   }), (error) => error instanceof WxpayError && error.reason === 'PAYMENT_SIGNATURE_EXPIRED')
 })
@@ -172,8 +172,8 @@ function createClient() {
     mchId: '1900000001',
     serialNo: 'MERCHANT-SERIAL',
     privateKey: merchant.privateKey.export({ type: 'pkcs8', format: 'pem' }),
-    platformPublicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
-    platformSerialNo: 'PLATFORM-SERIAL',
+    publicKey: platform.publicKey.export({ type: 'spki', format: 'pem' }),
+    publicKeyId: 'PUB_KEY_ID_TEST',
     apiV3Key,
     notifyUrl: 'https://studio.nanafox.com/api/payments/webhooks/wechat',
     clock: () => now,

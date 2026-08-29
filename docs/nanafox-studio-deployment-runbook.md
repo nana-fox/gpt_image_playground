@@ -86,9 +86,11 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 | `STUDIO_WXPAY_MCH_ID` | 微信支付 | 微信支付商户号 |
 | `STUDIO_WXPAY_MERCHANT_SERIAL_NO` | 微信支付 | 商户 API 证书序列号 |
 | `STUDIO_WXPAY_PRIVATE_KEY_FILE` | 微信支付 | 商户私钥 PEM 文件绝对路径 |
-| `STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE` | 微信支付 | 微信支付平台公钥 PEM 文件绝对路径 |
-| `STUDIO_WXPAY_PLATFORM_SERIAL_NO` | 微信支付 | 与平台公钥匹配的序列号 |
+| `STUDIO_WXPAY_PUBLIC_KEY_FILE` | 微信支付 | 微信支付公钥 PEM 文件绝对路径；不是商户公钥 |
+| `STUDIO_WXPAY_PUBLIC_KEY_ID` | 微信支付 | 与微信支付公钥匹配的 `PUB_KEY_ID_...`；不是商户 API 证书序列号 |
 | `STUDIO_WXPAY_API_V3_KEY` | 微信支付 | 32 字节 APIv3 Key |
+
+旧变量 `STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE`、`STUDIO_WXPAY_PLATFORM_SERIAL_NO` 仅保留部署兼容，不再用于新配置。Studio 首发统一采用微信支付公钥验签模式，不填写微信支付平台证书序列号。
 
 Secret 文件权限必须为 `0600`，商户私钥文件可进一步设为 `0400`，属主为 Studio 服务账号。不得使用 `Environment=` 把 Secret 展开进公开的进程列表、CI 输出或镜像层；部署完成后检查日志未回显连接串、Cookie 或 Key。
 

@@ -73,13 +73,15 @@ export function readStudioServerConfig(env = process.env) {
     }
   }
   if (paymentEnabled) {
+    const publicKeyFile = env.STUDIO_WXPAY_PUBLIC_KEY_FILE ?? env.STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE
+    const publicKeyId = env.STUDIO_WXPAY_PUBLIC_KEY_ID ?? env.STUDIO_WXPAY_PLATFORM_SERIAL_NO
     config.payment = {
       appId: required(env.STUDIO_WXPAY_APP_ID, 'STUDIO_WXPAY_APP_ID'),
       mchId: required(env.STUDIO_WXPAY_MCH_ID, 'STUDIO_WXPAY_MCH_ID'),
       serialNo: required(env.STUDIO_WXPAY_MERCHANT_SERIAL_NO, 'STUDIO_WXPAY_MERCHANT_SERIAL_NO'),
       privateKeyFile: required(env.STUDIO_WXPAY_PRIVATE_KEY_FILE, 'STUDIO_WXPAY_PRIVATE_KEY_FILE'),
-      platformPublicKeyFile: required(env.STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE, 'STUDIO_WXPAY_PLATFORM_PUBLIC_KEY_FILE'),
-      platformSerialNo: required(env.STUDIO_WXPAY_PLATFORM_SERIAL_NO, 'STUDIO_WXPAY_PLATFORM_SERIAL_NO'),
+      publicKeyFile: required(publicKeyFile, 'STUDIO_WXPAY_PUBLIC_KEY_FILE'),
+      publicKeyId: required(publicKeyId, 'STUDIO_WXPAY_PUBLIC_KEY_ID'),
       apiV3Key: required(env.STUDIO_WXPAY_API_V3_KEY, 'STUDIO_WXPAY_API_V3_KEY'),
       notifyUrl: new URL(`${publicBasePath}api/payments/webhooks/wechat`, `${publicOrigin}/`).toString(),
     }
@@ -244,8 +246,8 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
         mchId: config.payment.mchId,
         serialNo: config.payment.serialNo,
         privateKey: readFileSync(config.payment.privateKeyFile, 'utf8'),
-        platformPublicKey: readFileSync(config.payment.platformPublicKeyFile, 'utf8'),
-        platformSerialNo: config.payment.platformSerialNo,
+        publicKey: readFileSync(config.payment.publicKeyFile, 'utf8'),
+        publicKeyId: config.payment.publicKeyId,
         apiV3Key: config.payment.apiV3Key,
         notifyUrl: config.payment.notifyUrl,
       })

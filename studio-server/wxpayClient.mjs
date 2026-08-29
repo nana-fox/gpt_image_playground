@@ -24,11 +24,11 @@ export function createWxpayClient(options = {}) {
   const appId = required(options.appId, 'appId')
   const mchId = required(options.mchId, 'mchId')
   const serialNo = required(options.serialNo, 'serialNo')
-  const platformSerialNo = required(options.platformSerialNo, 'platformSerialNo')
+  const publicKeyId = required(options.publicKeyId, 'publicKeyId')
   const apiV3Key = Buffer.from(String(options.apiV3Key ?? ''))
   if (apiV3Key.length !== 32) throw new Error('WeChat Pay APIv3 key must be 32 bytes')
   const privateKey = createPrivateKey(options.privateKey)
-  const platformPublicKey = createPublicKey(options.platformPublicKey)
+  const publicKey = createPublicKey(options.publicKey)
   const notifyUrl = normalizeHttpsUrl(options.notifyUrl, 'notifyUrl')
   const request = options.request ?? fetch
   const clock = options.clock ?? (() => new Date())
@@ -61,7 +61,7 @@ export function createWxpayClient(options = {}) {
     const text = await response.text()
     if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) throw new WxpayError('微信支付响应过大', 'PAYMENT_PROVIDER_PROTOCOL_ERROR')
     if (!response.ok) throw new WxpayError('微信支付请求失败', 'PAYMENT_PROVIDER_REJECTED')
-    verifyMessage(text, response.headers, platformSerialNo, platformPublicKey)
+    verifyMessage(text, response.headers, publicKeyId, publicKey)
     try {
       return JSON.parse(text)
     } catch {
@@ -128,7 +128,7 @@ export function createWxpayClient(options = {}) {
       const nonceStr = headers['wechatpay-nonce']
       const serial = headers['wechatpay-serial']
       const signature = headers['wechatpay-signature']
-      if (!Number.isInteger(timestamp) || !nonceStr || serial !== platformSerialNo || !signature) {
+      if (!Number.isInteger(timestamp) || !nonceStr || serial !== publicKeyId || !signature) {
         throw new WxpayError('微信支付签名无效', 'PAYMENT_SIGNATURE_INVALID', 401)
       }
       if (Math.abs(Math.floor(clock().getTime() / 1000) - timestamp) > 300) {
@@ -137,7 +137,7 @@ export function createWxpayClient(options = {}) {
       const valid = verify(
         'RSA-SHA256',
         Buffer.from(`${timestamp}\n${nonceStr}\n${rawBody}\n`),
-        platformPublicKey,
+        publicKey,
         Buffer.from(signature, 'base64'),
       )
       if (!valid) throw new WxpayError('微信支付签名无效', 'PAYMENT_SIGNATURE_INVALID', 401)
@@ -178,18 +178,18 @@ export function createWxpayClient(options = {}) {
   }
 }
 
-function verifyMessage(body, headers, platformSerialNo, platformPublicKey) {
+function verifyMessage(body, headers, publicKeyId, publicKey) {
   const timestamp = headers.get('wechatpay-timestamp')
   const nonce = headers.get('wechatpay-nonce')
   const serial = headers.get('wechatpay-serial')
   const signature = headers.get('wechatpay-signature')
-  if (!timestamp || !nonce || serial !== platformSerialNo || !signature) {
+  if (!timestamp || !nonce || serial !== publicKeyId || !signature) {
     throw new WxpayError('微信支付响应缺少有效签名', 'PAYMENT_PROVIDER_SIGNATURE_INVALID')
   }
   const valid = verify(
     'RSA-SHA256',
     Buffer.from(`${timestamp}\n${nonce}\n${body}\n`),
-    platformPublicKey,
+    publicKey,
     Buffer.from(signature, 'base64'),
   )
   if (!valid) throw new WxpayError('微信支付响应签名无效', 'PAYMENT_PROVIDER_SIGNATURE_INVALID')
