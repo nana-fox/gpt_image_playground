@@ -78,6 +78,22 @@ function createDependencies(subject = adminSubject, role = 'admin') {
         }
       },
     },
+    paymentProviders: {
+      list: () => [{
+        id: 'alipay-default',
+        providerKey: 'alipay',
+        name: '支付宝',
+        enabled: false,
+        configured: false,
+        notifyUrl: `${origin}/api/payments/webhooks/alipay/alipay-default`,
+        version: 1,
+        config: { appId: '', privateKeyConfigured: false, publicKeyConfigured: false },
+      }],
+      update: (id, input, audit) => {
+        calls.push(['updatePaymentProvider', id, input, audit])
+        return { id, providerKey: 'alipay', ...input, configured: true, version: input.expectedVersion + 1 }
+      },
+    },
     inspirations: {
       listAdmin: () => [{ id: 'product', title: '产品海报', version: 1 }],
       create: (input, audit) => {
@@ -348,6 +364,43 @@ test('operators inspect and switch payment checkout without receiving merchant s
     { actorSubject: adminSubject },
   ]])
   assert.equal(JSON.stringify(currentBody).includes('apiV3Key'), false)
+})
+
+test('operators configure Studio payment providers without exposing stored secrets', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    routerAuth: dependencies.routerAuth,
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    paymentProviders: dependencies.paymentProviders,
+  })
+
+  const listed = await app.handle(request('/api/admin/payment-providers'))
+  assert.equal(listed.status, 200)
+  assert.equal(JSON.stringify(await listed.json()).includes('privateKey'), false)
+
+  const input = {
+    name: '支付宝',
+    enabled: true,
+    expectedVersion: 1,
+    config: {
+      appId: '2026000000000000',
+      privateKey: 'merchant-private-key',
+      publicKey: 'alipay-public-key',
+    },
+  }
+  const updated = await app.handle(request('/api/admin/payment-providers/alipay-default', {
+    method: 'PATCH',
+    body: input,
+  }))
+  assert.equal(updated.status, 200)
+  assert.deepEqual(dependencies.calls, [[
+    'updatePaymentProvider',
+    'alipay-default',
+    input,
+    { actorSubject: adminSubject },
+  ]])
 })
 
 test('operators create and update versioned inspirations through audited writes', async () => {

@@ -31,10 +31,10 @@ test('lists plans and creates an authenticated CSRF-protected order', async () =
 
   const created = await app.handle(request('/api/payments/orders', {
     method: 'POST',
-    body: { planId: 'plus', idempotencyKey: 'checkout-1' },
+    body: { planId: 'plus', idempotencyKey: 'checkout-1', providerKey: 'wxpay' },
   }))
   assert.equal(created.status, 201)
-  assert.deepEqual(calls, [['user-1', 'plus', 'checkout-1', '127.0.0.1']])
+  assert.deepEqual(calls, [['user-1', 'plus', 'checkout-1', '127.0.0.1', 'wxpay']])
 
   const rejected = await app.handle(request('/api/payments/orders', {
     method: 'POST',
@@ -72,6 +72,29 @@ test('accepts WeChat callbacks without a Studio session but rejects oversized bo
     body: '{}',
   }))
   assert.equal(oversized.status, 413)
+})
+
+test('accepts an Alipay callback for the exact Studio provider instance', async () => {
+  const calls = []
+  const app = createStudioPaymentApp({
+    publicOrigin: origin,
+    sessions: { getSession: assert.fail, verifyCsrf: assert.fail },
+    payments: {
+      handleWebhook: (body, headers, providerId) => {
+        calls.push([body, headers, providerId])
+        return { id: 'order-2', status: 'completed' }
+      },
+    },
+  })
+  const callback = await app.handle(new Request(`${origin}/api/payments/webhooks/alipay/alipay-default`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'trade_status=TRADE_SUCCESS&out_trade_no=studio_order2',
+  }))
+
+  assert.equal(callback.status, 200)
+  assert.equal(await callback.text(), 'success')
+  assert.equal(calls[0][2], 'alipay-default')
 })
 
 function request(path, options = {}) {
