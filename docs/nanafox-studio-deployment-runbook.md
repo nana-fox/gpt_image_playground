@@ -83,7 +83,7 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 | `STUDIO_R2_SECRET_ACCESS_KEY` | R2 | Bucket-scoped Token 的 Secret Access Key |
 | `STUDIO_R2_REGION` | R2 | 固定 `auto` |
 | `STUDIO_ARTWORK_ROOT` | 仅本地回退 | filesystem 模式目录；R2 模式不使用 |
-| `STUDIO_PAYMENT_ENABLED` | 支付 | 默认 `false`；测试小额支付验收完成前不得开启 |
+| `STUDIO_PAYMENT_ENABLED` | 支付 | 新环境和生产首次发布默认 `false`；测试环境只在小额支付验收窗口开启 |
 | `STUDIO_PAYMENT_CONFIG_KEY` | 支付配置 | `openssl rand -base64 32` 生成；用于加密 Studio PostgreSQL 内的供应商配置，测试/生产独立且必须备份 |
 
 微信和支付宝凭证在 Studio 运营端录入，不再通过 `STUDIO_WXPAY_*` 环境变量配置。微信填写 AppID、商户号、商户证书序列号、商户私钥、微信支付公钥、公钥 ID 和 APIv3 Key；支付宝填写应用 AppID、应用私钥和支付宝公钥。
@@ -158,6 +158,7 @@ docker build \
 | 免费额度 | 默认 3 次且运营修改后生效；并发最后一次只能成功一个请求 |
 | Plus/Pro/加量包 | 展示配置与后端 entitlement 一致；订阅用户不叠加每日免费次数 |
 | 微信扫码支付 | 金额来自后端套餐快照；通知与主动查单均可完成一次且仅一次履约；伪造/重复/错金额通知不发额度 |
+| 支付宝扫码支付 | 内嵌二维码可扫；数据库 `expires_at` 与支付宝 `time_expire` 相同；通知完成订单且只发放一次额度 |
 | 管理员加额 | 指定用户增加额度；相同 reference 重试不重复发放 |
 | 真实生成 | Router 返回真实图片；R2 有对象；PostgreSQL 有任务和 metadata；额度只扣一次 |
 | 失败补偿 | Provider/R2 失败释放预占；页面明确显示未扣额度 |
@@ -235,17 +236,17 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 
 | 项目 | 状态 | 下一步 |
 |-----|-----|-------|
-| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 001..009 已应用；生成可靠性、作品保留、灵感和支付供应商表均通过真实 PostgreSQL 验证 |
+| PostgreSQL 代码迁移 | 已完成并部署测试环境 | migration 001..010 已应用；生成可靠性、作品保留、灵感、支付供应商和生图开关均通过真实 PostgreSQL 验证 |
 | R2 Store 代码 | 已完成并部署测试环境 | 私有 PUT/GET/幂等/冲突/DELETE 合约通过 |
 | Cloudflare R2 订阅与测试 Bucket | 已完成 | 补未完成 multipart upload 清理，不设置全桶 30 天删除 |
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-e4e3dd1-path` 运行于 8788；`751d0fd` 容器保留为唯一直接回滚点 |
+| 测试服务器切换 | 已完成 | `nanafox-studio:test-0eb806f-expiry` 运行于 8788；`ab77c95` 容器保留为直接回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
 | 浏览器验收 | 公网桌面创作页与运营总览曾用真实 Router 管理员 Session 复验；390×844 移动创作、登录和找回页无横向溢出 | `e4e3dd1` 的账户菜单修复已部署，当前浏览器控制通道超时；待人工复验该菜单，并补真实 3 次额度、删除/恢复作品和各运营写操作 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
-| 支付、订阅与加量包 | 代码与测试环境部署已完成 | Plus/Pro/加量包已上架展示，但接单开关关闭，微信/支付宝供应商均停用且未配置；完成真实小额验收后才能开放 |
+| 支付、订阅与加量包 | 支付宝测试闭环已完成 | 支付宝已完成真实 0.01 元扫码、异步通知、订单完成、一次额度到账和绝对过期时间对齐；微信仍未配置，生产支付仍未授权 |
 | 灵感运营配置 | 已部署测试环境 | PostgreSQL 保存 9 条首批内容；运营端可新增、编辑、上下架、推荐和排序。收藏仍只在页面状态，首发不承诺跨设备同步 |
 | Studio 账户入口防刷 | 已部署测试环境 | 验证码、注册、登录和 2FA 已在调用 Router 前按账号/IP 集中限流；生产前补 429 告警，出现分布式滥用再启用边缘规则或 Turnstile |
 | PostgreSQL/Redis 公网暴露 | 高风险待整改；2026-08-29 已从外部网络确认 5432/6379 可建立 TCP 连接 | 属于 Sub2API 共享基础设施，另开维护窗口收紧到 localhost 或云防火墙白名单；Studio 不擅自修改 |
@@ -415,4 +416,14 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - Studio commits 为 `80cfdbc`（内嵌二维码）和 `f52761f`（网页支付请求签名包含 `sign_type=RSA2`）；当前测试镜像为 `nanafox-studio:test-f52761f-path`，直接回滚镜像为 `nanafox-studio:test-80cfdbc-path`。前端 608/608、服务端 136 项 0 失败、Studio 构建和 8790 暗部署通过。
 - Caddy 仅在测试域名的 `/tools/image-studio/*` 策略增加 `frame-src https://*.alipay.com`，候选配置先经 `caddy validate --adapter caddyfile` 通过再 reload；原配置备份为 `/etc/caddy/Caddyfile.before-alipay-20260831`。公网 health/ready 和 Router test health 均为 200。
 - 测试环境启用支付宝供应商和部署级支付开关，微信仍未配置且停用；复用 `pack-60` 为 0.01 元、1 次额度、7 天有效的“支付闭环测试”套餐，避免新增只用一次的套餐结构。支付渠道已开放测试接单。
-- 首笔测试订单暴露出手写请求签名错误，已关闭接单、将该订单标记 failed、增加回归测试并修复；修正版支付宝真实网关返回 200、无 `invalid-signature`、包含二维码内容且无禁止 iframe 的响应头。新 Studio 订单为 pending，回调地址为 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/alipay/alipay-default`。真实付款、回调入库、幂等事件和 1 次额度到账仍待用户本人扫码后核验，未记为完成。
+- 首笔测试订单暴露出手写请求签名错误，已关闭接单、将该订单标记 failed、增加回归测试并修复；修正版支付宝真实网关返回 200、无 `invalid-signature`、包含二维码内容且无禁止 iframe 的响应头。回调地址为 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/alipay/alipay-default`。
+- 真实 0.01 元扫码付款已完成：订单 `43abaa7a-d52f-4bc8-a56e-52cd8f5b3cc0` 收到一次支付事件、进入 completed，并仅增加 1 次加量额度。另一笔未成功付款订单没有回调、没有扣款、没有发放额度。
+- `0eb806f` 统一订单绝对过期时间：数据库 `expires_at` 与支付宝 `time_expire` 使用同一个到秒值，不再发送 `timeout_express`；线上新订单只读核对两端均为 `2026-08-31 14:10:31`。当前测试镜像为 `nanafox-studio:test-0eb806f-expiry`，直接回滚为 `ab77c95`。
+
+### 11.17 2026-08-31 作品图片加载恢复测试发布证据
+
+- 线上两条成功作品的 PostgreSQL 元数据与私有 R2 对象均存在；两张 PNG 可完整解码为 1024×1536，R2 字节数、数据库 SHA-256 与经公网鉴权接口返回的内容一致。故障属于单次图片请求失败后浏览器不再重试，不是作品丢失。
+- RED commit 为 `cc77d49`，GREEN/部署 commit 为 `db45e58`。首页、作品库和作品详情统一使用作品图片组件；失败时追加缓存绕过参数自动重试两次，仍失败才显示可读占位，不再暴露整段提示词作为破图替代文字。
+- 从 `db45e58` 的干净 Git worktree 串行通过前端 53 文件/610 项、Studio 服务端 136 项 0 失败和 `build:studio`；镜像也直接从该 commit 的 Git 归档构建，未包含同工作区中尚未提交的页面拆分改动。
+- 8790 暗部署通过 health、ready、未登录 401 和两张真实作品读取；切换后测试镜像为 `nanafox-studio:test-db45e58-artwork`，直接回滚为 `nanafox-studio:test-0eb806f-expiry`。公网首页、静态资源、health/ready 均为 200，两张真实作品为 200 且 SHA-256 一致，容器 healthy、restart count 0。
+- 本次没有修改或重启 Router/Sub2API；生产 `sub2api-prod` 保持 healthy、restart count 0。清理了过期 Studio 回滚和可重建构建缓存，只保留当前版与直接回滚，根盘从 94% 降至 91%。应用内浏览器的 DOM/截图通道仍超时，因此不把真实登录态视觉检查记为完成，用户刷新创作页即可验收。
