@@ -1,6 +1,6 @@
 # NanaFox Studio 产品与技术架构
 
-> 状态：2026-08-28 基线。本文是 Studio 的架构决策记录；部署步骤见 `docs/nanafox-studio-deployment-runbook.md`，PostgreSQL/R2 实施证据见 `docs/nanafox-studio-postgres-r2-plan.md`，支付边界与验收见 `docs/nanafox-studio-payment-plan.md`。
+> 状态：2026-08-31。本文是 Studio 的架构决策记录；代码与文档入口见 `docs/nanafox-studio/README.md`，部署步骤见 `docs/nanafox-studio-deployment-runbook.md`，支付边界与验收见 `docs/nanafox-studio/payment.md`。
 
 ## 1. 最终结论
 
@@ -41,7 +41,7 @@ Caddy
   └─ /api/* → Studio Node 服务
                  ├─ Router 身份适配接口
                  ├─ Router Images API（服务端 Key）
-                 ├─ 微信支付 APIv3（可关闭）
+                 ├─ 微信支付 APIv3 / 支付宝开放平台（可独立关闭）
                  ├─ PostgreSQL / nanafox_studio
                  └─ Cloudflare R2 私有 Bucket
 
@@ -97,12 +97,12 @@ NAS（非在线链路）
 
 1. 浏览器读取已启用套餐；支付渠道关闭时仍能查看套餐，但不能创建订单。
 2. 登录用户以 Idempotency-Key 创建订单，后端按数据库套餐版本固化金额、额度和有效期快照。
-3. Studio 后端按用户选择使用微信支付 APIv3 Native 或支付宝电脑网站支付下单；浏览器只收到二维码内容或支付宝跳转地址和 Studio 订单号。
+3. Studio 后端按用户选择使用微信支付 APIv3 Native 或支付宝电脑网站支付下单；浏览器只收到二维码内容或可内嵌的支付宝收银台地址和 Studio 订单号。
 4. 微信通知经过平台公钥验签、五分钟时间窗、AES-256-GCM 解密及 AppID、商户号、金额、币种校验；支付宝通知经过 RSA2 验签及应用、金额、币种、交易状态校验后，才可进入履约事务。
 5. PostgreSQL 在同一事务内锁定订单、记录支付事件并发放额度包或订阅；重复通知不重复发放。
 6. 用户轮询待支付订单时，后端主动查单补偿漏通知；前端没有模拟支付成功入口。
 
-首发支持微信 Native 扫码与支付宝电脑网站支付。JSAPI、自动续费和退款自动化等真实需求出现后再做；当前不增加第二套支付服务或复制 Router 的余额、兑换码和用户组语义。
+首发支持微信 Native 扫码与支付宝电脑网站支付内嵌二维码。JSAPI、自动续费和退款自动化等真实需求出现后再做；当前不增加第二套支付服务或复制 Router 的余额、兑换码和用户组语义。
 
 ## 5. PostgreSQL 设计
 
@@ -231,14 +231,14 @@ R2 Standard 当前包含 10 GB-month 免费额度、每月 100 万 Class A 和 1
 | PostgreSQL Store、migration、并发额度保护 | 已切换公网测试容器，真实 PostgreSQL 集成测试通过 |
 | R2 私有 Store、条件写入、后端代理读取 | 已切换公网测试容器，真实 R2 合约与供应商生成读回探针通过 |
 | 管理员每日策略/单用户加额 | 已实现受保护 API、真实前端、CSRF、幂等与同事务审计并部署测试环境；管理员 Session 页面验收待人工执行 |
-| 管理员套餐、微信 Native/支付宝电脑网站支付、订单和履约 | 已部署测试环境；运营端供应商配置、接单开关、版本冲突、审计、关闭后历史订单履约均通过真实 PostgreSQL/R2 验证；两个供应商保持停用且未配置，真实小额支付验收待完成 |
+| 管理员套餐、微信 Native/支付宝电脑网站支付、订单和履约 | 已部署测试环境；支付宝已完成真实 0.01 元扫码、异步通知、订单完成、额度只发一次和绝对过期时间对齐；微信仍未配置、未启用，生产支付未授权 |
 | 账户入口防刷 | `1a715b6` 已部署；验证码、注册、登录和 2FA 在调用 Router 前按 HMAC 账号/IP 进行 PostgreSQL 集中限流，Router/Sub2API 无代码改动 |
 | 用户删除恢复与到期清理 | `8b025ff` 已部署；7 天恢复、本人权限、R2 删除失败重试和任务墓碑均通过真实 PostgreSQL/R2 验证 |
 | 灵感内容运营 | `0e19078` 已部署；9 条首批内容已迁移到 PostgreSQL，运营端版本控制和审计通过测试 |
 | 前端失败闭环、单用户生成并发和超时恢复 | `476a9c7` 已部署测试环境；额度/作品读取失败可重试，单用户并发返回 429，migration 008 与启动恢复通过真实 PostgreSQL/R2 验证 |
 | Studio CI | PostgreSQL 强制测试、80% 行覆盖率、normal/studio 构建、镜像构建和容器冒烟已在 `e4e3dd1` 的 GitHub Actions run `33241108133` 全部通过 |
 | 账户找回 | Studio `f40e582` 与 Router adapter `01dc0d6a2` 已部署测试环境；密码归 Router 唯一管理，Studio 只提供品牌页面、同源限流和改密后 Studio Session 撤销；Router reset token 已改为原子消费 |
-| PostgreSQL/R2 测试环境部署 | Studio `e4e3dd1` 已部署，`751d0fd` 作为唯一直接回滚点；Sub2API test `01dc0d6a2` 保持运行，本次未修改 Router/Sub2API |
+| PostgreSQL/R2 测试环境部署 | Studio `db45e58` 已部署，`0eb806f` 作为直接回滚点；Sub2API test `01dc0d6a2` 保持运行，本次未修改 Router/Sub2API |
 | 备份与恢复 | Studio 测试数据库已进入每日 NAS 备份，同机隔离恢复和 NAS 对象确认通过；6 小时频率、长期分层保留、NAS 异机恢复与 R2 作品备份仍待完成 |
 | 退款/自动续费 | 待真实需求和支付验收后实现 |
 | 生产发布 | 未授权、未执行 |

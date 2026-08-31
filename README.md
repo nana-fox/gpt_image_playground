@@ -25,6 +25,8 @@
 
 > 💡 **提示**：若需调用非 HTTPS 的内网或本地 HTTP API，请使用 GitHub Pages 版本或自行部署，Vercel 部署的体验版绑定的 `.dev` 域名因安全策略通常要求接口必须为 HTTPS。
 
+> **NanaFox Studio 分支**：独立 ToC Studio 的代码入口、模块边界、支付和部署文档见 [`docs/nanafox-studio/README.md`](docs/nanafox-studio/README.md)。Studio 与下方默认 Playground 部署方式相互独立。
+
 ---
 
 ## ❤️ 赞助商

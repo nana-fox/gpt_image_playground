@@ -65,6 +65,28 @@ export async function getStudioQuota(request: typeof fetch = fetch): Promise<Stu
   }
 }
 
+export function quotaHeader(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '额度读取中'
+  if (quota === null) return '额度暂不可用'
+  if (quota.free.enabled && quota.free.eligible) return `今日 ${quota.free.remaining}/${quota.free.limit} 次`
+  return `${quota.credits} 次可用`
+}
+
+export function quotaDescription(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '正在读取你的真实额度。'
+  if (quota === null) return '额度服务暂时不可用，请稍后重试。'
+  if (quota.free.enabled && quota.free.eligible) return `今天还剩 ${quota.free.remaining} 次，明天自动恢复。${quota.credits ? `另有 ${quota.credits} 次购买或订阅额度。` : ''}`
+  return quota.credits ? `当前有 ${quota.credits} 次购买或订阅额度。` : '当前没有可用额度。'
+}
+
+export function quotaUsageText(quota: StudioQuotaBalance | null | undefined) {
+  if (quota === undefined) return '正在确认本次额度'
+  if (quota === null) return '额度暂时无法读取'
+  if (quota.free.enabled && quota.free.remaining > 0) return '使用 1 次今日免费额度'
+  if (quota.credits > 0) return '使用 1 次购买或订阅额度'
+  return '当前没有可用额度'
+}
+
 function validCount(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 0
 }

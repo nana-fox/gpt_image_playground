@@ -5,6 +5,9 @@ import mainSource from '../main.tsx?raw'
 import viteSource from '../../vite.config.ts?raw'
 import source from './StudioApp.tsx?raw'
 import adminSource from './StudioAdminPage.tsx?raw'
+import modalSource from './StudioModal.tsx?raw'
+import paymentSource from './StudioQuotaPage.tsx?raw'
+import quotaSource from '../lib/studioQuota.ts?raw'
 
 const styles = readFileSync(new URL('./studio.css', import.meta.url), 'utf8')
 
@@ -48,8 +51,8 @@ describe('NanaFox Studio product shell', () => {
     expect(source).toContain('listStudioGenerations')
     expect(source).toContain('开始创作')
     expect(source).toContain('作品库')
-    expect(source).toContain('今日免费额度')
-    expect(source).toContain('购买或订阅额度')
+    expect(quotaSource).toContain('今日免费额度')
+    expect(quotaSource).toContain('购买或订阅额度')
     expect(source).toContain('最近删除')
     expect(source).toContain('deleteStudioGeneration')
     expect(source).toContain('restoreStudioGeneration')
@@ -87,8 +90,9 @@ describe('NanaFox Studio product shell', () => {
   it('shows the real operations tools only to configured operators', () => {
     expect(source).toContain('getStudioAdminSession')
     expect(source).toContain("type StudioRoute = 'create' | 'inspiration' | 'works' | 'points' | 'settings' | 'admin'")
-    expect(source).toContain('listStudioPaymentPlans')
-    expect(source).toContain('createStudioPaymentOrder')
+    expect(source).toContain('StudioQuotaPage')
+    expect(paymentSource).toContain('listStudioPaymentPlans')
+    expect(paymentSource).toContain('createStudioPaymentOrder')
     expect(source).not.toContain('订阅即将开放')
     expect(source).toContain('运营管理')
     expect(adminSource).toContain('每日免费额度')
@@ -112,15 +116,15 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).not.toContain('商户私钥')
     expect(adminSource).not.toContain('ROUTER_IMAGE_API_KEY')
     expect(adminSource).not.toContain('ROUTER_IMAGE_BASE_URL')
-    expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
-    expect(source).toContain('支付宝扫码支付')
-    expect(source).toContain('className="studio-alipay-checkout"')
-    expect(source).not.toContain('window.location.assign(next.payUrl)')
+    expect(`${source}${adminSource}${paymentSource}`).not.toContain('模拟支付成功')
+    expect(paymentSource).toContain('支付宝扫码支付')
+    expect(paymentSource).toContain('className="studio-alipay-checkout"')
+    expect(paymentSource).not.toContain('window.location.assign(next.payUrl)')
   })
 
   it('frames the embedded Alipay QR code with an even quiet zone', () => {
-    expect(source).toContain('className="studio-alipay-qr-frame"')
-    expect(source).toContain('scrolling="no"')
+    expect(paymentSource).toContain('className="studio-alipay-qr-frame"')
+    expect(paymentSource).toContain('scrolling="no"')
     expect(styles).toMatch(/\.studio-alipay-qr-frame\s*\{[^}]*width:\s*244px;[^}]*height:\s*244px;[^}]*padding:\s*12px;/s)
     expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*220px;[^}]*height:\s*220px;/s)
   })
@@ -162,7 +166,7 @@ describe('NanaFox Studio product shell', () => {
     expect(styles).not.toContain('width: 100vw')
     expect(source).toContain("document.addEventListener('pointerdown', closeOnPointerDown)")
     expect(source).toContain("if (event.key !== 'Escape') return")
-    expect(source).toContain("document.documentElement.style.overflow = 'hidden'")
+    expect(modalSource).toContain("document.documentElement.style.overflow = 'hidden'")
   })
 
   it('reuses defined visual tokens in the live quota card', () => {

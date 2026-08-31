@@ -6,3 +6,4 @@ dev-proxy.config.json
 .env.*.local
 .playwright-cli/
 output/
+docs/private/

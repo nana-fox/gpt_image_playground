@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import QRCode from 'qrcode'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import {
   ArrowRight,
   ArrowCounterClockwise,
@@ -21,7 +20,6 @@ import {
   Sparkle,
   Trash,
   User,
-  X,
 } from '@phosphor-icons/react'
 
 import {
@@ -48,17 +46,11 @@ import {
   type StudioGenerationTask,
 } from '../lib/studioGeneration'
 import { listStudioInspirations, type StudioInspiration } from '../lib/studioInspiration'
-import { getStudioQuota, type StudioQuotaBalance } from '../lib/studioQuota'
-import {
-  createStudioPaymentOrder,
-  getStudioPaymentOrder,
-  listStudioPaymentPlans,
-  type StudioPaymentOrder,
-  type StudioPaymentMethod,
-  type StudioPaymentPlan,
-} from '../lib/studioPayment'
+import { getStudioQuota, quotaDescription, quotaHeader, quotaUsageText, type StudioQuotaBalance } from '../lib/studioQuota'
 import StudioAdminPage from './StudioAdminPage'
 import { StudioArtworkImage } from './StudioArtworkImage'
+import StudioModal from './StudioModal'
+import StudioQuotaPage from './StudioQuotaPage'
 import './studio.css'
 
 type AuthMode = 'login' | 'register' | '2fa' | 'forgot' | 'reset'
@@ -345,7 +337,7 @@ function StudioWorkspace({ session, onLogout }: { session: StudioSession, onLogo
     : route === 'works'
       ? <WorksPage tasks={tasks} tasksError={tasksError} refreshTasks={refreshTasks} addTask={addTask} removeTask={removeTask} useWork={(task) => { if (task) setPrompt(task.input.prompt); navigate('create') }} />
       : route === 'points'
-        ? <QuotaPage quota={quota} refreshQuota={refreshQuota} navigate={navigate} />
+        ? <StudioQuotaPage quota={quota} refreshQuota={refreshQuota} onStartCreating={() => navigate('create')} />
         : route === 'settings'
           ? <SettingsPage session={session} onLogout={onLogout} />
           : route === 'admin'
@@ -479,7 +471,7 @@ function InspirationPage({ items, useTemplate }: { items: StudioInspiration[], u
   const [favorites, setFavorites] = useState<string[]>([])
   const categories = ['全部', ...new Set(items.map((item) => item.category))]
   const filtered = items.filter((item) => (category === '全部' || item.category === category) && `${item.title}${item.description}`.includes(query))
-  return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 运营精选</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>{items.length ? '换个关键词或浏览其他分类。' : '灵感内容正在准备中，你可以先直接开始创作。'}</p>{items.length > 0 && <button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button>}</div>}{selected && <Modal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></Modal>}</div>
+  return <div className="page-frame"><header className="page-hero compact"><span className="eyebrow"><Sparkle size={15} weight="fill" /> 运营精选</span><h1>先找到感觉，再开始创作</h1><p>每个灵感都准备好了画面方向和描述，你只需要换成自己的内容。</p></header><div className="library-toolbar"><div className="search-field"><MagnifyingGlass size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索产品、人像、海报…" /></div><div className="filter-scroll">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="template-grid">{filtered.map((item, idx) => <article className={`template-card template-${idx % 3 + 1}`} key={item.id}><button className={`favorite-button ${favorites.includes(item.id) ? 'active' : ''}`} onClick={() => setFavorites((values) => values.includes(item.id) ? values.filter((id) => id !== item.id) : [...values, item.id])} aria-label={`收藏${item.title}`}><Heart size={18} weight={favorites.includes(item.id) ? 'fill' : 'regular'} /></button><button className="template-image-button" onClick={() => setSelected(item)}><img src={studioAssetPath(item.image)} alt={item.title} /></button><div className="template-info"><span>{item.category}</span><h3>{item.title}</h3><p>{item.description}</p><button onClick={() => useTemplate(item)}>使用灵感 <ArrowRight size={15} /></button></div></article>)}</div>{!filtered.length && <div className="empty-state"><MagnifyingGlass size={30} /><h3>没有找到匹配的灵感</h3><p>{items.length ? '换个关键词或浏览其他分类。' : '灵感内容正在准备中，你可以先直接开始创作。'}</p>{items.length > 0 && <button className="secondary-button" onClick={() => { setQuery(''); setCategory('全部') }}>查看全部</button>}</div>}{selected && <StudioModal onClose={() => setSelected(null)} className="template-modal"><div className="template-preview"><img src={studioAssetPath(selected.image)} alt={selected.title} /></div><div className="template-detail"><span className="eyebrow">{selected.category}灵感</span><h2>{selected.title}</h2><p>{selected.description}</p><div className="prompt-preview"><small>已经帮你准备好</small><p>{selected.prompt}</p></div><button className="primary-button" onClick={() => useTemplate(selected)}><Sparkle size={18} weight="fill" /> 用这个灵感创作</button></div></StudioModal>}</div>
 }
 
 function WorksPage({
@@ -546,97 +538,6 @@ function WorksPage({
   </div>
 }
 
-function QuotaPage({ quota, refreshQuota, navigate }: { quota: StudioQuotaBalance | null | undefined, refreshQuota: () => Promise<void>, navigate: (route: StudioRoute) => void }) {
-  const [plans, setPlans] = useState<StudioPaymentPlan[]>()
-  const [choosingPlan, setChoosingPlan] = useState<StudioPaymentPlan | null>(null)
-  const [order, setOrder] = useState<StudioPaymentOrder | null>(null)
-  const [qrCode, setQrCode] = useState('')
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    void listStudioPaymentPlans()
-      .then(setPlans)
-      .catch((err) => setError(err instanceof Error ? err.message : '套餐暂时无法读取'))
-  }, [])
-
-  useEffect(() => {
-    const id = window.sessionStorage.getItem('nanafox_studio_payment_order')
-    if (!id) return
-    void getStudioPaymentOrder(id)
-      .then(setOrder)
-      .catch(() => window.sessionStorage.removeItem('nanafox_studio_payment_order'))
-  }, [])
-
-  useEffect(() => {
-    if (!order?.codeUrl || order.status !== 'pending') {
-      setQrCode('')
-      return
-    }
-    let active = true
-    void QRCode.toDataURL(order.codeUrl, { width: 260, margin: 1, errorCorrectionLevel: 'M' })
-      .then((value) => { if (active) setQrCode(value) })
-      .catch(() => { if (active) setError('支付二维码生成失败，请关闭后重试') })
-    return () => { active = false }
-  }, [order?.codeUrl, order?.status])
-
-  useEffect(() => {
-    if (!order || order.status !== 'pending') return
-    let active = true
-    const timer = window.setInterval(() => {
-      void getStudioPaymentOrder(order.id)
-        .then(async (next) => {
-          if (!active) return
-          setOrder(next)
-          if (next.status === 'completed') {
-            window.sessionStorage.removeItem('nanafox_studio_payment_order')
-            await refreshQuota()
-          } else if (next.status !== 'pending') {
-            window.sessionStorage.removeItem('nanafox_studio_payment_order')
-          }
-        })
-        .catch(() => {})
-    }, 2000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [order?.id, order?.status, refreshQuota])
-
-  const checkout = async (plan: StudioPaymentPlan, method: StudioPaymentMethod) => {
-    setBusy(plan.id)
-    setError('')
-    setChoosingPlan(null)
-    try {
-      const next = await createStudioPaymentOrder(plan.id, crypto.randomUUID(), method.providerKey)
-      window.sessionStorage.setItem('nanafox_studio_payment_order', next.id)
-      setOrder(next)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '订单创建失败，请稍后重试')
-    } finally {
-      setBusy('')
-    }
-  }
-
-  return <div className="page-frame quota-live-page">
-    <header className="page-title-row"><div><span className="eyebrow">创作额度</span><h1>额度与方案</h1><p>先使用每日免费次数，用完后再按需购买或订阅。</p></div><button className="secondary-button" onClick={() => navigate('create')}>返回创作</button></header>
-    <section className="live-quota-card"><span><Sparkle size={24} weight="duotone" /></span><div><small>当前可用额度</small><strong>{quotaHeader(quota)}</strong><p>{quotaDescription(quota)}</p></div></section>
-    {error && <p className="auth-error studio-payment-error" role="alert">{error}</p>}
-    {plans === undefined ? <div className="recent-loading">正在读取真实套餐…</div> : plans.length ? <div className="plans-preview studio-live-plans">{plans.map((plan) => <article key={plan.id}>
-      <span className="eyebrow">{plan.kind === 'subscription' ? '按月订阅' : '一次购买'}</span>
-      <h2>{plan.name}</h2>
-      <strong className="studio-plan-price"><small>¥</small>{(plan.priceCents / 100).toFixed(2)}</strong>
-      <p>{plan.description}</p>
-      <ul><li>{plan.credits} 次创作额度</li><li>{plan.durationDays} 天有效</li></ul>
-      <button className="primary-button" disabled={!plan.purchasable || Boolean(busy)} onClick={() => { if (plan.paymentMethods.length === 1) void checkout(plan, plan.paymentMethods[0]); else setChoosingPlan(plan) }}>{busy === plan.id ? '正在创建订单…' : plan.purchasable ? plan.kind === 'subscription' ? '立即订阅' : '购买加量包' : '支付渠道配置中'}</button>
-    </article>)}</div> : <div className="empty-state"><Receipt size={30} /><h3>套餐正在配置</h3><p>运营启用价格和额度后会在这里显示。</p></div>}
-    {choosingPlan && <Modal onClose={() => setChoosingPlan(null)} className="studio-payment-modal"><div className="studio-payment-result"><span className="eyebrow">选择支付方式</span><h2>{choosingPlan.name}</h2><strong className="studio-plan-price"><small>¥</small>{(choosingPlan.priceCents / 100).toFixed(2)}</strong><div className="payment-methods">{choosingPlan.paymentMethods.map((method) => <button key={method.providerKey} onClick={() => void checkout(choosingPlan, method)}><span className={`payment-logo ${method.providerKey === 'wxpay' ? 'wechat' : 'alipay'}`}>{method.providerKey === 'wxpay' ? '微' : '支'}</span><span><strong>{method.name}</strong><small>{method.providerKey === 'wxpay' ? '微信扫码支付' : '支付宝扫码支付'}</small></span><ArrowRight size={18} /></button>)}</div></div></Modal>}
-    {order && <Modal onClose={() => setOrder(null)} className="studio-payment-modal">
-      {order.status === 'completed' ? <div className="studio-payment-result"><CheckCircle size={58} weight="fill" /><span className="eyebrow">支付完成</span><h2>{order.plan.name} 已到账</h2><p>{order.plan.credits} 次创作额度已经加入账户。</p><button className="primary-button" onClick={() => { setOrder(null); navigate('create') }}>开始创作</button></div> : order.status === 'pending' ? <div className="studio-payment-result"><span className="eyebrow">{order.provider === 'wxpay_native' ? '微信扫码支付' : '支付宝扫码支付'}</span><h2>{order.plan.name}</h2><strong className="studio-plan-price"><small>¥</small>{(order.amountCents / 100).toFixed(2)}</strong>{order.provider === 'wxpay_native' ? qrCode ? <img className="studio-payment-qr" src={qrCode} alt="微信支付二维码" /> : <div className="recent-loading">正在生成支付二维码…</div> : order.payUrl ? <div className="studio-alipay-qr-frame"><iframe className="studio-alipay-checkout" src={order.payUrl} title="支付宝支付二维码" scrolling="no" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation" referrerPolicy="no-referrer" /></div> : <div className="recent-loading">正在生成支付二维码…</div>}<p>请使用{order.provider === 'wxpay_native' ? '微信' : '支付宝'}扫码，支付完成后页面会自动更新。</p><small>订单有效至 {new Date(order.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small></div> : <div className="studio-payment-result"><X size={48} /><h2>订单未完成</h2><p>{order.status === 'expired' ? '订单已过期，请重新创建。' : '支付渠道暂时没有完成这个订单。'}</p><button className="secondary-button" onClick={() => setOrder(null)}>返回套餐</button></div>}
-    </Modal>}
-  </div>
-}
-
 function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout: () => void }) {
   const [signingOut, setSigningOut] = useState(false)
   const displayName = session.user.displayName || session.user.email
@@ -650,26 +551,6 @@ function SettingsPage({ session, onLogout }: { session: StudioSession, onLogout:
     }
   }
   return <div className="page-frame settings-page"><header className="page-title-row"><div><span className="eyebrow">个人中心</span><h1>账户设置</h1><p>查看你的 NanaFox Studio 账户资料</p></div></header><div className="settings-layout"><aside className="settings-nav"><button className="active"><User size={18} />账户资料</button></aside><div className="settings-content"><section className="settings-card account-profile-card"><div className="account-profile-heading"><span className="studio-avatar profile">{displayName.slice(0, 1).toUpperCase()}</span><div><h2>{displayName}</h2><p>账户由 NanaFox Studio 登录服务安全管理。</p></div></div><dl className="account-profile-list"><div><dt>显示名称</dt><dd>{displayName}</dd></div><div><dt>登录邮箱</dt><dd>{session.user.email}</dd></div><div><dt>账户标识</dt><dd>{session.user.id}</dd></div></dl><div className="account-security-note"><CheckCircle size={19} weight="fill" /><span><strong>账户已受保护</strong><small>密码、验证码和两步验证由账户服务统一处理。</small></span></div><button className="secondary-button danger-link" disabled={signingOut} onClick={() => void signOut()}><SignOut size={17} />{signingOut ? '正在退出' : '退出登录'}</button></section></div></div></div>
-}
-
-function Modal({ children, onClose, className = '' }: { children: ReactNode, onClose: () => void, className?: string }) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    const previousRootOverflow = document.documentElement.style.overflow
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      document.documentElement.style.overflow = previousRootOverflow
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [onClose])
-
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`base-modal ${className}`} role="dialog" aria-modal="true"><button className="modal-close" onClick={onClose} aria-label="关闭"><X size={20} /></button>{children}</section></div>
 }
 
 function TaskModal({ task, onClose, onReuse, onDelete, onRestore }: { task: StudioGenerationTask, onClose: () => void, onReuse?: () => void, onDelete?: () => Promise<void>, onRestore?: () => Promise<void> }) {
@@ -687,29 +568,7 @@ function TaskModal({ task, onClose, onReuse, onDelete, onRestore }: { task: Stud
       setBusy(false)
     }
   }
-  return <Modal onClose={onClose} className="work-modal"><div className="work-preview"><StudioArtworkImage src={task.output.url} alt={task.input.prompt} /></div><div className="work-detail"><span className="success-label">{onRestore ? <><Trash size={18} /> 最近删除</> : <><CheckCircle size={18} weight="fill" /> 已完成</>}</span><h2>{task.input.prompt}</h2><p>{onRestore && task.purgeAt ? `可在 ${formatDate(task.purgeAt)} 前恢复，之后图片将永久清理。` : `创建于 ${formatDate(task.createdAt)}，作品已安全保存在云端。`}</p><dl><div><dt>画面比例</dt><dd>{ratioName(task.input.size)}</dd></div><div><dt>精细度</dt><dd>{qualityName(task.input.quality)}</dd></div><div><dt>作品状态</dt><dd>{onRestore ? '等待清理' : '仅你可见'}</dd></div></dl>{error && <p className="auth-error work-modal-error" role="alert">{error}</p>}{confirmDelete ? <div className="retention-warning"><strong>确定删除这个作品？</strong><p>作品会进入“最近删除”，7 天内可以恢复。</p><div><button className="secondary-button" disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button className="danger-button" disabled={busy} onClick={() => onDelete && void run(onDelete)}>{busy ? '正在删除…' : '确认删除'}</button></div></div> : <div className="result-actions">{onDelete && <button className="danger-button" onClick={() => setConfirmDelete(true)}><Trash size={17} /> 删除作品</button>}{onReuse && <button className="secondary-button" onClick={onReuse}><Sparkle size={17} /> 复用描述</button>}{onRestore ? <button className="primary-button" disabled={busy} onClick={() => void run(onRestore)}><ArrowCounterClockwise size={18} /> {busy ? '正在恢复…' : '恢复作品'}</button> : <a className="primary-button" href={task.output.url} download><DownloadSimple size={18} /> 下载</a>}</div>}</div></Modal>
-}
-
-function quotaHeader(quota: StudioQuotaBalance | null | undefined) {
-  if (quota === undefined) return '额度读取中'
-  if (quota === null) return '额度暂不可用'
-  if (quota.free.enabled && quota.free.eligible) return `今日 ${quota.free.remaining}/${quota.free.limit} 次`
-  return `${quota.credits} 次可用`
-}
-
-function quotaDescription(quota: StudioQuotaBalance | null | undefined) {
-  if (quota === undefined) return '正在读取你的真实额度。'
-  if (quota === null) return '额度服务暂时不可用，请稍后重试。'
-  if (quota.free.enabled && quota.free.eligible) return `今天还剩 ${quota.free.remaining} 次，明天自动恢复。${quota.credits ? `另有 ${quota.credits} 次购买或订阅额度。` : ''}`
-  return quota.credits ? `当前有 ${quota.credits} 次购买或订阅额度。` : '当前没有可用额度。'
-}
-
-function quotaUsageText(quota: StudioQuotaBalance | null | undefined) {
-  if (quota === undefined) return '正在确认本次额度'
-  if (quota === null) return '额度暂时无法读取'
-  if (quota.free.enabled && quota.free.remaining > 0) return '使用 1 次今日免费额度'
-  if (quota.credits > 0) return '使用 1 次购买或订阅额度'
-  return '当前没有可用额度'
+  return <StudioModal onClose={onClose} className="work-modal"><div className="work-preview"><StudioArtworkImage src={task.output.url} alt={task.input.prompt} /></div><div className="work-detail"><span className="success-label">{onRestore ? <><Trash size={18} /> 最近删除</> : <><CheckCircle size={18} weight="fill" /> 已完成</>}</span><h2>{task.input.prompt}</h2><p>{onRestore && task.purgeAt ? `可在 ${formatDate(task.purgeAt)} 前恢复，之后图片将永久清理。` : `创建于 ${formatDate(task.createdAt)}，作品已安全保存在云端。`}</p><dl><div><dt>画面比例</dt><dd>{ratioName(task.input.size)}</dd></div><div><dt>精细度</dt><dd>{qualityName(task.input.quality)}</dd></div><div><dt>作品状态</dt><dd>{onRestore ? '等待清理' : '仅你可见'}</dd></div></dl>{error && <p className="auth-error work-modal-error" role="alert">{error}</p>}{confirmDelete ? <div className="retention-warning"><strong>确定删除这个作品？</strong><p>作品会进入“最近删除”，7 天内可以恢复。</p><div><button className="secondary-button" disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button className="danger-button" disabled={busy} onClick={() => onDelete && void run(onDelete)}>{busy ? '正在删除…' : '确认删除'}</button></div></div> : <div className="result-actions">{onDelete && <button className="danger-button" onClick={() => setConfirmDelete(true)}><Trash size={17} /> 删除作品</button>}{onReuse && <button className="secondary-button" onClick={onReuse}><Sparkle size={17} /> 复用描述</button>}{onRestore ? <button className="primary-button" disabled={busy} onClick={() => void run(onRestore)}><ArrowCounterClockwise size={18} /> {busy ? '正在恢复…' : '恢复作品'}</button> : <a className="primary-button" href={task.output.url} download><DownloadSimple size={18} /> 下载</a>}</div>}</div></StudioModal>
 }
 
 function ratioName(size: StudioGenerationInput['size']) {
