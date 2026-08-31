@@ -114,10 +114,12 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).not.toContain('ROUTER_IMAGE_BASE_URL')
     expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
     expect(source).toContain('支付宝扫码支付')
-    expect(source).toContain('qrCode ? <img className="studio-payment-qr"')
-    expect(source).not.toContain('<iframe')
-    expect(adminSource).toContain('支付宝扫码支付')
+    expect(source).toContain('className="studio-alipay-checkout"')
     expect(source).not.toContain('window.location.assign(next.payUrl)')
+  })
+
+  it('crops the embedded Alipay cashier to the QR code size', () => {
+    expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*220px;[^}]*height:\s*220px;/s)
   })
 
   it('uses a task-oriented operations console instead of exposing every write form at once', () => {
