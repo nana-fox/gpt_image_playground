@@ -78,6 +78,29 @@ function createDependencies(subject = adminSubject, role = 'admin') {
         }
       },
     },
+    generationControl: {
+      getStatus: () => ({
+        masterEnabled: true,
+        acceptingGenerations: true,
+        providerKeyConfigured: true,
+        available: true,
+        model: 'gpt-image-2',
+        storage: 'r2',
+        version: 1,
+      }),
+      updateStatus: (input, audit) => {
+        calls.push(['updateGenerationChannel', input, audit])
+        return {
+          masterEnabled: true,
+          acceptingGenerations: input.acceptingGenerations,
+          providerKeyConfigured: true,
+          available: input.acceptingGenerations,
+          model: 'gpt-image-2',
+          storage: 'r2',
+          version: input.expectedVersion + 1,
+        }
+      },
+    },
     paymentProviders: {
       list: () => [{
         id: 'alipay-default',
@@ -220,6 +243,51 @@ test('operators can inspect and update the daily free policy', async () => {
     { enabled: false, dailyLimit: 5, timezone: 'Asia/Shanghai', expectedVersion: 1 },
     { actorSubject: adminSubject, action: 'quota_policy.update' },
   ])
+})
+
+test('operators can inspect and update only the safe generation channel status', async () => {
+  const dependencies = createDependencies()
+  const app = createStudioAdminApp({
+    publicOrigin: origin,
+    routerAuth: dependencies.routerAuth,
+    sessions: dependencies.sessions,
+    quota: dependencies.quota,
+    generationControl: dependencies.generationControl,
+  })
+
+  const current = await app.handle(request('/api/admin/generation-channel'))
+  assert.equal(current.status, 200)
+  assert.deepEqual((await current.json()).data, {
+    masterEnabled: true,
+    acceptingGenerations: true,
+    providerKeyConfigured: true,
+    available: true,
+    model: 'gpt-image-2',
+    storage: 'r2',
+    version: 1,
+  })
+
+  const updated = await app.handle(request('/api/admin/generation-channel', {
+    method: 'PATCH',
+    body: { acceptingGenerations: false, expectedVersion: 1 },
+  }))
+  assert.equal(updated.status, 200)
+  assert.deepEqual((await updated.json()).data, {
+    masterEnabled: true,
+    acceptingGenerations: false,
+    providerKeyConfigured: true,
+    available: false,
+    model: 'gpt-image-2',
+    storage: 'r2',
+    version: 2,
+  })
+  assert.deepEqual(dependencies.calls[0], [
+    'updateGenerationChannel',
+    { acceptingGenerations: false, expectedVersion: 1 },
+    { actorSubject: adminSubject },
+  ])
+  assert.equal(JSON.stringify(await dependencies.generationControl.getStatus()).includes('apiKey'), false)
+  assert.equal(JSON.stringify(await dependencies.generationControl.getStatus()).includes('baseUrl'), false)
 })
 
 test('operators can find a user and grant idempotent credits with an audit actor', async () => {

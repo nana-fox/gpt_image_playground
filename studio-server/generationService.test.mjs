@@ -93,6 +93,33 @@ test('generation service reserves, stores, confirms, then exposes a successful t
   ])
 })
 
+test('paused generation rejects before every side effect', async () => {
+  const events = []
+  const service = createGenerationService({
+    control: {
+      assertAccepting() {
+        events.push(['assertAccepting'])
+        throw new GenerationError('创作服务已暂停接收新任务', {
+          status: 503,
+          reason: 'GENERATION_NOT_ACCEPTING',
+        })
+      },
+    },
+    tasks: { createTask: () => assert.fail('paused generation must not create a task') },
+    quota: { reserve: () => assert.fail('paused generation must not reserve quota') },
+    images: { generate: () => assert.fail('paused generation must not call the provider') },
+    outputs: { save: () => assert.fail('paused generation must not store output') },
+  })
+
+  await assert.rejects(
+    service.generate(user, input, 'paused-request'),
+    (error) => error instanceof GenerationError
+      && error.status === 503
+      && error.reason === 'GENERATION_NOT_ACCEPTING',
+  )
+  assert.deepEqual(events, [['assertAccepting']])
+})
+
 test('generation failure releases the reservation and stores only a bounded reason', async () => {
   const events = []
   const service = createGenerationService({

@@ -100,6 +100,9 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).toContain('getStudioPaymentChannel')
     expect(adminSource).toContain('updateStudioPaymentChannel')
     expect(adminSource).toContain('支付渠道')
+    expect(adminSource).toContain('生图服务')
+    expect(adminSource).toContain('getStudioGenerationChannel')
+    expect(adminSource).toContain('updateStudioGenerationChannel')
     expect(adminSource).toContain('灵感内容')
     expect(adminSource).toContain('getStudioAdminInspirations')
     expect(adminSource).toContain('createStudioInspiration')
@@ -107,6 +110,8 @@ describe('NanaFox Studio product shell', () => {
     expect(adminSource).toContain('服务端凭证')
     expect(adminSource).not.toContain('APIv3 Key')
     expect(adminSource).not.toContain('商户私钥')
+    expect(adminSource).not.toContain('ROUTER_IMAGE_API_KEY')
+    expect(adminSource).not.toContain('ROUTER_IMAGE_BASE_URL')
     expect(`${source}${adminSource}`).not.toContain('模拟支付成功')
   })
 

@@ -6,6 +6,7 @@ import {
   getStudioAdminSession,
   createStudioInspiration,
   getStudioAdminInspirations,
+  getStudioGenerationChannel,
   getStudioPaymentChannel,
   getStudioPaymentProviders,
   getStudioPaymentPlans,
@@ -17,6 +18,7 @@ import {
   updateStudioPaymentChannel,
   updateStudioPaymentProvider,
   updateStudioInspiration,
+  updateStudioGenerationChannel,
 } from './studioAdmin'
 
 beforeEach(() => {
@@ -138,6 +140,37 @@ describe('Studio operations client', () => {
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
       body: JSON.stringify({ acceptingOrders: true, expectedVersion: 1 }),
+    })
+  })
+
+  it('loads and switches only the safe generation channel status', async () => {
+    const channel = {
+      masterEnabled: true,
+      acceptingGenerations: true,
+      providerKeyConfigured: true,
+      available: true,
+      model: 'gpt-image-2',
+      storage: 'r2' as const,
+      version: 1,
+    }
+    const load = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, data: channel }))
+    await expect(getStudioGenerationChannel(load)).resolves.toEqual(channel)
+
+    const save = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      ok: true,
+      data: { ...channel, acceptingGenerations: false, available: false, version: 2 },
+    }))
+    await expect(updateStudioGenerationChannel({ ...channel, acceptingGenerations: false }, save)).resolves.toEqual({
+      ...channel,
+      acceptingGenerations: false,
+      available: false,
+      version: 2,
+    })
+    expect(save).toHaveBeenCalledWith('/api/admin/generation-channel', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' },
+      body: JSON.stringify({ acceptingGenerations: false, expectedVersion: 1 }),
     })
   })
 
