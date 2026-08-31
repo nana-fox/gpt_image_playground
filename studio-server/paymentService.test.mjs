@@ -273,7 +273,7 @@ test('closing new checkout still reconciles and fulfills existing paid orders', 
   assert.equal(notifications.length, 2)
 })
 
-test('selects the requested Studio provider and returns an Alipay checkout URL', async () => {
+test('selects the requested Studio provider and returns an Alipay QR code URL', async () => {
   const calls = []
   const alipay = {
     id: 'alipay-default',
@@ -282,7 +282,7 @@ test('selects the requested Studio provider and returns an Alipay checkout URL',
     client: {
       createCheckoutOrder: async (input) => {
         calls.push(['createCheckoutOrder', input])
-        return { payUrl: 'https://openapi.alipay.com/gateway.do?signed=true' }
+        return { codeUrl: 'https://qr.alipay.com/studio-order-2' }
       },
     },
   }
@@ -329,7 +329,8 @@ test('selects the requested Studio provider and returns an Alipay checkout URL',
   const result = await service.createOrder('user-1', 'plus', 'checkout-2', '203.0.113.1', 'alipay')
 
   assert.equal(result.provider, 'alipay_page')
-  assert.equal(result.payUrl, 'https://openapi.alipay.com/gateway.do?signed=true')
+  assert.equal(result.codeUrl, 'https://qr.alipay.com/studio-order-2')
+  assert.equal(result.payUrl, null)
   assert.equal(calls[0][0], 'getEnabled')
   assert.equal(calls[1][1].providerInstanceId, 'alipay-default')
 })
