@@ -79,7 +79,7 @@ function pageUrl({ appId, privateKey, notifyUrl, returnUrl, bizContent }) {
     version: '1.0',
   }
   const signer = createSign('RSA-SHA256')
-  signer.update(signingText(params), 'utf8')
+  signer.update(signingText(params, true), 'utf8')
   signer.end()
   const query = new URLSearchParams({ ...params, sign: signer.sign(pem(privateKey, 'PRIVATE KEY'), 'base64') })
   return `https://openapi.alipay.com/gateway.do?${query}`
@@ -94,9 +94,9 @@ function verify(values, publicKey) {
   return verifier.verify(pem(publicKey, 'PUBLIC KEY'), signature, 'base64')
 }
 
-function signingText(values) {
+function signingText(values, includeSignType = false) {
   return Object.keys(values)
-    .filter((key) => key !== 'sign' && key !== 'sign_type' && values[key] !== '' && values[key] !== undefined)
+    .filter((key) => key !== 'sign' && (includeSignType || key !== 'sign_type') && values[key] !== '' && values[key] !== undefined)
     .sort()
     .map((key) => `${key}=${values[key]}`)
     .join('&')

@@ -83,7 +83,7 @@ test('uses RSA2 for the real Alipay page URL and callback path', async () => {
   })
   const query = Object.fromEntries(new URL(checkout.payUrl).searchParams)
   const verifier = createVerify('RSA-SHA256')
-  verifier.update(signingText(query))
+  verifier.update(signingText(query, true))
   verifier.end()
   assert.equal(verifier.verify(publicKey, query.sign, 'base64'), true)
 
@@ -106,9 +106,9 @@ test('uses RSA2 for the real Alipay page URL and callback path', async () => {
   assert.equal(result.amountCents, 7900)
 })
 
-function signingText(values) {
+function signingText(values, includeSignType = false) {
   return Object.keys(values)
-    .filter((key) => key !== 'sign' && key !== 'sign_type' && values[key] !== '')
+    .filter((key) => key !== 'sign' && (includeSignType || key !== 'sign_type') && values[key] !== '')
     .sort()
     .map((key) => `${key}=${values[key]}`)
     .join('&')
