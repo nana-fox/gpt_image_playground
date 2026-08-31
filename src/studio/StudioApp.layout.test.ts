@@ -118,8 +118,11 @@ describe('NanaFox Studio product shell', () => {
     expect(source).not.toContain('window.location.assign(next.payUrl)')
   })
 
-  it('crops the embedded Alipay cashier to the QR code size', () => {
-    expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*236px;[^}]*height:\s*236px;/s)
+  it('frames the embedded Alipay QR code with an even quiet zone', () => {
+    expect(source).toContain('className="studio-alipay-qr-frame"')
+    expect(source).toContain('scrolling="no"')
+    expect(styles).toMatch(/\.studio-alipay-qr-frame\s*\{[^}]*width:\s*244px;[^}]*height:\s*244px;[^}]*padding:\s*12px;/s)
+    expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*220px;[^}]*height:\s*220px;/s)
   })
 
   it('uses a task-oriented operations console instead of exposing every write form at once', () => {
