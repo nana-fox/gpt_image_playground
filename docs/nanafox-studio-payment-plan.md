@@ -1,6 +1,6 @@
 # NanaFox Studio 支付实施计划
 
-> 状态：2026-08-29 支付供应商基线。Studio 支持微信 Native 和支付宝电脑网站支付；独立保存供应商、套餐、订单、订阅和额度。中转站只作为交互与支付行为参考，不修改其代码，也不复用其订单、回调或数据库。
+> 状态：2026-08-31 支付宝测试环境已配置。Studio 支持微信 Native 和支付宝电脑网站支付二维码模式；独立保存供应商、套餐、订单、订阅和额度。中转站只作为交互与支付行为参考，不修改其代码，也不复用其订单、回调或数据库。
 
 ## L1.1 引用验证
 
@@ -39,7 +39,7 @@
 | return 形态 | caller 解读 | 测试名 |
 |-----------|-----------|--------|
 | `{ status: 'pending', codeUrl, expiresAt }` | 展示微信真实扫码入口并轮询本地订单 | `creates one native order from the server-side plan snapshot` |
-| `{ status: 'pending', payUrl, expiresAt }` | 保存订单 ID 后跳转支付宝；返回 Studio 后继续读取本地订单 | `selects the requested Studio provider and returns an Alipay checkout URL` |
+| `{ status: 'pending', payUrl, expiresAt }` | 在 Studio 弹层内嵌支付宝 `qr_pay_mode=4` 收银台并轮询本地订单 | `selects the requested Studio provider and returns an Alipay checkout URL` |
 | `{ status: 'completed' }` | 刷新额度并关闭支付层 | `fulfills a paid pack exactly once` |
 | `PAYMENT_NOT_CONFIGURED` | 套餐可浏览，购买按钮说明暂未开放 | `never creates an order when payment is disabled` |
 | `PAYMENT_AMOUNT_MISMATCH` | 回调失败、无额度变更 | `rejects a paid notification with a changed amount` |
@@ -156,7 +156,7 @@ completed
 | 尚无微信商户号/证书，无法完成真实资金验收 | 待用户提供 secret 后测试 | NanaFox owner | `studio-wxpay-test-merchant` |
 | 更换商户时旧订单回调仍需旧平台公钥/APIv3 key | 已知；首发先等 pending 订单过期再切换 | NanaFox ops | `studio-wxpay-key-rotation` |
 | JSAPI 需要公众号 AppID、OpenID 和微信内 OAuth | 接受；首发不做 | NanaFox product | `studio-wxpay-jsapi` |
-| 支付宝尚未取得生产应用凭证，无法完成真实资金验收 | 待用户提供凭证后测试 | NanaFox owner | `studio-alipay-live-acceptance` |
+| 测试应用已配置但真实 0.01 元付款、异步回调和额度到账仍待人工扫码 | 当前测试订单完成后核对订单、事件和额度；生产使用独立凭证复验 | NanaFox owner | `studio-alipay-live-acceptance` |
 | 退款、自动续费 | 接受；首发订单只做购买和幂等履约 | NanaFox product | `studio-payment-phase-2` |
 | 每种支付方式只有一个供应商实例 | 接受；出现多商户或故障切换需求再扩展 | NanaFox product | `studio-payment-multi-instance` |
 | Sub2API PostgreSQL/Redis 以 `0.0.0.0` 发布宿主端口 | 已知；非本次引入，不阻塞 Studio 支付开发 | NanaFox ops | `sub2api-private-db-ports` |

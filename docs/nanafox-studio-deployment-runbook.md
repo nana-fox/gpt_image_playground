@@ -407,3 +407,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 切换 8788 后容器 healthy、restart count 0；内网与公网 health/ready、首页均为 200，未登录运营和生图接口为 401。Sub2API test/prod、PostgreSQL、Redis 均保持 healthy，没有修改或重启 Router/Sub2API。
 - Chrome 能发现并接管现有 Studio 标签，但刷新连续超时，因此不把真实登录态“生图服务”页面的最终视觉验收记为通过；同一线上制品已确认包含该模块，用户刷新页面后可直接验收。
 - 清理了本次暗部署容器和两个过期 Studio 回滚容器/镜像，只保留当前 `97b1cac` 与直接回滚 `e4e3dd1`。根盘仍为 91%，这是独立容量风险，未用本次发布扩大清理范围。
+
+### 11.16 2026-08-31 Studio 支付宝二维码测试发布证据
+
+- 本次只修改 NanaFox Studio；Router/Sub2API 代码、配置、数据库和容器均未修改或重启。支付宝供应商使用 App ID `2021006193624355`，私钥与应用公钥指纹一致，只读交易查询由支付宝返回 `ACQ.TRADE_NOT_EXIST`，确认应用和私钥匹配；另一应用 ID 与该私钥不匹配，未写入 Studio。
+- 切换前备份位于 `/home/nio/backups/nanafox-studio-test/pre-alipay-config-20260831T1112Z/`：PostgreSQL dump 为 42,128 bytes、`pg_restore -l` 为 97 行，并保存了只读权限的运行配置副本和 SHA-256。支付宝私钥和平台公钥通过现有 `STUDIO_PAYMENT_CONFIG_KEY` 加密进入 Studio PostgreSQL，运营读取与审计仍只返回掩码状态。
+- Studio commits 为 `80cfdbc`（内嵌二维码）和 `f52761f`（网页支付请求签名包含 `sign_type=RSA2`）；当前测试镜像为 `nanafox-studio:test-f52761f-path`，直接回滚镜像为 `nanafox-studio:test-80cfdbc-path`。前端 608/608、服务端 136 项 0 失败、Studio 构建和 8790 暗部署通过。
+- Caddy 仅在测试域名的 `/tools/image-studio/*` 策略增加 `frame-src https://*.alipay.com`，候选配置先经 `caddy validate --adapter caddyfile` 通过再 reload；原配置备份为 `/etc/caddy/Caddyfile.before-alipay-20260831`。公网 health/ready 和 Router test health 均为 200。
+- 测试环境启用支付宝供应商和部署级支付开关，微信仍未配置且停用；复用 `pack-60` 为 0.01 元、1 次额度、7 天有效的“支付闭环测试”套餐，避免新增只用一次的套餐结构。支付渠道已开放测试接单。
+- 首笔测试订单暴露出手写请求签名错误，已关闭接单、将该订单标记 failed、增加回归测试并修复；修正版支付宝真实网关返回 200、无 `invalid-signature`、包含二维码内容且无禁止 iframe 的响应头。新 Studio 订单为 pending，回调地址为 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/alipay/alipay-default`。真实付款、回调入库、幂等事件和 1 次额度到账仍待用户本人扫码后核验，未记为完成。
