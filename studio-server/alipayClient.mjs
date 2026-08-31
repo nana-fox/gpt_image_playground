@@ -25,6 +25,8 @@ export function createAlipayClient(options = {}) {
         subject: required(input?.description, 'Alipay order description').slice(0, 256),
         total_amount: amount(Number(input?.amountCents)),
         timeout_express: '15m',
+        qr_pay_mode: '4',
+        qrcode_width: 220,
       }
       const url = sdk
         ? await sdk.pageExecute('alipay.trade.page.pay', 'GET', { notifyUrl, returnUrl, bizContent })

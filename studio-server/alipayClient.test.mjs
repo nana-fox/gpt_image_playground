@@ -28,6 +28,8 @@ test('creates a signed page checkout and validates successful notifications', as
     expiresAt: '2026-08-28T08:15:00.000Z',
   }), { payUrl: 'https://openapi.alipay.com/gateway.do?signed=true' })
   assert.equal(calls[0][0], 'alipay.trade.page.pay')
+  assert.equal(calls[0][2].bizContent.qr_pay_mode, '4')
+  assert.equal(calls[0][2].bizContent.qrcode_width, 220)
 
   const notification = client.verifyNotification(new URLSearchParams({
     app_id: '2026000000000000',
