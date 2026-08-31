@@ -85,7 +85,7 @@ export function createPaymentService(options = {}) {
       if (!active) throw new PaymentError('所选支付方式尚未开放', 'PAYMENT_NOT_CONFIGURED', 503)
       const channel = await store.getPaymentChannel()
       if (!channel.acceptingOrders) throw new PaymentError('支付暂未开放下单', 'PAYMENT_NOT_ACCEPTING', 503)
-      const expiresAt = new Date(clock().getTime() + 15 * 60 * 1000).toISOString()
+      const expiresAt = new Date(Math.ceil((clock().getTime() + 15 * 60 * 1000) / 1000) * 1000).toISOString()
       const orderInput = {
         id: orderId(),
         userId,

@@ -24,7 +24,7 @@ export function createAlipayClient(options = {}) {
         product_code: 'FAST_INSTANT_TRADE_PAY',
         subject: required(input?.description, 'Alipay order description').slice(0, 256),
         total_amount: amount(Number(input?.amountCents)),
-        timeout_express: '15m',
+        time_expire: formatTime(input?.expiresAt),
         qr_pay_mode: '4',
         qrcode_width: 220,
       }
@@ -66,16 +66,7 @@ function pageUrl({ appId, privateKey, notifyUrl, returnUrl, bizContent }) {
     notify_url: notifyUrl,
     return_url: returnUrl,
     sign_type: 'RSA2',
-    timestamp: new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).format(new Date()),
+    timestamp: formatTime(new Date()),
     version: '1.0',
   }
   const signer = createSign('RSA-SHA256')
@@ -117,6 +108,21 @@ function cents(value) {
   const number = Number(value)
   if (!Number.isFinite(number) || number <= 0) throw providerError('支付宝支付金额无效')
   return Math.round(number * 100)
+}
+
+function formatTime(value) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) throw providerError('支付宝订单有效期无效')
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 function required(value, name) {

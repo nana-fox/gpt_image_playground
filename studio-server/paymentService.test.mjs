@@ -69,6 +69,7 @@ test('exposes safe payment channel status and rejects opening without server cre
 
 test('creates one Native order from the server-side plan snapshot', async () => {
   const calls = []
+  const checkoutNow = new Date('2026-08-28T08:00:00.123Z')
   const order = {
     id: 'order-1',
     userId: 'user-1',
@@ -77,7 +78,7 @@ test('creates one Native order from the server-side plan snapshot', async () => 
     plan,
     amountCents: 2900,
     currency: 'CNY',
-    expiresAt: '2026-08-28T08:15:00.000Z',
+    expiresAt: '2026-08-28T08:15:01.000Z',
     codeUrl: null,
   }
   const store = {
@@ -102,7 +103,7 @@ test('creates one Native order from the server-side plan snapshot', async () => 
     enabled: true,
     store,
     provider,
-    clock: () => now,
+    clock: () => checkoutNow,
     orderId: () => 'order-1',
     outTradeNo: () => 'studio_20260828_order1',
   })
@@ -116,13 +117,13 @@ test('creates one Native order from the server-side plan snapshot', async () => 
     planId: 'plus',
     idempotencyKey: 'checkout-1',
     outTradeNo: 'studio_20260828_order1',
-    expiresAt: '2026-08-28T08:15:00.000Z',
+    expiresAt: '2026-08-28T08:15:01.000Z',
   })
   assert.deepEqual(calls[1][1], {
     outTradeNo: 'studio_20260828_order1',
     description: 'NanaFox Studio 创作 Plus',
     amountCents: 2900,
-    expiresAt: '2026-08-28T08:15:00.000Z',
+    expiresAt: '2026-08-28T08:15:01.000Z',
     clientIp: '203.0.113.1',
   })
 })

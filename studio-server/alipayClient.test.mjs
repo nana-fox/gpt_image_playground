@@ -28,6 +28,8 @@ test('creates a signed page checkout and validates successful notifications', as
     expiresAt: '2026-08-28T08:15:00.000Z',
   }), { payUrl: 'https://openapi.alipay.com/gateway.do?signed=true' })
   assert.equal(calls[0][0], 'alipay.trade.page.pay')
+  assert.equal(calls[0][2].bizContent.time_expire, '2026-08-28 16:15:00')
+  assert.equal('timeout_express' in calls[0][2].bizContent, false)
   assert.equal(calls[0][2].bizContent.qr_pay_mode, '4')
   assert.equal(calls[0][2].bizContent.qrcode_width, 220)
 
@@ -80,6 +82,7 @@ test('uses RSA2 for the real Alipay page URL and callback path', async () => {
     outTradeNo: 'studio_order3',
     description: 'NanaFox Studio 专业版',
     amountCents: 7900,
+    expiresAt: '2026-08-28T08:15:00.000Z',
   })
   const query = Object.fromEntries(new URL(checkout.payUrl).searchParams)
   const verifier = createVerify('RSA-SHA256')
