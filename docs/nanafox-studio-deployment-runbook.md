@@ -6,7 +6,7 @@
 
 | 资源 | 测试 | 生产 |
 |-----|-----|-----|
-| 公网入口 | `https://router-test.nanafox.com/tools/image-studio/` | `https://studio.nanafox.com/` |
+| 公网入口 | `https://studio-test.nanafox.com/` | `https://studio.nanafox.com/` |
 | PostgreSQL database | `nanafox_studio_test` | `nanafox_studio` |
 | PostgreSQL role | `nanafox_studio_test_app` | `nanafox_studio_app` |
 | R2 Bucket | `nanafox-studio-artworks-test` | `nanafox-studio-artworks-prod` |
@@ -14,9 +14,9 @@
 | 静态制品指针 | test 独立 current | prod 独立 current |
 | Secret 文件 | test 专用 `0600` | prod 专用 `0600` |
 
-生产采用 `studio.nanafox.com`，避免继续把独立产品部署在 Router path 下。测试阶段保留现有 path 是为了复用已验收的隔离入口，不代表生产架构仍嵌入 Router。
+测试与生产分别使用 `studio-test.nanafox.com` 和 `studio.nanafox.com`，两者均以独立根路径运行，但使用不同的 PostgreSQL、R2、Secret 和支付配置。Router 上的旧测试 path 只做 308 跳转，不再运行第二个 Studio 实例。
 
-测试环境发布前必须先做 DNS 与 SSH 双重核对：`router-test.nanafox.com` 当前解析到 `108.160.133.141`，发布用户为该主机上的 `root` 或 `nio`。`jpq`/`114.55.14.204` 不是 NanaFox Studio 测试服务器，不得用于 Studio 构建、部署或验收。若 DNS 解析变化，以当次 `dig` 结果和目标机现有 `nanafox-studio-test` 容器同时匹配为准，不能只依赖 SSH alias。
+测试环境发布前必须先做 DNS 与 SSH 双重核对：`studio-test.nanafox.com` 经 Cloudflare 代理到 `108.160.133.141`，目标机必须同时存在 `nanafox-studio-test` 容器与本机 `127.0.0.1:8788` 监听。发布用户为该主机上的 `root` 或 `nio`。`jpq`/`114.55.14.204` 不是 NanaFox Studio 测试服务器，不得用于 Studio 构建、部署或验收。
 
 ## 2. 发布前必须准备的资源
 
@@ -50,8 +50,8 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 
 ### 2.3 DNS、TLS 与反向代理
 
-- [ ] `studio.nanafox.com` DNS 指向当前日本应用入口。
-- [ ] Caddy 获得有效 TLS 证书。
+- [x] `studio-test.nanafox.com` DNS 经 Cloudflare 指向当前日本应用入口，Caddy TLS 与 Cloudflare 回源已通过。
+- [x] `studio.nanafox.com` DNS 直达当前日本应用入口；生产 vhost 和 TLS 在生产授权后再开放。
 - [ ] `/api/*` 反向代理到 Studio Node 服务；其他路径由 Studio 自己服务静态资源和 SPA fallback。
 - [ ] 请求体限制、超时和安全响应头与测试环境一致。
 - [ ] 不把 R2 Bucket 设为公开源站，不给浏览器返回 R2 S3 预签名地址。
@@ -63,8 +63,8 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 
 | 变量 | 必填 | 说明 |
 |-----|-----|-----|
-| `STUDIO_PUBLIC_ORIGIN` | 是 | 测试为 `https://router-test.nanafox.com`，生产为 `https://studio.nanafox.com` |
-| `STUDIO_PUBLIC_BASE_PATH` | 是 | 测试 `/tools/image-studio/`，生产 `/` |
+| `STUDIO_PUBLIC_ORIGIN` | 是 | 测试为 `https://studio-test.nanafox.com`，生产为 `https://studio.nanafox.com` |
+| `STUDIO_PUBLIC_BASE_PATH` | 是 | 测试与生产均为 `/` |
 | `STUDIO_STATIC_ROOT` | 是 | 当前不可变 Studio 静态制品目录 |
 | `STUDIO_HOST` | 是 | 默认 `127.0.0.1` |
 | `STUDIO_PORT` | 是 | 默认 `8788`，不得与现有服务冲突 |
@@ -90,7 +90,7 @@ S3 endpoint：`https://e5615995e2b05ee8817d18517b70c106.r2.cloudflarestorage.com
 
 Secret 文件权限必须为 `0600`，商户私钥文件可进一步设为 `0400`，属主为 Studio 服务账号。不得使用 `Environment=` 把 Secret 展开进公开的进程列表、CI 输出或镜像层；部署完成后检查日志未回显连接串、Cookie 或 Key。
 
-测试回调地址由运营端按供应商显示，例如 `https://router-test.nanafox.com/tools/image-studio/api/payments/webhooks/wxpay/wxpay-default` 和 `.../alipay/alipay-default`；生产域名对应 `https://studio.nanafox.com/api/...`。不要填写 Router 的 `/api/v1/payment/webhook/*`。商户资料更换时先关闭新下单并核对待支付订单，再整体替换同一商户身份的一组配置。
+测试回调地址由运营端按供应商显示，例如 `https://studio-test.nanafox.com/api/payments/webhooks/wxpay/wxpay-default` 和 `.../alipay/alipay-default`；生产域名对应 `https://studio.nanafox.com/api/...`。不要填写 Router 的 `/api/v1/payment/webhook/*`。商户资料更换时先关闭新下单并核对待支付订单，再整体替换同一商户身份的一组配置。
 
 测试服务器当前使用用户级 Secret，避免要求 `nio` 获得免密 sudo：
 
@@ -113,16 +113,16 @@ npm test
 npm run test:studio-server
 ```
 
-测试 path 部署必须把 Vite base path 烘焙进静态制品，不能只设置服务端 Cookie Path：
+测试与生产都使用独立域名根路径，构建不再烘焙 Router path：
 
 ```bash
 docker build \
-  --build-arg STUDIO_BASE_PATH=/tools/image-studio/ \
+  --build-arg STUDIO_BASE_PATH=/ \
   -f deploy/studio.Dockerfile \
-  -t nanafox-studio:test-<commit>-path .
+  -t nanafox-studio:test-<commit>-root .
 ```
 
-生产域名根路径使用默认 `STUDIO_BASE_PATH=/`，不得直接复用测试 path 静态制品。
+生产可复用经测试门禁的同一根路径镜像，但必须使用生产数据库、R2、Secret 和运行配置；不得复用任何测试凭证。
 
 门禁要求：
 
@@ -242,7 +242,7 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | R2 API Token | 已创建并安全写入测试服务器 | 保持单 Bucket 最小权限，生产另建 Token |
 | 测试 PostgreSQL database/role | 已创建并完成 migration | 继续监控连接与备份，不共享 Sub2API 业务表 |
 | 切换前备份 | 已完成 | SQLite/本地作品约 9 MB；共享 PostgreSQL cluster dump 已校验 SHA-256 |
-| 测试服务器切换 | 已完成 | `nanafox-studio:test-0eb806f-expiry` 运行于 8788；`ab77c95` 容器保留为直接回滚点 |
+| 测试服务器切换 | 已完成 | `18e6172` 根路径镜像运行于 8788；`db45e58` path 容器停止保留为直接回滚点 |
 | 真实供应商/R2 探针 | 已完成 | 真实生成约 1.03 MB PNG，R2 写入/读回一致后删除测试对象 |
 | 浏览器验收 | 公网桌面创作页与运营总览曾用真实 Router 管理员 Session 复验；390×844 移动创作、登录和找回页无横向溢出 | `e4e3dd1` 的账户菜单修复已部署，当前浏览器控制通道超时；待人工复验该菜单，并补真实 3 次额度、删除/恢复作品和各运营写操作 |
 | 管理员受保护 API/真实页面 | 已部署测试环境 | Router 当前 `admin` 自动获得入口和权限；公网真实管理员 200、普通用户 403 已验证。CSRF、每日免费次数、用户查询、幂等加额和同事务审计保持不变 |
@@ -252,7 +252,7 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 | PostgreSQL/Redis 公网暴露 | 高风险待整改；2026-08-29 已从外部网络确认 5432/6379 可建立 TCP 连接 | 属于 Sub2API 共享基础设施，另开维护窗口收紧到 localhost 或云防火墙白名单；Studio 不擅自修改 |
 | PostgreSQL 备份 | 部分完成，生产仍阻断 | 每日 NAS 任务已包含 Studio 测试库，同机隔离恢复通过；频率仍非 6 小时，NAS 端异机恢复和长期分层保留未完成 |
 | 测试服务器磁盘 | 观察项 | `e4e3dd1` 发布并清理本次临时源码后根盘为 91%、约 4.4 GB 可用；保留当前与 `751d0fd` 回滚镜像，生产前配置阈值告警并单独清理可重建缓存 |
-| Caddy Studio 路由持久化 | 已核对 | `/etc/caddy/Caddyfile` 含测试 path 路由；普通用户可完成 Caddyfile adapt，完整 validate 因无权写现有日志文件而不能代替 root 发布检查 |
+| Caddy Studio 路由持久化 | 已核对 | `studio-test.nanafox.com` 独立 vhost 反代 8788，旧 Router path 只做 308 跳转；候选配置先经 root `caddy validate` 再 reload |
 | NAS 自动备份 | 数据库已启用，R2 作品未启用 | 为 R2 创建独立只读 Token 后配置 NAS 增量拉取；不得复用应用写 Token |
 | 生产资源 | 未创建 | 测试验收通过后准备，不提前复用测试资源 |
 | 生产发布 | 未授权 | 通过所有门禁后单独请求授权 |
@@ -427,3 +427,12 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 从 `db45e58` 的干净 Git worktree 串行通过前端 53 文件/610 项、Studio 服务端 136 项 0 失败和 `build:studio`；镜像也直接从该 commit 的 Git 归档构建，未包含同工作区中尚未提交的页面拆分改动。
 - 8790 暗部署通过 health、ready、未登录 401 和两张真实作品读取；切换后测试镜像为 `nanafox-studio:test-db45e58-artwork`，直接回滚为 `nanafox-studio:test-0eb806f-expiry`。公网首页、静态资源、health/ready 均为 200，两张真实作品为 200 且 SHA-256 一致，容器 healthy、restart count 0。
 - 本次没有修改或重启 Router/Sub2API；生产 `sub2api-prod` 保持 healthy、restart count 0。清理了过期 Studio 回滚和可重建构建缓存，只保留当前版与直接回滚，根盘从 94% 降至 91%。应用内浏览器的 DOM/截图通道仍超时，因此不把真实登录态视觉检查记为完成，用户刷新创作页即可验收。
+
+### 11.18 2026-08-31 独立测试域名根路径切换证据
+
+- `studio-test.nanafox.com` 经 Cloudflare 代理到 `108.160.133.141`；Caddy 新增独立 vhost 后原 525 已消失，HTTPS 首页、根路径静态资源、`/api/health` 和 `/api/ready` 均为 200，未登录 Session 为 401，测试域名返回 `X-Robots-Tag: noindex, nofollow`。
+- 部署 commit 为 `18e6172`，根路径镜像为 `nanafox-studio:test-18e6172-root`。本地串行通过 Studio 构建、53 个前端测试文件/611 项测试和 136 项服务端测试，0 失败。该提交没有新增 migration，本次不改动测试库和 R2 数据。
+- 8791 先完成暗部署，再把根路径版本切到唯一测试实例 `nanafox-studio-test`/8788；容器 healthy、restart count 0，临时 8791 容器已删除。`db45e58` path 容器停止保留为直接回滚点。
+- `router-test.nanafox.com/tools/image-studio/` 现返回 308 到新测试域名，不再启动第二个 Studio 实例。Caddy 候选配置通过 `caddy validate --adapter caddyfile`，切换前配置保留为 `/etc/caddy/Caddyfile.before-studio-test-cutover-20260831T1557`。
+- Router test/prod `/health` 均为 200，`sub2api-test` 和 `sub2api-prod` 均保持运行、restart count 0；没有修改或重启 Router/Sub2API 代码、容器、数据库或配置。
+- Chrome 能连接但页面导航连续超时，所以本次只记录 HTTP、CSP、静态制品和运行状态证据，不把真实登录态视觉验收记为完成。
