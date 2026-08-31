@@ -119,7 +119,7 @@ describe('NanaFox Studio product shell', () => {
   })
 
   it('crops the embedded Alipay cashier to the QR code size', () => {
-    expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*220px;[^}]*height:\s*220px;/s)
+    expect(styles).toMatch(/\.studio-alipay-checkout\s*\{[^}]*width:\s*236px;[^}]*height:\s*236px;/s)
   })
 
   it('uses a task-oriented operations console instead of exposing every write form at once', () => {
