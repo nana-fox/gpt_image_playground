@@ -11,6 +11,7 @@ import { createStudioAdminApp } from './adminApp.mjs'
 import { createStudioAuthApp } from './authApp.mjs'
 import { createStudioDatabase } from './database.mjs'
 import { createStudioGenerationApp } from './generationApp.mjs'
+import { createGenerationControl } from './generationControl.mjs'
 import { createGenerationService } from './generationService.mjs'
 import { createGenerationTaskStore } from './generationTaskStore.mjs'
 import { createImageProviderClient } from './imageProviderClient.mjs'
@@ -225,6 +226,13 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   })
   const tasks = createGenerationTaskStore({ database })
   const inspirations = createInspirationStore({ database })
+  const generationControl = createGenerationControl({
+    database,
+    masterEnabled: config.generationEnabled,
+    providerKeyConfigured: Boolean(config.generation?.apiKey),
+    model: config.generation?.model ?? null,
+    storage: config.generation?.storage.type ?? null,
+  })
   const routerAuth = createRouterAuthClient({
     baseUrl: config.routerBaseUrl,
     keyId: config.routerKeyId,
@@ -260,9 +268,10 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
     paymentChannel: payments,
     paymentProviders: paymentProviderStore,
     inspirations,
+    generationControl,
   })
   const generationRuntime = config.generationEnabled
-    ? createGenerationRuntime(config, store, quota, tasks)
+    ? createGenerationRuntime(config, store, quota, tasks, generationControl)
     : null
   const app = createStudioApp({
     authApp,
@@ -287,7 +296,7 @@ export function createStudioRuntime(config = readStudioServerConfig()) {
   }
 }
 
-function createGenerationRuntime(config, sessions, quota, tasks) {
+function createGenerationRuntime(config, sessions, quota, tasks, control) {
   const outputs = config.generation.storage.type === 'r2'
     ? createR2ArtworkStore(config.generation.storage)
     : createArtworkStore({ root: config.generation.storage.root })
@@ -296,7 +305,7 @@ function createGenerationRuntime(config, sessions, quota, tasks) {
     apiKey: config.generation.apiKey,
     model: config.generation.model,
   })
-  const generations = createGenerationService({ tasks, quota, images, outputs })
+  const generations = createGenerationService({ tasks, quota, images, outputs, control })
   const cleanup = () => purgeExpiredArtworks({ tasks, outputs })
   const cleanupTimer = setInterval(() => {
     void cleanup().catch((error) => console.error('Studio artwork retention cycle failed', error))

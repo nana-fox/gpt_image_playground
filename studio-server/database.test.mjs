@@ -29,6 +29,7 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
     'studio_admin_audit_log',
     'studio_auth_rate_limits',
     'studio_credit_grants',
+    'studio_generation_channel',
     'studio_generation_tasks',
     'studio_inspirations',
     'studio_payment_channel',
@@ -60,6 +61,9 @@ test('migrates a PostgreSQL database with the Studio defaults', { skip: !connect
 
   const channel = await database.query('SELECT accepting_orders, version FROM studio_payment_channel WHERE id = 1')
   assert.deepEqual(channel.rows, [{ accepting_orders: false, version: 1 }])
+
+  const generationChannel = await database.query('SELECT accepting_generations, version FROM studio_generation_channel WHERE id = 1')
+  assert.deepEqual(generationChannel.rows, [{ accepting_generations: true, version: 1 }])
 
   const providers = await database.query('SELECT id, provider_key, enabled FROM studio_payment_providers ORDER BY id')
   assert.deepEqual(providers.rows, [

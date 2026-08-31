@@ -19,6 +19,7 @@ import {
 import {
   createStudioInspiration,
   getStudioAdminInspirations,
+  getStudioGenerationChannel,
   getStudioPaymentChannel,
   getStudioPaymentProviders,
   getStudioQuotaPolicy,
@@ -26,6 +27,7 @@ import {
   grantStudioCredits,
   searchStudioUsers,
   updateStudioPaymentChannel,
+  updateStudioGenerationChannel,
   updateStudioPaymentProvider,
   updateStudioInspiration,
   updateStudioQuotaPolicy,
@@ -34,16 +36,18 @@ import {
   type StudioAdminInspiration,
   type StudioAdminSession,
   type StudioAdminUser,
+  type StudioGenerationChannel,
   type StudioPaymentChannel,
   type StudioPaymentProvider,
   type StudioQuotaPolicy,
 } from '../lib/studioAdmin'
 import { studioAssetPath } from '../lib/studioApi'
 
-type AdminSection = 'overview' | 'quota' | 'users' | 'inspirations' | 'plans' | 'payment'
+type AdminSection = 'overview' | 'generation' | 'quota' | 'users' | 'inspirations' | 'plans' | 'payment'
 
 const adminSections: { id: AdminSection, label: string, icon: typeof Gauge }[] = [
   { id: 'overview', label: '运营总览', icon: Gauge },
+  { id: 'generation', label: '生图服务', icon: Sparkle },
   { id: 'quota', label: '免费额度', icon: Sparkle },
   { id: 'users', label: '用户额度', icon: UsersThree },
   { id: 'inspirations', label: '灵感内容', icon: ImageSquare },
@@ -66,6 +70,7 @@ const inspirationImages = [
 export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminSession, onExit: () => void }) {
   const [section, setSection] = useState<AdminSection>('overview')
   const [policy, setPolicy] = useState<StudioQuotaPolicy>()
+  const [generationChannel, setGenerationChannel] = useState<StudioGenerationChannel>()
   const [plans, setPlans] = useState<StudioAdminPaymentPlan[]>([])
   const [paymentChannel, setPaymentChannel] = useState<StudioPaymentChannel>()
   const [paymentProviders, setPaymentProviders] = useState<StudioPaymentProvider[]>([])
@@ -86,9 +91,10 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void Promise.all([getStudioQuotaPolicy(), getStudioPaymentPlans(), getStudioPaymentChannel(), getStudioPaymentProviders(), getStudioAdminInspirations()])
-      .then(([nextPolicy, nextPlans, nextPaymentChannel, nextPaymentProviders, nextInspirations]) => {
+    void Promise.all([getStudioQuotaPolicy(), getStudioGenerationChannel(), getStudioPaymentPlans(), getStudioPaymentChannel(), getStudioPaymentProviders(), getStudioAdminInspirations()])
+      .then(([nextPolicy, nextGenerationChannel, nextPlans, nextPaymentChannel, nextPaymentProviders, nextInspirations]) => {
         setPolicy(nextPolicy)
+        setGenerationChannel(nextGenerationChannel)
         setPlans(nextPlans)
         setPaymentChannel(nextPaymentChannel)
         setPaymentProviders(nextPaymentProviders)
@@ -135,6 +141,22 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
       setMessage('免费额度配置已生效，新的创作请求会立即使用这套规则。')
     } catch (err) {
       setError(err instanceof Error ? err.message : '配置保存失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const saveGenerationChannel = async () => {
+    if (!generationChannel) return
+    setBusy('generation-channel')
+    setError('')
+    setMessage('')
+    try {
+      const updated = await updateStudioGenerationChannel(generationChannel)
+      setGenerationChannel(updated)
+      setMessage(updated.acceptingGenerations ? '生图服务已恢复接收新任务。' : '已暂停新任务，进行中的任务和历史作品不受影响。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生图服务配置保存失败')
     } finally {
       setBusy('')
     }
@@ -314,11 +336,24 @@ export default function StudioAdminPage({ admin, onExit }: { admin: StudioAdminS
           </div>
           <section className="operations-quick-actions"><div><h2>常用操作</h2><p>选择一个任务开始，避免在同一页面误改多项配置。</p></div><div>
             <button onClick={() => showSection('quota')}><span className="metric-icon"><Sparkle size={20} /></span><span><strong>调整免费额度</strong><small>开关每日赠送或修改默认次数</small></span><CaretRight size={17} /></button>
+            <button onClick={() => showSection('generation')}><span className="metric-icon"><Gauge size={20} /></span><span><strong>管理生图服务</strong><small>查看脱敏运行状态并控制是否接收新任务</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('users')}><span className="metric-icon"><UsersThree size={20} /></span><span><strong>给用户增加额度</strong><small>搜索账户并完成一次审计发放</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('inspirations')}><span className="metric-icon"><ImageSquare size={20} /></span><span><strong>管理灵感内容</strong><small>{enabledInspirations}/{inspirations.length} 条已上架，可调整首页推荐</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('plans')}><span className="metric-icon"><Storefront size={20} /></span><span><strong>管理销售套餐</strong><small>修改价格、额度、有效期和上架状态</small></span><CaretRight size={17} /></button>
             <button onClick={() => showSection('payment')}><span className="metric-icon"><CreditCard size={20} /></span><span><strong>管理支付渠道</strong><small>检查服务端凭证并控制是否接收新订单</small></span><CaretRight size={17} /></button>
           </div></section>
+        </>}
+
+        {section === 'generation' && <>
+          <header className="operations-heading"><span className="eyebrow">运行控制</span><h1>生图服务</h1><p>查看 Studio 的脱敏运行状态。Router Key、服务地址和对象存储凭证只保留在服务端部署环境。</p></header>
+          <section className="operations-card compact-card">
+            <div className="operations-card-heading"><div><h2>新任务总开关</h2><p>暂停后不会创建新任务、冻结额度或调用底层模型；进行中的任务和历史作品不受影响。</p></div><span className={`status-pill ${generationChannel?.available ? 'online' : ''}`}>{generationChannel?.available ? '运行中' : '未接收任务'}</span></div>
+            {generationChannel ? <div className="operations-form">
+              <div className="operations-field-grid"><label><span>部署级总开关</span><input value={generationChannel.masterEnabled ? '已启用' : '未启用'} readOnly /><small>只能通过服务端部署配置修改。</small></label><label><span>服务端凭证</span><input value={generationChannel.providerKeyConfigured ? '已配置' : '未配置'} readOnly /><small>页面不会读取或返回密钥内容。</small></label><label><span>生图模型</span><input value={generationChannel.model ?? '未配置'} readOnly /></label><label><span>作品存储</span><input value={generationChannel.storage === 'r2' ? 'Cloudflare R2' : generationChannel.storage === 'filesystem' ? '服务器文件系统' : '未配置'} readOnly /></label></div>
+              <label className="operations-switch"><span><strong>接收新的创作任务</strong><small>{generationChannel.masterEnabled && generationChannel.providerKeyConfigured ? '运营暂停不会中断已经开始处理的任务。' : '请先由部署人员完成服务端配置。'}</small></span><input type="checkbox" checked={generationChannel.acceptingGenerations} disabled={!generationChannel.masterEnabled || !generationChannel.providerKeyConfigured} onChange={(event) => setGenerationChannel({ ...generationChannel, acceptingGenerations: event.target.checked })} /></label>
+              <div className="operations-form-actions"><span>配置版本 {generationChannel.version}</span><button className="primary-button" disabled={busy === 'generation-channel'} onClick={() => void saveGenerationChannel()}>{busy === 'generation-channel' ? '正在保存…' : '保存生图服务设置'}</button></div>
+            </div> : <div className="recent-loading">正在读取真实配置…</div>}
+          </section>
         </>}
 
         {section === 'quota' && <>

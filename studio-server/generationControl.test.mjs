@@ -77,3 +77,22 @@ test('deployment master cannot be bypassed by operations', async () => {
       && error.reason === 'GENERATION_DEPLOYMENT_DISABLED',
   )
 })
+
+test('generation channel rejects stale updates without writing an audit record', async () => {
+  const database = createDatabase()
+  const control = createGenerationControl({
+    database,
+    masterEnabled: true,
+    model: 'gpt-image-2',
+    storage: 'r2',
+    providerKeyConfigured: true,
+  })
+
+  await assert.rejects(
+    control.updateStatus({ acceptingGenerations: false, expectedVersion: 2 }, { actorSubject: 'router-admin' }),
+    (error) => error instanceof GenerationControlError
+      && error.status === 409
+      && error.reason === 'GENERATION_CHANNEL_VERSION_CONFLICT',
+  )
+  assert.equal(database.calls.some((call) => String(call[1]).includes('studio_admin_audit_log')), false)
+})

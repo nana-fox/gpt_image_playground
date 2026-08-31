@@ -12,7 +12,8 @@ export function createGenerationService(options = {}) {
   const quota = options.quota
   const images = options.images
   const outputs = options.outputs
-  if (!tasks || !quota || !images || !outputs) throw new Error('Studio generation dependencies are required')
+  const control = options.control
+  if (!tasks || !quota || !images || !outputs || !control?.assertAccepting) throw new Error('Studio generation dependencies are required')
   const clock = options.clock ?? (() => new Date())
   const activeTaskTtlSeconds = options.activeTaskTtlSeconds === undefined ? 900 : Number(options.activeTaskTtlSeconds)
   if (!Number.isInteger(activeTaskTtlSeconds) || activeTaskTtlSeconds < 60 || activeTaskTtlSeconds > 3600) {
@@ -26,6 +27,7 @@ export function createGenerationService(options = {}) {
       if (!userId) throw new GenerationError('请先登录', { status: 401, reason: 'UNAUTHENTICATED' })
       if (!key || key.length > 200) throw new GenerationError('创作请求标识无效', { status: 400, reason: 'INVALID_IDEMPOTENCY_KEY' })
 
+      await control.assertAccepting()
       const created = await tasks.createTask(userId, input, key)
       if (!created.created) return replay(created.task)
 

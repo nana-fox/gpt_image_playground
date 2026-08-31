@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createGenerationService, GenerationError } from './generationService.mjs'
+import { createGenerationService as createService, GenerationError } from './generationService.mjs'
 
 const user = { id: 'local-user' }
 const input = {
   prompt: '月光下的银色狐狸',
   size: '1024x1024',
   quality: 'high',
+}
+
+const acceptingControl = { assertAccepting() {} }
+
+function createGenerationService(options) {
+  return createService({ control: acceptingControl, ...options })
 }
 
 function createTaskStore(existing = null, events = []) {

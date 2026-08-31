@@ -20,6 +20,16 @@ export type StudioQuotaPolicy = {
   version: number
 }
 
+export type StudioGenerationChannel = {
+  masterEnabled: boolean
+  acceptingGenerations: boolean
+  providerKeyConfigured: boolean
+  available: boolean
+  model: string | null
+  storage: 'filesystem' | 'r2' | null
+  version: number
+}
+
 export type StudioCreditGrant = {
   id: string
   source: string
@@ -103,6 +113,19 @@ export async function getStudioAdminSession(request: typeof fetch = fetch): Prom
 
 export async function getStudioQuotaPolicy(request: typeof fetch = fetch): Promise<StudioQuotaPolicy> {
   return normalizePolicy(await call('admin/quota-policy', { credentials: 'same-origin' }, request))
+}
+
+export async function getStudioGenerationChannel(request: typeof fetch = fetch): Promise<StudioGenerationChannel> {
+  return normalizeGenerationChannel(await call('admin/generation-channel', { credentials: 'same-origin' }, request))
+}
+
+export async function updateStudioGenerationChannel(channel: StudioGenerationChannel, request: typeof fetch = fetch): Promise<StudioGenerationChannel> {
+  return normalizeGenerationChannel(await call('admin/generation-channel', {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: writeHeaders(),
+    body: JSON.stringify({ acceptingGenerations: channel.acceptingGenerations, expectedVersion: channel.version }),
+  }, request))
 }
 
 export async function updateStudioQuotaPolicy(policy: StudioQuotaPolicy, request: typeof fetch = fetch): Promise<StudioQuotaPolicy> {
@@ -273,6 +296,21 @@ function normalizePolicy(value: unknown): StudioQuotaPolicy {
     || Number(policy.version) < 1
   ) throw protocolError()
   return policy as StudioQuotaPolicy
+}
+
+function normalizeGenerationChannel(value: unknown): StudioGenerationChannel {
+  const channel = value as Partial<StudioGenerationChannel> | undefined
+  if (
+    !channel
+    || typeof channel.masterEnabled !== 'boolean'
+    || typeof channel.acceptingGenerations !== 'boolean'
+    || typeof channel.providerKeyConfigured !== 'boolean'
+    || typeof channel.available !== 'boolean'
+    || !(channel.model === null || typeof channel.model === 'string')
+    || ![null, 'filesystem', 'r2'].includes(channel.storage ?? null)
+    || !positiveCount(channel.version)
+  ) throw protocolError()
+  return channel as StudioGenerationChannel
 }
 
 function normalizeGrant(value: unknown): StudioCreditGrant {

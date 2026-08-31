@@ -13,6 +13,7 @@ export function createStudioAdminApp(options = {}) {
   const paymentChannel = options.paymentChannel
   const paymentProviders = options.paymentProviders
   const inspirations = options.inspirations
+  const generationControl = options.generationControl
   if (!routerAuth?.resolve || !sessions?.getSession || !sessions?.verifyCsrf || !sessions?.searchUsers || !sessions?.getUser || !quota) {
     throw new Error('Studio operations dependencies are required')
   }
@@ -61,6 +62,10 @@ export function createStudioAdminApp(options = {}) {
           if (!payments) return jsonError(503, 'PAYMENT_UNAVAILABLE', '套餐服务暂时不可用')
           return json({ ok: true, data: await payments.listAdminPlans() })
         }
+        if (request.method === 'GET' && url.pathname === '/api/admin/generation-channel') {
+          if (!generationControl) return jsonError(503, 'GENERATION_UNAVAILABLE', '生图服务暂时不可用')
+          return json({ ok: true, data: await generationControl.getStatus() })
+        }
         if (request.method === 'GET' && url.pathname === '/api/admin/payment-channel') {
           if (!paymentChannel) return jsonError(503, 'PAYMENT_UNAVAILABLE', '支付渠道服务暂时不可用')
           return json({ ok: true, data: await paymentChannel.getChannelStatus() })
@@ -91,6 +96,17 @@ export function createStudioAdminApp(options = {}) {
             data: await quota.setPolicy(policy, {
               actorSubject: session.user.identitySubject,
               action: 'quota_policy.update',
+            }),
+          })
+        }
+
+        if (request.method === 'PATCH' && url.pathname === '/api/admin/generation-channel') {
+          if (!generationControl) return jsonError(503, 'GENERATION_UNAVAILABLE', '生图服务暂时不可用')
+          await verifyWrite(request, sessions, sessionToken, cookies[CSRF_COOKIE], publicOrigin)
+          return json({
+            ok: true,
+            data: await generationControl.updateStatus(normalizeGenerationChannel(await readJson(request)), {
+              actorSubject: session.user.identitySubject,
             }),
           })
         }
@@ -281,6 +297,17 @@ function normalizePaymentChannel(input) {
     throw validationError('支付渠道配置无效')
   }
   return { acceptingOrders: input.acceptingOrders, expectedVersion }
+}
+
+function normalizeGenerationChannel(input) {
+  if (Object.keys(input).some((key) => !['acceptingGenerations', 'expectedVersion'].includes(key))) {
+    throw validationError('生图服务配置无效')
+  }
+  const expectedVersion = Number(input.expectedVersion)
+  if (typeof input.acceptingGenerations !== 'boolean' || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw validationError('生图服务配置无效')
+  }
+  return { acceptingGenerations: input.acceptingGenerations, expectedVersion }
 }
 
 function normalizePaymentProvider(input) {
