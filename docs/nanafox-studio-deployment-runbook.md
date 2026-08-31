@@ -395,3 +395,15 @@ NAS 不能从公网暴露管理端口，也不能成为 Studio 在线依赖。�
 - 公网制品为 `assets/index-Uti0L1wS.js` 与 Studio chunk `StudioApp-DHdfNrgJ.css`；账户菜单桌面宽度为 280px，移动端使用 `min(320px, calc(100vw - 24px))`，旧 226px/`min-width: 320px` 规则已不在当前制品。
 - `sub2api-prod` 保持 `sub2api:prod-image-creation-v1-6966a8f5c`、healthy、restart count 0；Router/Sub2API 代码、配置和容器均未修改或重启。
 - Chrome 与应用内浏览器的刷新、截图和 DOM 通道连续超时，因此本次只记录部署、接口与静态制品证据，不把真实登录态的最终视觉验收记为通过。
+
+### 11.15 2026-08-31 生图服务运营控制测试发布证据
+
+- 发布前重新核对 `router-test.nanafox.com -> 108.160.133.141`，目标机现有 Studio 容器、8788 监听和三组 `0600` Secret 均匹配；没有进入或修改 `jpq`。
+- RED commit：`4e08d76`；GREEN/部署 commit：`97b1cac`；测试镜像：`nanafox-studio:test-97b1cac-path`；直接回滚容器：`nanafox-studio-test-rollback-e4e3dd1-20260831`。
+- 切换前 PostgreSQL 备份位于 `/home/nio/backups/nanafox-studio-test/pre-generation-control-20260831T0059Z/`；dump 为 40,686 bytes，`pg_restore -l` 为 94 行，SHA-256 为 `480cb3e175e7ed9d9a6553bc7849d05a94a9cd3f1cdf1aad2491b2729410275c`，目录与三个文件均为仅管理员可读。
+- GitHub Studio CI run `33346163988` 全绿：依赖审计、608 个前端测试、normal/studio 双构建、真实 PostgreSQL 服务端门禁、容器构建和 smoke test 均通过。
+- migration 010 新增 Studio 自有单例生图开关；升级后 migration 为 `1..10`，原有 2 个用户、1 个生成任务、0 个加额和 0 个支付订单保持不变。Router Key、Base URL 和 R2 凭证仍只在服务端 Secret，运营接口只返回模型、存储类型与凭证就绪布尔值。
+- 8790 暗部署完成 `运行中 -> 暂停 -> 恢复运行中`，版本从 1 到 3，暂停返回 `GENERATION_NOT_ACCEPTING`，产生 2 条同事务审计记录且生成任务数保持 1；没有调用 Provider、写入 R2 或消耗用户额度。
+- 切换 8788 后容器 healthy、restart count 0；内网与公网 health/ready、首页均为 200，未登录运营和生图接口为 401。Sub2API test/prod、PostgreSQL、Redis 均保持 healthy，没有修改或重启 Router/Sub2API。
+- Chrome 能发现并接管现有 Studio 标签，但刷新连续超时，因此不把真实登录态“生图服务”页面的最终视觉验收记为通过；同一线上制品已确认包含该模块，用户刷新页面后可直接验收。
+- 清理了本次暗部署容器和两个过期 Studio 回滚容器/镜像，只保留当前 `97b1cac` 与直接回滚 `e4e3dd1`。根盘仍为 91%，这是独立容量风险，未用本次发布扩大清理范围。
